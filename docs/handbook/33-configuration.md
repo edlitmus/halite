@@ -282,6 +282,83 @@ tree locally on the hub host (`halite-node state apply --local --file-root … -
 enrol the hub's own node to itself using a separate `pki_dir` and `state_dir`
 (sharing the hub's would mix its key with the CA's), and then every other node.
 
+### 7. Sign the state tree
+
+`require_state_signature` ([chapter 28](28-hardening.md#signing-the-state-content))
+makes a node refuse a tree that a signer off the hub did not publish. Turn it
+on in this order, because a node that requires a signature on an unsigned
+tree applies nothing.
+
+1. **Make a key, off the hub.** Use the job signer's command, with a name of
+   its own. A tree signer and a job signer are different authorities, so do
+   not reuse the job key:
+
+   ```sh
+   halite-hub keys signer create tree-ci --out signer/tree-ci
+   ```
+
+   Keep `signer/tree-ci.key` where CI can use it and the hub cannot. Or keep
+   the key in AWS KMS behind `halite-ext-signer-kms`, as for jobs, so that
+   nothing on disk can sign. Put the printed public line in a file, here
+   `trusted-tree-keys`, one line per key.
+
+2. **Sign in CI, on every change to a branch the hub serves.** Sign the tree
+   as the hub serves it. For a git-backed tree, that is the commit as
+   `git archive` writes it, not a checkout: `export-ignore` attributes can
+   make the two differ. Pass the hub's configuration with `--config`, so
+   that the signer applies the hub's own `file_ignore_glob` and
+   `file_ignore_regex`:
+
+   ```sh
+   work=$(mktemp -d)
+   git archive "$COMMIT" | tar -x -C "$work"
+   halite-hub tree manifest "$work" --env base --source "commit $COMMIT" --config hub.yaml
+   halite-hub tree sign "$work" --sign-key signer/tree-ci.key
+   halite-hub tree verify "$work" --env base --keys trusted-tree-keys --config hub.yaml
+   cp -R "$work/_halite" . && git add _halite && git commit -m "Sign $COMMIT"
+   ```
+
+   The manifest describes every file except `_halite/`, so the commit that
+   adds `_halite/` on top of `$COMMIT` serves the content that was signed.
+   Sign each environment the estate serves with its own `--env`, and sign
+   again on a schedule well inside `state_manifest_max_age` (thirty days by
+   default): nightly gives weeks of slack. A new signature over unchanged
+   content is a new revision with a new `issued` time, and costs no
+   transfer.
+
+3. **Trust the key on the nodes, in `warn`.** In `node.yaml`, through the
+   state that writes it (section 6):
+
+   ```yaml
+   require_state_signature: warn
+   state_signer_keys:
+     - 'tree-ci MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE…'
+   ```
+
+   Restart the agent. Watch `halite_node_tree_refusals_total` over a week of
+   real highstates. Each count is something `true` would refuse.
+
+4. **Set `true`**, on one FreeBSD node and one Linux node first, then on the
+   rest. If the node's own roots are applied with `--local` (as in section 6
+   for the hub host), sign those too or set `state_signature_local: false`
+   there, deliberately.
+
+**To roll back** the tree, sign the old commit's content again. The new
+`issued` time makes it the newest revision. A node refuses an older manifest
+by design, so putting back an old `_halite/` does not work.
+
+**To rotate the key:**
+
+1. Add the new key's line to `state_signer_keys` on every node, through a
+   state that the old key signed. Restart, so that both keys are trusted.
+2. Switch CI to the new key, and sign.
+3. When every node has accepted a revision signed by the new key, remove the
+   old line. `halite-node doctor` names the signer of each accepted
+   revision.
+
+A withdrawn key's manifests are refused at the next run. The high-water mark
+stays, so a node cannot be walked back to an older revision by a key change.
+
 ## Verify
 
 Configuration is right when:
@@ -294,6 +371,12 @@ halite-api doctor
 
 all pass, startup logs show no `not recognised` lines, and a deliberate probe
 of the thing you changed behaves as intended.
+
+For a signed tree, `halite-node doctor`'s `state signatures` check names the
+requirement, the number of trusted keys, and each accepted revision with its
+age and its signer. `halite-hub doctor` fails the same check if a
+`_halite/` holds anything but the two files, or if a hide rule hides them.
+`halite-hub tree verify` checks a tree against its manifest file by file.
 
 `doctor` is a separate process from the service. It cannot see what the
 service read when it started. On a node, the agent writes a digest of its
@@ -314,6 +397,10 @@ the API, restart the service.
 | A setting seems ignored on the hub but works on a node | It is read by the other program only | The reference lists `halite-node`, `halite-hub`, `halite-api` per setting |
 | `--root /opt/x` still shows production | You are on a build before `--root` followed all defaults | Upgrade; or pass `--config` too |
 | Two sources disagree | Primary file vs `.d/` vs flag | Later wins: file, then `.d/` in lexical order, then flags |
+| Every state run refused: `serves no signed manifest` | The tree is not signed, a hide rule such as `file_ignore_glob: '_*'` hides `_halite/`, or the hub refuses the environment for a stray file in `_halite/` | Sign it; exempt `_halite/`; `halite-hub doctor` names the stray file |
+| `refusing an older revision` after a good signing run | The signer's clock is behind the last `issued` | Fix the clock and sign again |
+| `issued longer ago than … state_manifest_max_age` | CI stopped signing, or the hub has been unreachable longer than the bound | Sign again; during an outage that is the freeze bound working |
+| `arrived with sha256 … says …; it was not used` | Content was pushed without a new signature | Sign and push. Nothing was applied |
 
 ## Key ideas
 

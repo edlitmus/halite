@@ -164,7 +164,7 @@ SPEC's argument for it is worth repeating because it is the design: "most operat
 
 A check that says "certificate expires in 3 days" and stops has moved the problem rather than solved it: the operator still has to know which command renews it. Every check that can report anything other than a pass carries what to do about it, and \`doctor\_test.go\` fails the build if one does not. That is the whole difference between this and reading the grains.
 
-**Files:** `checks.go`, `disk_openbsd.go`, `disk_other.go`, `disk_statfs.go`, `disk_windows.go`, `doctor.go`, `fips.go`, `renderisolation.go`; with tests.
+**Files:** `checks.go`, `disk_openbsd.go`, `disk_other.go`, `disk_statfs.go`, `disk_windows.go`, `doctor.go`, `fips.go`, `renderisolation.go`, `statesignature.go`; with tests.
 
 **Exports.**
 
@@ -200,6 +200,10 @@ A check that says "certificate expires in 3 days" and stops has moved the proble
 - `Result` (type): Result is one check's answer.
 - `Run` (func): Run performs every check that applies to the role, in order.
 - `Running` (type): Running is what this command knows about the configuration the long-running service started with.
+- `ServedTreeSignatures` (func): ServedTreeSignatures is the hub's half: the environments it refuses to serve because their `_halite/` holds something else, and whether its hide rules hide the manifest from every node.
+- `StateRevision` (type): StateRevision is one environment's accepted manifest.
+- `StateSignatureState` (type): StateSignatureState is what a node knows about signed state content (issue 764, SPEC 25.8) without fetching anything.
+- `StateSignatures` (func): StateSignatures reports a node's requirement, its keys, and the revision it accepted for each environment, with that revision's age against the freeze bound.
 - `Status` (type): Status is what a check found.
 - `Value` (func): Value renders a report for `--out json` or `yaml`, so that a state can read it.
 

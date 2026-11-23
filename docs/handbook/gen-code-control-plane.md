@@ -250,6 +250,55 @@ The signature is ASN.1 DER, which is what \`openssl dgst -verify\` reads — a t
 - `Verify` (func): Verify checks a signature against every trusted key and answers with the name of the one that verified.
 - `WireValues` (func): WireValues puts keyword arguments through the JSON round trip they will take on the way to a node.
 
+## `internal/treesign`
+
+Import path `github.com/edlitmus/halite/internal/treesign`.
+
+Package treesign is issue 764's signed state content: a manifest naming every file of one environment's tree with its digest, signed by a key the hub does not hold, so that a node can refuse a tree a compromised hub altered.
+
+### What it binds, and what it does not
+
+The manifest names each file's path, digest, size and mode, the environment, and when it was issued. A node that requires it answers every read and every listing of that environment from the manifest, so the hub can neither change a file, add one, hide one, nor serve one environment's signed tree as another's. Pillar is outside it: pillar is compiled by the hub per node, and a node never sees its sources, so a signed state that interpolates a pillar value is still steerable by the hub through that value. SPEC 25.1 and the hardening chapter say so.
+
+### The format
+
+\`\_halite/manifest.json\` is JSON of schema \`halite.tree/1\`, strictly parsed: an unknown field or schema is refused, because a field this build does not understand could be one that narrows what the manifest authorises. \`\_halite/manifest.sig\` holds one or more lines, each the base64 of an ASN.1 DER ECDSA signature over
+
+	SHA-256( "halite-tree-v1\x00" || <the exact bytes of manifest.json> )
+
+The signature is over the bytes, not a canonical re-encoding: the node verifies the bytes it received and only then parses them, so there is no canonicaliser to get wrong at either end (the job signature's v1 history, DIVERGENCE 5.330, is the cost of needing one).
+
+The domain is not the job signature's, so neither signature can be replayed as the other, and the keys are separate too (\`state\_signer\_keys\`, not \`job\_signer\_keys\`): a CI signer for trees and an operator key for jobs are different authorities.
+
+### One signer, and room for more
+
+This version accepts a manifest when any line of the signature file verifies against any trusted key. A signer writes one line. More than one line is accepted now, deliberately, so that a later version can require M of N distinct keys by counting the lines that verify, without changing either file's format and without an older node refusing a manifest that carries two signatures.
+
+**Files:** `accept.go`, `treesign.go`; with tests.
+
+**Exports.**
+
+- `CheckEnv` (func): CheckEnv refuses an environment name that cannot be a file name, which is also what the node's file cache refuses.
+- `CheckFresh` (func): CheckFresh is steps 4 to 6 of the proposal's verification: the environment, the expiry and the age, and the high-water mark.
+- `CheckPath` (func): CheckPath is the path rule: relative, slash-separated, no empty, `.` or `..` segment, no backslash, no NUL, and not under `_halite/`.
+- `Digest` (func): Digest is what a signer signs: 32 bytes, so the bridged signer of internal/extsigner and halite-ext-signer-kms sign a manifest unchanged.
+- `Encode` (func): Encode validates a manifest and writes the bytes a signer signs.
+- `Entry` (type): Entry is one file.
+- `FormatMode` (func): FormatMode spells permission bits the way a manifest does.
+- `FormatTime` (func): FormatTime spells a time the way a manifest does.
+- `ID` (func): ID is a manifest's identity: the SHA-256 of its exact bytes, which no signer can choose and which does not depend on git's object ids.
+- `IsReserved` (func): IsReserved reports whether a tree path is under `_halite/`.
+- `Manifest` (type): Manifest is one signed revision of one environment.
+- `Parse` (func): Parse reads a manifest strictly.
+- `Reason` (type): Reason is why a manifest, or a read under one, was refused.
+- `ReasonOf` (func): ReasonOf is the reason an error carries, or "" for one that is not a refusal.
+- `Record` (type): Record is an environment's high-water mark: the newest manifest this node has accepted for it.
+- `Refusal` (type): Refusal is a refusal with its reason, so a caller can count it.
+- `Refuse` (func): Refuse builds one.
+- `SignatureLine` (func): SignatureLine signs a manifest's bytes with a local key.
+- `Store` (type): Store keeps the high-water marks, and the manifest each one names, so that an outage can apply the last accepted revision whole.
+- `Verify` (func): Verify checks the signature file against every trusted key and answers with the name of the key that verified.
+
 ## `internal/eventbus`
 
 Import path `github.com/edlitmus/halite/internal/eventbus`.
@@ -348,7 +397,7 @@ Package fileserver resolves halite:// and salt:// paths against configured roots
 
 Path containment is the security property this package exists to guarantee. Salt's CVE-2020-11652 was a directory traversal in exactly this code path, so every request resolves the path and confirms the result is inside the configured root \*after\* symlink resolution, and the property is covered by a test asserting that no input escapes. SPEC section 13.5.
 
-**Files:** `fetch.go`, `hash.go`, `manifest.go`, `remote.go`, `roots.go`; with tests.
+**Files:** `fetch.go`, `fetch_signed.go`, `hash.go`, `manifest.go`, `remote.go`, `remote_signed.go`, `reserved.go`, `roots.go`, `signed.go`, `treelist.go`; with tests.
 
 **Exports.**
 
@@ -363,9 +412,15 @@ Path containment is the security property this package exists to guarantee. Salt
 - `NewFetcher` (func): NewFetcher wraps a roots file server.
 - `NewRemote` (func): NewRemote builds a hub-backed file server.
 - `NewRoots` (func): NewRoots builds a file server over the given roots.
+- `NewRun` (func): NewRun is one run's pin: the first manifest accepted for an environment in a run is the one every read of that run is answered from, so a tree that changes on the hub mid-run fails the run at the changed file rather than giving it files from two revisions.
+- `ParseSignatureMode` (func): ParseSignatureMode reads the setting.
 - `Remote` (type): Remote is the file server as a node sees it: the hub's tree, cached on disk.
+- `Revision` (type): Revision is one accepted manifest.
 - `Roots` (type): Roots is a roots-backed file server: environment names to an ordered list of directories, searched in order with the first match winning.
+- `SignatureMode` (type): SignatureMode is `require_state_signature`.
 - `StripScheme` (func): StripScheme removes a halite:// or salt:// prefix and any ?env= query.
+- `TreeGuard` (type): TreeGuard is a node's check of signed state content, shared by the hub's tree (Remote) and this node's own roots (Fetcher).
+- `TreeRun` (type): TreeRun is one run's accepted revisions, by environment.
 
 ## `internal/gitfs`
 

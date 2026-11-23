@@ -2,7 +2,7 @@
 
 <!-- abstract: How a tree is laid out and served: the top file that assigns states to nodes, environments, file roots, git and S3 backends, and good tree structure. -->
 <!-- kind: concept -->
-<!-- index: top file; top.sls; environment; base; file_roots; pillar_roots; file server; salt:// URI; halite:// URI; gitfs; s3fs; fileserver_backend; match; compound match; formula; init.sls; tree layout; file.recurse; top_file_merging_strategy; file_ignore_regex -->
+<!-- index: top file; top.sls; environment; base; file_roots; pillar_roots; file server; salt:// URI; halite:// URI; gitfs; s3fs; fileserver_backend; match; compound match; formula; init.sls; tree layout; file.recurse; top_file_merging_strategy; file_ignore_regex; _halite; require_state_signature -->
 
 Two questions remain once you can write states and pillar: *which
 machines get which files?* and *where do the files live, and how do they
@@ -194,6 +194,20 @@ The guarantees you get from the server itself:
   are available. MD5 and SHA-1 are accepted only to check a `source_hash`
   published by an upstream that offers nothing better, and each use logs
   a warning.
+- **`_halite/` is reserved.** It holds a signed tree's `manifest.json` and
+  `manifest.sig`, and nothing else. If it holds anything else, in any root of
+  the environment, the hub refuses the whole environment to every node,
+  listing and files alike, naming the file, and logs the refusal once.
+  `halite-hub doctor` reports it under `state signatures`.
+
+The hash a node checks in step 3 is the one the hub sends with the file.
+That proves the transfer was not damaged. It does not prove that the hub is
+honest, because a hub that has been taken over sends a matching hash with
+whatever it serves. A node that must not trust its hub that far sets
+`require_state_signature`. It then takes the file list and every hash from
+a manifest that a signer off the hub wrote and signed, and refuses what the
+manifest does not name. [Chapter 28](28-hardening.md#signing-the-state-content)
+covers it. **Pillar is not covered**: the hub compiles it.
 
 ### Backends
 
@@ -375,6 +389,9 @@ for Linux, on every change, which is the pattern to copy.
   containment, atomic writes and hash checks; `halite://` and `salt://`
   are the same.
 - Serve the tree from **git** with **signature verification** on.
+- `require_state_signature` makes a node check the tree against a manifest
+  signed off the hub, so the hub cannot change, add or hide a file. Pillar
+  is outside it.
 - Lay the tree out as one directory per concern; keep the top file
   logic-free and secrets in pillar.
 

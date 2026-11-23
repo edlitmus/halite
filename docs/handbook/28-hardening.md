@@ -2,7 +2,7 @@
 
 <!-- abstract: The controls that limit what a compromised part can do: signed jobs, the render sandbox, unprivileged accounts, signed trees, the node's evidence chain, FIPS, and a checklist. -->
 <!-- kind: guide -->
-<!-- index: hardening; security model; threat model; job signing; require_job_signature; job_signer_keys; keys signer create; --sign-key; --sign-extension; render sandbox; evidence; verify-evidence; evidence anchors; hash chain; FIPS; gitfs_verify_signatures; least privilege; file modes; exec_path; clean environment; secrets in logs; redaction; checklist -->
+<!-- index: hardening; security model; threat model; job signing; require_job_signature; job_signer_keys; keys signer create; --sign-key; --sign-extension; render sandbox; evidence; verify-evidence; evidence anchors; hash chain; FIPS; gitfs_verify_signatures; least privilege; file modes; exec_path; clean environment; secrets in logs; redaction; checklist; signed state content; require_state_signature; state_signer_keys; state_manifest_max_age; state_signature_local; halite-hub tree; _halite; tree manifest; high-water mark -->
 
 Part V so far has been the model that keeps strangers out and keeps
 authorized people inside their limits. This chapter is about the controls
@@ -182,6 +182,104 @@ the file server has controls of its own:
 - **A separate permission for `cmd.run`** and the other arbitrary-code
   functions ([chapter 26](26-authorization.md)), because anything that can
   write into the served tree writes code that nodes will fetch and run.
+
+## Signing the state content
+
+Signed git refs are checked **by the hub**. Against a hub that has been
+taken over, that is the attacker's own check, and the hash a node checks
+each file against is one the hub sends with the file. A node that must not
+trust its hub that far sets `require_state_signature`. Then it applies a
+tree only as a signer that the hub holds no key for published it.
+
+How it works:
+
+- A signer off the hub, usually CI, lists an environment's tree into
+  `_halite/manifest.json`. The manifest names every file with its digest,
+  size and mode, the environment, and the time it was issued. The signer
+  signs those exact bytes into `_halite/manifest.sig` with an ECDSA key.
+  The hub serves the two files like any others.
+- On its first read of an environment in a run, the node fetches the two
+  files and checks them against `state_signer_keys`. It refuses the
+  manifest if the signature does not verify, if it was signed for another
+  environment, if it has expired or is older than `state_manifest_max_age`,
+  or if it is older than the newest manifest the node has already accepted
+  for that environment. That last rule stops a rollback. The node records
+  the accepted manifest, synced to disk, before it reads any file.
+- For the rest of the run, the manifest answers every read and every
+  listing. A path that it does not name is not found, even if the hub
+  serves it. A file whose content differs from the manifest is refused,
+  whatever hash the hub sent with it.
+
+On each node, in `node.yaml`, start with `warn`:
+
+```yaml
+require_state_signature: warn        # then true
+state_signer_keys:
+  - 'tree-ci MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE…'
+```
+
+`warn` checks everything and refuses nothing. It logs each refusal that
+`true` would make and counts it in `halite_node_tree_refusals_total`. When
+that count stays at zero over a week of real highstates, set `true`. A value
+the node cannot parse stops it at startup. An empty `state_signer_keys` does
+not: the node starts and refuses every state run, and says why.
+[Chapter 33](33-configuration.md#7-sign-the-state-tree) has the procedure
+for CI and for rotating the key.
+
+The signing commands run off the hub, against the tree as the hub serves it:
+
+```sh
+halite-hub tree manifest "$TREE" --env base --source "commit $COMMIT"
+halite-hub tree sign "$TREE" --sign-key tree-ci.key   # or --sign-extension ./halite-ext-signer-kms
+halite-hub tree verify "$TREE" --env base --keys trusted-tree-keys
+```
+
+Run in the lab, with a node that requires signatures, a hub that changes a
+file after it was signed is refused like this. The line is from the node's
+log, shortened:
+
+```
+signed state content: refused  env=base reason=digest path=app/marker.txt
+  base/app/marker.txt arrived with sha256 886b6748… (the hub published sha256:886b6748…)
+  and revision sha256:8b6e9c73… (issued 2026-11-23T00:03:00.143923216Z, signed by tree-ci)
+  says 2d27fbdf…; it was not used
+```
+
+and a hub that puts back an older, validly signed revision:
+
+```
+signed state content: refused  env=base reason=rollback
+  the manifest for base was issued 2026-11-23T00:03:00.143923216Z and this node has already
+  accepted one issued 2026-11-23T00:03:05.413218759Z; refusing an older revision
+```
+
+What it does not cover, and you should not infer:
+
+- **Pillar.** The hub compiles pillar, per node, and a node never sees its
+  sources. A signed state that puts a pillar value into a command, a file
+  or a package name is still steered by a compromised hub through that
+  value. Treat pillar as untrusted input in a tree you sign.
+- **Which job runs, and when.** That is [signed jobs](#signing-jobs). With
+  only signed content, a compromised hub can still choose when a signed
+  tree is applied, and to which environment.
+- **A freeze, beyond the bound.** A compromised hub can keep serving the
+  newest manifest a node has accepted and withhold the next one. The node
+  cannot tell that from a quiet week. `state_manifest_max_age`, thirty days
+  by default, turns a long freeze into a refusal, so a tree must be signed
+  again at least that often. The same bound means that **a hub outage longer
+  than thirty days stops state runs** on every node that requires
+  signatures. The node logs that the manifest is too old and names the
+  setting, and `halite-node doctor` fails its `state signatures` check. Set
+  `0` where a long outage matters more than a freeze.
+- **Agentless mode.** `halite-hub ssh` builds its tree from what the caller
+  sent, for the reason it does not check job signatures.
+
+Each environment has its own manifest and its own high-water mark, and a
+highstate that reads several environments' top files checks each one.
+`state_signature_local`, on by default, holds the node's own `file_roots` to
+the same rule. Without it, a file server that does not answer at startup, or
+`--local`, would be a way round the requirement. The local tree then needs
+its own signed `_halite/`.
 
 ## The evidence chain
 
@@ -376,6 +474,7 @@ Before a deployment is trusted with production:
 - [ ] Hub and API run as unprivileged accounts; the hub's `state_dir` is not under a file root.
 - [ ] `require_job_signature` is set for `arbitrary_code` and `state` on sensitive nodes, with signing keys off the hub.
 - [ ] Extensions are signed and pinned ([chapter 29](29-extensions.md)).
+- [ ] `require_state_signature: true` on sensitive nodes, with the tree signed in CI by a key off the hub, re-signed well inside `state_manifest_max_age`, and an alert on `halite_node_tree_revision_issued_timestamp_seconds`.
 
 **Observation**
 - [ ] `halite-hub event listen --tag 'halite/key/**,halite/reactor/**,halite/auth*'` (or an event returner) feeds your alerting.
@@ -394,6 +493,9 @@ Before a deployment is trusted with production:
 - Untrusted text is parsed in an **unprivileged sandbox**; the hub's
   template environment is deliberately small.
 - **Sign the tree** (gitfs) and keep `cmd.run` a separate permission.
+- **Signed state content** makes a node refuse a tree its hub altered,
+  added to or rolled back. The signer is off the hub, the keys are the
+  node's, and **pillar is outside it**.
 - The **evidence chain** is a node-local record anchored at the hub:
   `verify-evidence`, then `--anchors`.
 - Secrets are **masked at the sink**, kept out of command lines and
