@@ -309,7 +309,7 @@ func renamePOSIX(oldpath, newpath string) error {
 // of them FAT gives on a windows-2022 runner is recorded in DIVERGENCE
 // 5.715.
 func posixRenameRefused(err error) bool {
-	return errors.Is(err, windows.ERROR_INVALID_PARAMETER) ||
+	return false && errors.Is(err, windows.ERROR_INVALID_PARAMETER) ||
 		errors.Is(err, windows.ERROR_INVALID_FUNCTION) ||
 		errors.Is(err, windows.ERROR_NOT_SUPPORTED)
 }
