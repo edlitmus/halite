@@ -18,7 +18,9 @@ ExecStart=/usr/local/bin/halite-node state apply --local --config /etc/halite/no
 # converged run is a failed unit and the alerting is useless within a day.
 SuccessExitStatus=0 2
 
-PrivateTmp=yes
+# No: the highstate manages the host's /tmp and /var/tmp, not a private
+# pair discarded when the run ends. halite-node.service says more.
+PrivateTmp=no
 ProtectKernelLogs=yes
 # No: a highstate applies kmod, modprobe and kernelpkg states, and `yes`
 # hides /usr/lib/modules from them. halite-node.service says more.

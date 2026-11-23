@@ -48712,6 +48712,52 @@ app. OIDC through a browser, and from any provider but dex. LDAP with
 on any Linux but Rocky 9. arm64.
 
 
+### 5.707 The node's unit gave it a private /tmp, and a managed file there vanished at each restart (2026-11-23)
+
+Found by 5.706's drift report. `halite-node.service` and
+`halite-highstate.service` set `PrivateTmp=yes`, and that gives the unit its own
+`/tmp` and `/var/tmp`, which systemd discards with the unit. A node manages the
+host, so a state that manages a file under either was managing a namespace that
+nobody else could see.
+
+**Seen.** On `alma8` (AlmaLinux 8.10, systemd 239), built from `main` at
+`33dc8e21`, the playground state managed `/var/tmp/halite-lab/hello`. `halite-hub
+run … state.apply` said `The directory /var/tmp/halite-lab was created` and
+`/var/tmp/halite-lab/hello was created`. In the same minute, `ls /var/tmp/halite-lab`
+from a root shell on the node said `No such file or directory`. After `systemctl
+restart halite-node`, `state.apply --test` said both `would be created` again.
+In chapter 24's mailed drift report, `alma8` and `opensuse16` (openSUSE Leap
+16.0, systemd 257) were listed as drifted on every tick after the reboot and
+after the upgrade, although both had been converged before. The nodes on Alpine
+and on sysvinit run under no unit and never showed it.
+
+5.482 met the same setting in passing ("a file a job writes there is not
+visible from a shell on the host, which cost a few minutes here and is not a
+defect") and stopped there. That was an exculpatory conclusion. Whether a file
+the node manages exists on the host is the whole of what a state says, so it is
+a defect, of the same shape as 5.427's `ProtectKernelModules`: a sandbox setting
+that silently makes the agent manage something other than the machine.
+
+**The change.** Both units now say `PrivateTmp=no`, with the reason beside the
+setting. The hub and the API manage nothing on the host and keep `yes`.
+`TestTheNodeUnitsShareTheHostsTemporaryDirectories` in `internal/config` fails
+for any unit that runs `halite-node` with `PrivateTmp` set to `yes`, `true`,
+`on`, `1` or `disconnected`.
+
+**Demonstrated.** With `PrivateTmp=yes` put back in `halite-node.service`, the
+test failed and named the file. On `alma8`, with the unit edited to `no`, the
+apply created the file, `cat` on the host read `managed by the lab hub`, and after
+a restart `--test` said `already exists` and `is already in the requested state`.
+The committed `halite-node.service` was then copied verbatim to `opensuse16`.
+`systemctl show -p PrivateTmp` said `no`, the file was visible from the host and
+survived a restart, and `kmod.check_available mod=loop` still answered `True`.
+From the next tick, the mailed report no longer listed either node.
+
+**Not covered.** `halite-highstate.service` was changed but not run, and the
+FIPS drop-in was not run with the new unit. A node already installed keeps the
+old unit until it is reinstalled: an upgrade that replaces the binary alone,
+as chapter 36's state does, leaves `PrivateTmp=yes` in place.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -34,7 +34,13 @@ RestartPreventExitStatus=1
 User=root
 ProtectHome=no
 ProtectSystem=no
-PrivateTmp=yes
+# No: a state that manages a file under /tmp or /var/tmp manages the host's,
+# and `yes` gave the agent a private pair that systemd throws away with the
+# unit. A file.managed there reported itself created, was invisible from a
+# shell on the same host, and was gone at the agent's next restart -- so the
+# next rehearsal reported it missing again, and the drift report mailed the
+# same false drift every morning after every upgrade (DIVERGENCE 5.707).
+PrivateTmp=no
 NoNewPrivileges=no
 # Kernel tunables are managed by the sysctl module, so /proc/sys stays
 # writable; the rest of the kernel surface does not.

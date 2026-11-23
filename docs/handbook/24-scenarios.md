@@ -417,7 +417,9 @@ goal; a non-empty one lists the node, the state and what it would change.
 > host on the same provider's network, the line above ran every minute for
 > 48 minutes against six nodes. It sent 48 mails to `ops@` on the other host,
 > each with the report. Port 2525, because the provider blocks 25 between
-> instances. **Not run:** `halite-api`, and a FreeBSD host that is not a jail.
+> instances. The report also showed nodes that were converged, because the
+> node's systemd unit gave it a private `/var/tmp`. That is fixed (DIVERGENCE
+> 5.707). **Not run:** `halite-api`, and a FreeBSD host that is not a jail.
 
 ## Designing your own
 

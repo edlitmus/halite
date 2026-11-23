@@ -189,7 +189,8 @@ A node's binary is just a file. How you replace it depends on how you ship it:
   waits for each node's return, not for its deferred restart**, so the five
   jobs took one second and the restarts all fell in the next minute and a half.
   To space restarts in waves, give `--batch-wait` more than 90 seconds (not
-  run). **Not
+  run). Replacing the binary does not replace the unit file, so a change to
+  the shipped unit (such as DIVERGENCE 5.707's) needs its own state. **Not
   run:** the hub and the API by a state, and a rollback by a state.
 - **By hand**, for a few nodes: the same three commands as the hub, with
   `halite-node` and `halite_node`.
