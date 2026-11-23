@@ -48533,6 +48533,7 @@ changed both sides. It now spells `halite-tree-v1\x00` out, and fails.
 - **The traced-job trap** of the proposal's 2.8 (a traced job naming
   another environment falling back to local roots) is still a reading,
   not a run. Verification does not depend on it: both branches verify.
+
 ### 5.706 A documentation change under docs/ ran every CI leg (2026-11-22)
 
 ci.yml's *what changed* job runs two legs, `policy` and the Linux `test`,
@@ -48560,6 +48561,188 @@ narrow.
 **Not verified:** this change's own CI run is a workflow change, so it runs
 every leg; the first documentation-only PR after it is the check that it
 skips them.
+### 5.707 An orchestration runs on nodes that require signed jobs, from a plan signed off the hub (2026-11-22)
+
+Issue 765, built from the reviewed proposal in
+`docs/proposals/765-signed-orchestration.md` (PR 801), design B, with the
+maintainer's answers to its section 10. 5.169 is why this is not a key on
+the hub: a signer has to choose a job's identifier and expiry before it
+signs, and an orchestration step's job was made by the hub mid-run. A
+plan makes them before the run.
+
+**The design.** `halite-hub orch plan` compiles the orchestration off the
+hub, from the operator's checkout (`--tree`), with the compiler the hub
+uses (`hub.CompilePlanned`). Every fleet step (`salt.state`, `salt.sls`,
+`salt.highstate`, `salt.function`) becomes the job the hub's step module
+would send, with an identifier and an expiry the plan tool mints, and is
+signed with `--sign-key` or `--sign-extension`, as `halite-hub run`
+signs. The plan, schema `halite.orch-plan/1` (`internal/orchplan`), holds
+each job's signed field set and nothing else. `orch run --plan` and
+`orch resume --plan` send it to the hub as the text of the file. The hub
+compiles the orchestration again, the same way, and compares every step
+with the plan before anything is dispatched. At each step it sends the
+plan's signed job through the ordinary signed-submission path. **The node
+is unchanged** and does not know plans exist.
+
+**One function for "what job does this step make".** It was spread
+through `applyState`, `callFunction` and `submission`, interleaved with
+dispatch. It is `stepJob` now (`internal/hub/orch_steps.go`), extracted in
+its own commit with the hub's orchestration tests unchanged, and the step
+modules, the hub's pre-flight and the plan tool all call it. The keyword
+arguments go through `jobsign.WireValues` before signing, so a step's
+`pillar:` mapping, an ordered map on the hub, signs as the node decodes
+it.
+
+**The maintainer's decisions**, and what was built for each:
+
+1. **B, a plan of pre-signed jobs.** A' (a plan-checking signing service)
+   is deferred until real use shows it is needed. So a plan's window
+   bounds the orchestration: every step expires at `created + --ttl`, and
+   the whole run, every batch and wait included, must finish inside it.
+   `--ttl` defaults to an hour, the default `job_signature_max_ttl`, and a
+   `--ttl` over `--max-ttl` (also an hour by default) is refused. The
+   refusal, the usage text and both handbook chapters say what to do
+   instead: split a long orchestration (a database initialisation, a data
+   migration) into plans signed one after another, or raise
+   `job_signature_max_ttl` on the nodes it runs on and pass the same value
+   as `--max-ttl`, which lengthens the life of every signed job those
+   nodes accept, not only this one's.
+2. Answered by 1.
+3. **A plan authorises a set of jobs, not their order.** SPEC 19.1 and
+   25.6 and the orchestration and hardening chapters say so, with the
+   advice to make dependent actions one step. The same holds for batch,
+   subset, safe limit and `tolerate_failures`, which an honest hub honours
+   and nothing makes a compromised one; the hardening chapter warns that
+   `subset: 1` is not a signed canary.
+4. **`run_parallel` stays outside the signature.** A plan's job has no
+   field for it (`TestAPlanJobIsTheSignedFieldSetAndNothingElse` holds the
+   job to `jobsign.Payload`'s field set), a hub that sets it on a signed
+   step changes nothing the signature covers
+   (`TestRunParallelIsOutsideAPlansSignature`: the step's `run_parallel:
+   true` was added on the hub after the plan was signed without it, the
+   run was accepted, and the job reached the node signed, verifying, with
+   the flag), and a node ignores the flag on a signed job, as it already
+   did (`schedulingOf`, held by `TestAJobsSchedulingFollowsTheFunction...`'s
+   "--parallel on a signed job is ignored"). No v3 encoding.
+5. **A planned orchestration may not read hub configuration.** Both
+   compiles bind `opts` and `__opts__` to an undefined value whose reason
+   says so (`render.Options.ConfigRefused`), so a template that reads one
+   fails under strict undefined at plan time, and the hub's compile of a
+   planned run does not read its own configuration either. There is no
+   `--hub-config`. The planned compile also has no nodegroups, and seeds
+   the template random source with a fixed string instead of the run's
+   job id, which the plan tool cannot know, so the two compiles have the
+   same inputs except the tree.
+6. **The interrupted-run record is issue 802**, on another branch, and is
+   not fixed here. A resume always needs a new plan: `orch plan
+   --resume-of <jid> --from <step>` signs the step named and every fleet
+   step after it, with new identifiers and a new expiry. The hub carries
+   forward the steps before it from its record and needs no signature for
+   them. A step before `--from` that the record does not hold as finished
+   runs again, so it needs signing too; the pre-flight refuses the run
+   naming it. Today a run stopped by a hub restart records no steps, so a
+   resume of one is refused naming the first step, which is loud and
+   correct, and the operator decides whether to sign the earlier steps
+   again (`TestAResumeOfARunThatRecordedNoStepsIsRefusedNamingThem`).
+   When 802 records steps as they finish, the same resume plan will be
+   accepted with nothing else changed here.
+7. **Bound to issue 764's signed tree.** When the checkout carries
+   `_halite/manifest.json`, the plan records its `treesign.ID` as
+   `tree_revision`, after checking that the checkout is what the manifest
+   describes in both directions; a checkout that has moved on from its
+   manifest is refused rather than recorded, because the id would then
+   claim a binding that is not there. The signature on the manifest is not
+   checked by the plan tool (`halite-hub tree verify` does that). A hub
+   given a plan with a revision refuses it unless it serves that revision,
+   and refuses it if it serves none. 5.705 had merged when this was
+   built, so the id is computed by its code, not a copy of it.
+8. Moot.
+9. The correction of 5.169's live-signer sentence is 5.169.1, which PR 801
+   added; it is not duplicated here.
+
+**The pre-flight**, `Server.checkPlan`, refuses the whole run before any
+step for: a different SLS list, environment, `test`, pillar override or
+resume; an expired plan; a different tree revision; a hub step (runner,
+wheel, wait) added, removed or renamed; a fleet step the plan does not
+sign, or a plan entry for a step this run does not send; any difference in
+a step's target, target kind, function, arguments, keyword arguments or
+environment, named by field, and then the canonical bytes as a whole; and
+a signed job this hub has already sent. The whole run rather than the one
+step, because a step refused mid-run sets off the `onfail` steps after it.
+A refusal is logged at warn with `jid`, `step`, `field` and
+`plan_digest`, and counted as `halite_orch_runs_total{result="plan_refused"}`.
+The step's job is compared again at the moment it is sent
+(`orchRunner.signedStep`).
+
+**The pre-flight is not the control.** A hub that has been taken over
+skips it, and the nodes refuse what it sends that nobody signed. That was
+watched, not assumed: with the pre-flight and the dispatch-time check both
+disabled, the binary test's changed-target step reached the real node,
+which refused it: "this node requires a signature for state.apply (every
+job): the signature does not verify against any of this node's 1 trusted
+signer key(s)".
+
+**Refused at plan time** rather than signed and refused by every node: a
+nodegroup target, alone or inside a compound, which a node cannot evaluate
+about itself; `retry` on a fleet step, whose second attempt would send the
+same signed job again; and two fleet steps with one state ID. A test plan
+(`--test`) signs every state step with `test` inside the signature and no
+function step, since a test run dispatches none; it runs only under
+`--test`, and a real plan does not run under it.
+
+**What is recorded.** The run keeps `plan_digest`, the SHA-256 of the
+plan's bytes, and each step that sent its plan's job is `signed: true` in
+the record, `orch show` and the step event. Each signed dispatch is
+logged at info.
+
+**Tests.** `internal/hub/orch_plan_test.go` signs plans with `NewPlan`, the
+code `orch plan` calls, and runs them on the hub's real compiler and
+dispatcher with a node stand-in that verifies each signature from the
+message as a node does. `TestThePlanToolSignsTheJobTheHubWouldSendForEveryStep`
+is the two-paths test: for this file's deployment, the handbook's rolling
+update and a highstate and an sls step, every job the hub dispatched
+unsigned is the job the plan signs. `cmd/halite-node`'s
+`TestAPlannedOrchestrationRunsOnANodeThatRequiresSignatures` builds both
+binaries; a node with `require_job_signature: true` refuses the
+orchestration unsigned, runs it from a plan, and the hub refuses a plan
+whose step's target changed on the hub, an expired plan and a resume
+given the original plan, each with no job reaching the node; a resume on a
+fresh plan then sends only the failed step's job. Every check was broken
+on purpose, one at a time, and a test failed each time: the SLS, env,
+test, pillar, resume, expiry, tree-revision, hub-step, missing-step,
+extra-step, field, spent-id, dispatch-time, configuration, nodegroup,
+retry, `WireValues`, send-signed, `--ttl` cap, checkout-digest, plan
+one-window and unknown-field checks, and the binary test with the
+pre-flight removed, and again with the dispatch-time check removed too.
+Two checks have no test: the refusal of two fleet steps with one state
+ID, which is defensive (no orchestration was tried that compiles to
+that), and the comparison of the canonical bytes as a whole after the
+per-field comparison, which no field this build signs can reach.
+
+**A defect found, not fixed here.** A node does not apply a state job's
+`pillar` keyword argument: `runStateJob` compiles the node's own pillar
+and nothing reads `Kwarg["pillar"]`. So a `salt.state` step's `pillar:`,
+which the orchestration chapter documents as "pillar overrides for this
+step", reached the node and changed nothing. Seen in the binary test with
+a signed step, whose marker read `MISSING` where the step's pillar named
+the version; the test now takes the version from the SLS name instead.
+Not run with an unsigned job, though the signature is checked before and
+apart from the arguments. It is its own change.
+
+**Not verified.** Nothing here ran on a lab machine, on FreeBSD as
+FreeBSD (the dev host's shell is a Linux compatibility layer), through a
+relay, or with a KMS signer: `--sign-extension` signs a plan through the
+same bridge `run` uses, one process for every step, and no test drives a
+plan through an extension. Whether an hour is enough for an orchestration
+this estate would run is unmeasured, and the estate runs none. Whether
+an off-hub compile matches the hub's for a gitfs tree, whose
+materialisation may differ from a checkout, is unknown; the pre-flight
+refuses any difference, so a mismatch is loud. A hub older than this
+refuses `--plan`, because a runner's keyword arguments are bound strictly
+(`signature.Bind`, "is not a parameter of this function"); read, not run
+against an old hub.
+
+
 
 ### 5.707 A resume after a hub crash ran the steps that had already run (2026-11-22)
 

@@ -752,7 +752,7 @@ themselves, under whatever you call that job.
 | `halite_state_changes_total` | counter | — | States that changed something rather than converging. |
 | `halite_state_run_duration_seconds` | histogram | — | Time a node spent on a state run end to end, out of its return. Compiling the tree is inside it. |
 | `halite_state_compile_duration_seconds` | histogram | — | On the hub, time to compile an orchestration. |
-| `halite_orch_runs_total` | counter | `result` | Orchestrations, by `complete`, `failed`, or `compile_failed`. |
+| `halite_orch_runs_total` | counter | `result` | Orchestrations, by `complete`, `failed`, `compile_failed`, or `plan_refused` (a signed plan the hub's compile disagreed with, refused before any step). |
 | `halite_pillar_compile_duration_seconds` | histogram | — | Time to compile one node's pillar. |
 | `halite_pillar_failures_total` | counter | — | Compilations that failed, so a node got no pillar. |
 | `halite_pillar_ext_failures_total` | counter | `source` | External pillar sources that failed, by the name the configuration gave them, counted whether the failure stopped the compilation or was ignored: an ignored one is still a node whose pillar is missing what that source held. Before DIVERGENCE 5.196 a failure with metrics on panicked the pillar request instead of counting, and the node got no pillar at all. |

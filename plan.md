@@ -1028,7 +1028,8 @@ other bullets stand as they were last verified.
   5.128): `internal/jobsign`, `halite-hub run --sign-key`, and
   `require_job_signature` by function class, with a bridged `signer`
   extension since (5.170). Nothing has signed through a hardware token or
-  a KMS, and orchestration steps are not signed (§7 item 9).
+  a KMS. Orchestration steps are signed as a plan made off the hub since
+  5.707 (issue 765); a plan has not been signed through a KMS either.
 - **Signed state trees** are named in the 25.1 threat model and in phase
   6's contents. Do not mistake gitfs ref verification for it: that
   verifies a ref tip, not a tree manifest.
@@ -2252,10 +2253,10 @@ down to the machine or the link each one still wants.
 
 **Still open from the blocks below, unchanged.** Item 9's remainder is a
 **PIV or YubiKey signer** behind the bridge `internal/extsigner`
-already provides — the AWS KMS one is built and demonstrated — and the
-**design question orchestration signing waits on**: a live call per
-step out of `orchRunner.dispatchAndWait`, or a pre-approved plan, which
-is a decision before it is a test. Item 14's remainder is
+already provides — the AWS KMS one is built and demonstrated. The
+orchestration signing question was decided for a pre-approved plan and
+is built (5.707, issue 765); a plan-checking signing service, which would
+lift the plan's expiry bound, waits for real use to show it is needed. Item 14's remainder is
 `subscription_manager`, which wants a RHEL subscription rather than a
 host. Item 19b's is launchd's `user/` domain, and agents whose plist is
 on disk but not loaded. Items 10 to 13 stay demoted, for the reasons
@@ -2683,16 +2684,15 @@ unbuilt item here is number 7.
    halite-hub run '*' state.apply --sign-extension ./halite-ext-signer-kms
    ```
 
-   **Action for orchestration signing**, once the signer above exists:
-   wire `orchRunner.dispatchAndWait` (`internal/hub/orch_steps.go`) to
-   call it per step, immediately before `Server.DispatchAs`, instead of
-   building an unsigned `Submission` — the design question this needs
-   answered first (a live call per step vs. a pre-approved plan) is
-   still open, so this is a design task before it is a testing one.
-   **Example of the operator-visible surface, once decided:**
+   **Orchestration signing is built** as a plan of pre-signed jobs
+   (DIVERGENCE 5.707, issue 765), not as a call per step, because a
+   signer the hub can call signs whatever the hub sends it. What is left
+   is driving a plan through the KMS signer on a lab node:
 
    ```sh
-   halite-hub orch run my-orchestration.deploy --sign-extension ./halite-ext-signer-kms
+   halite-hub orch plan my-orchestration.deploy --tree ~/estate/state \
+       --sign-extension ./halite-ext-signer-kms --out deploy.plan.json
+   halite-hub orch run my-orchestration.deploy --plan deploy.plan.json
    ```
 
 **Demoted, with the reason**
