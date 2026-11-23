@@ -2006,6 +2006,38 @@ Refuse a job without a valid detached operator signature: true, false, or a list
 
 SPEC 25.6's detached signing, for estates where a compromised hub must not equal a compromised fleet: the signature is made by a key the hub does not hold, so a hub that has been taken over can dispatch nothing this node will run. `true` requires one on every job and `false` on none; a list requires one per function class — `arbitrary_code` (the functions a wildcard never grants, such as `cmd.run`), `state` (applying a state, as opposed to rendering it), and `mutating` (anything that changes the machine). SPEC 25.6 recommends `[arbitrary_code, state]`, which leaves read-only functions unsigned so that a node can still be asked what is wrong with it without a signing step. A signed job must also be targeted by something this node can evaluate about itself, so a nodegroup target is refused: the node has no way to know whether it is in one, and this is the control whose whole purpose is to not take the hub's word for anything.
 
+### `require_state_signature`
+
+*`halite-node` · `false` · SPEC section 25.8*
+
+Refuse a state tree without a valid signed manifest: false, warn, or true.
+
+SPEC 25.8's signed state content, the tree's half of what `require_job_signature` does for jobs: a signer off the hub lists an environment's tree into `_halite/manifest.json` and signs it with a key the hub does not hold (`halite-hub tree sign`), and a node that requires it applies only files that manifest names, with the digests it names, for the environment it names, never older than the newest it has already accepted. `true` refuses a state run, and any read of the tree, without a valid manifest, naming the environment and the reason. `warn` checks everything the same way, logs and counts in `halite_node_tree_refusals_total` every refusal `true` would have made, and goes on as `false` does: it is how to roll the requirement out. A value that is none of the three stops the node at startup. **Pillar is outside it**: the hub compiles pillar, so a signed state that puts a pillar value into a command or a file is still steered by the hub through that value. Treat pillar as untrusted input in a tree you sign.
+
+### `state_manifest_max_age`
+
+*`halite-node` · `720h` · SPEC section 25.8*
+
+Refuse a signed manifest issued longer ago than this; 0 turns the bound off.
+
+A freeze bound. A compromised hub can keep serving the newest manifest a node has accepted and withhold its successor, and without a bound the node cannot tell that from a quiet month. Thirty days by default, so a tree must be re-signed at least that often: a CI job that signs nightly with a new `issued` has weeks of slack. The cost is the other side of the same rule. **A hub outage longer than this stops state runs on every node that requires signatures**: the node applies the last revision it accepted while that revision is young enough, and then refuses it like any other, logging that the manifest was issued too long ago and naming this setting, while `halite-node doctor`'s `state signatures` check reports the accepted revision's age as a failure. `0` turns the bound off, for an estate where a long outage matters more than a freeze; a manifest's own `expires` is honoured either way. A minute of clock difference is tolerated. A value that is not a duration stops the node at startup.
+
+### `state_signature_local`
+
+*`halite-node` · `true` · SPEC section 25.8*
+
+Hold this node's own file_roots to require_state_signature as well as the hub's tree.
+
+Whether the requirement also covers this node's own `file_roots`: `--local`, and the tree a node falls back to when its hub does not serve files at startup. On by default, a maintainer decision: without it an unreachable file server at startup would be a way round the requirement. The local roots then need their own signed `_halite/` directory, or the node applies nothing from them. Root on the node can turn this off, so it is about one rule everywhere rather than about protecting a node from its own administrator.
+
+### `state_signer_keys`
+
+*`halite-node` · no default · SPEC section 25.8*
+
+Public keys whose signed tree manifests this node accepts, as `<name> <base64>`.
+
+The public keys whose signed manifests this node accepts, in the shape `job_signer_keys` takes and `halite-hub keys signer create` prints. Separate from `job_signer_keys` deliberately: a CI job that signs the tree and an operator who signs jobs are different authorities, and the signatures are in different domains so that neither can be replayed as the other. Every key is tried against every signature line, so the signature does not say which key checks it. A line that will not parse stops the node at startup. An empty list with the requirement on does not: the node starts, answers exec jobs that read no tree, and refuses every state run saying that this list is empty, because where the node's configuration is itself managed by the tree a fatal setting could be repaired only at the console. One valid signature from one trusted key is enough in this version; the signature file already takes several lines, so a later version can require two signers without changing the format.
+
 ## Logging and diagnostics
 
 What each program says about itself.
@@ -2292,6 +2324,7 @@ Every setting, and which programs read it.
 | `render_sandbox_user` | `halite-node` | — | The tree: states and pillar |
 | `renderer` | `halite-node`, `halite-hub` | `jinja|yaml` | Rendering and templates |
 | `require_job_signature` | `halite-node` | `false` | Node execution controls |
+| `require_state_signature` | `halite-node` | `false` | Node execution controls |
 | `returner` | `halite-node` | `local` | Returners |
 | `returner_file` | `halite-node`, `halite-hub` | — | Returners |
 | `returner_file_keep` | `halite-node`, `halite-hub` | `5` | Returners |
@@ -2346,6 +2379,9 @@ Every setting, and which programs read it.
 | `state_allowlist` | `halite-node`, `halite-hub` | — | State runs |
 | `state_denylist` | `halite-node`, `halite-hub` | — | State runs |
 | `state_dir` | all three programs | `<state dir>` | Filesystem layout |
+| `state_manifest_max_age` | `halite-node` | `720h` | Node execution controls |
+| `state_signature_local` | `halite-node` | `true` | Node execution controls |
+| `state_signer_keys` | `halite-node` | — | Node execution controls |
 | `template_lstrip_blocks` | `halite-node`, `halite-hub` | `false` | Rendering and templates |
 | `template_trim_blocks` | `halite-node`, `halite-hub` | `false` | Rendering and templates |
 | `test` | `halite-node`, `halite-hub` | `false` | State runs |

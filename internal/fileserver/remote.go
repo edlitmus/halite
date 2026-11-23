@@ -55,6 +55,15 @@ type Remote struct {
 	// outside a run gets.
 	ctx context.Context
 
+	// Guard checks signed state content (issue 764). Nil, or a guard
+	// whose mode is off, is a node without the feature: nothing under
+	// `_halite/` is asked for. Shared by every copy, by pointer.
+	Guard *TreeGuard
+	// run pins the revision each environment is read at for one run. Set
+	// by ForRun; nil uses the guard's process-wide pin, which is right for
+	// a one-shot command and is why the agent begins a run per job.
+	run *TreeRun
+
 	// cache is shared between the copies WithContext makes, by pointer,
 	// so that a per-run copy does not re-hash a file the last one
 	// verified -- and so that copying a Remote does not copy a mutex.
@@ -136,6 +145,17 @@ func (r *Remote) WithContext(ctx context.Context) *Remote {
 	return &copied
 }
 
+// ForRun returns a Remote that reads each environment at one signed
+// revision for as long as it is used. A copy, for WithContext's reason.
+func (r *Remote) ForRun() *Remote {
+	if r == nil {
+		return nil
+	}
+	copied := *r
+	copied.run = NewRun()
+	return &copied
+}
+
 func (r *Remote) context() context.Context {
 	if r.ctx != nil {
 		return r.ctx
@@ -181,9 +201,15 @@ func (r *Remote) Source(env, sls string) ([]byte, string, error) {
 	}
 	var tried []string
 	for _, candidate := range slsCandidates(sls) {
-		body, err := r.Read(env, candidate)
+		body, err := r.readCandidate(env, candidate)
 		if err == nil {
 			return body, "halite://" + env + "/" + candidate, nil
+		}
+		// A refusal of signed content is the answer, not a reason to try
+		// the next name: "init.sls arrived with the wrong digest" must
+		// not become "no such state".
+		if signedRefusal(err) {
+			return nil, "", err
 		}
 		tried = append(tried, candidate)
 	}
@@ -203,9 +229,12 @@ type remoteTemplates struct {
 
 func (t remoteTemplates) Load(name string) (string, string, error) {
 	for _, candidate := range templateCandidates(name) {
-		body, err := t.remote.Read(t.env, candidate)
+		body, err := t.remote.readCandidate(t.env, candidate)
 		if err == nil {
 			return string(body), "halite://" + t.env + "/" + candidate, nil
+		}
+		if signedRefusal(err) {
+			return "", "", err
 		}
 	}
 	return "", "", fmt.Errorf("template %q is not served from the %q environment", name, t.env)
@@ -220,6 +249,23 @@ func (r *Remote) Read(env, rel string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+// readCandidate is Read for one of several names a search tries, where a
+// miss is expected: `foo.sls` before `foo/init.sls`. Under the requirement
+// a name the manifest does not hold is not found without a word, because
+// counting every such miss as a refusal would count a dozen a highstate.
+func (r *Remote) readCandidate(env, rel string) ([]byte, error) {
+	if r.Guard.Active() && r.Guard.Mode == SignatureRequired {
+		rev, err := r.signedRevision(env)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := rev.Manifest.Lookup(cleanRel(rel)); !ok {
+			return nil, notInRevision(env, cleanRel(rel), rev)
+		}
+	}
+	return r.Read(env, rel)
+}
+
 // Fetch implements exec.FileFetcher: it returns a local path to the
 // file, which is the cached copy.
 func (r *Remote) Fetch(env, uri string) (string, error) {
@@ -232,6 +278,18 @@ func (r *Remote) Hash(env, uri string) (string, string, error) {
 	path, err := r.Fetch(env, uri)
 	if err != nil {
 		return "", "", err
+	}
+	if r.Guard.Active() {
+		target := EnvFromURI(uri, env)
+		rev, err := r.signedRevision(target)
+		if err != nil {
+			return "", "", err
+		}
+		if rev != nil {
+			if e, ok := rev.Manifest.Lookup(cleanRel(StripScheme(uri))); ok {
+				return rev.Manifest.HashType, e.Hash, nil
+			}
+		}
 	}
 	r.cache.mu.Lock()
 	digest, ok := r.cache.by[path]
@@ -261,10 +319,23 @@ func (r *Remote) Exists(env, uri string) bool {
 // whole tree on every deploy is what makes Salt's file server the
 // bottleneck it is.
 func (r *Remote) cacheFile(env, rel string) (string, error) {
-	rel = strings.TrimPrefix(filepath.ToSlash(rel), "/")
+	rel = cleanRel(rel)
 	if rel == "" {
 		return "", fmt.Errorf("no path was asked for")
 	}
+	if r.Guard.Active() {
+		return r.cacheSigned(env, rel)
+	}
+	return r.cacheUnsigned(env, rel)
+}
+
+func cleanRel(rel string) string {
+	return strings.TrimPrefix(filepath.ToSlash(rel), "/")
+}
+
+// cacheUnsigned is the file client as it is without signed state content:
+// trusting the hub's digest for each file.
+func (r *Remote) cacheUnsigned(env, rel string) (string, error) {
 	path, err := r.cachePath(env, rel)
 	if err != nil {
 		return "", err
@@ -364,8 +435,30 @@ func (r *Remote) cachePath(env, rel string) (string, error) {
 	return clean, nil
 }
 
-// ManifestFor reads the hub's listing for a subtree.
+// ManifestFor reads the listing for a subtree: the signed manifest's when
+// the node requires one, the hub's otherwise.
 func (r *Remote) ManifestFor(env, prefix string) (*Manifest, error) {
+	if r.Guard.Active() {
+		rev, err := r.signedRevision(env)
+		if err != nil {
+			return nil, err
+		}
+		if rev != nil {
+			return listing(env, prefix, rev), nil
+		}
+	}
+	return r.hubManifest(env, prefix)
+}
+
+// RefreshListing keeps the saved copy of the hub's own listing current,
+// whatever the node requires: it is what an unsigned outage lays out from,
+// and asking for it must not pin a signed revision to the agent itself.
+func (r *Remote) RefreshListing(env string) {
+	_, _ = r.hubManifest(env, "")
+}
+
+// hubManifest reads the hub's listing for a subtree.
+func (r *Remote) hubManifest(env, prefix string) (*Manifest, error) {
 	if r.Unreachable != nil && r.holdingOff() {
 		return r.savedManifest(env, prefix, errors.New("the hub cannot be reached"))
 	}
