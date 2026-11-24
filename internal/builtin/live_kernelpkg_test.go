@@ -356,7 +356,7 @@ func kpAptEnv() []string {
 // runner -- unattended-upgrades, the image's apt-daily -- into a minute's
 // wait and then a failure that names the lock.
 func kpAptOptions(sub string) []string {
-	return []string{"apt-get", sub, "-y", "-q", "-o", "DPkg::Lock::Timeout=60"}
+	return []string{"apt-get", sub, "-y", "-q", "-o", "DPkg::Lock::Timeout=60", "-o", "Acquire::http::Dl-Limit=100"}
 }
 
 // kpAptInstall installs the test's packages in two bounded steps, the
