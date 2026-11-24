@@ -415,7 +415,10 @@ func kpAptDownload(t *testing.T, pkgs []string) {
 		total += f.size
 	}
 	if len(files) == 0 {
-		t.Logf("apt has everything %v needs in its cache", pkgs)
+		// Said with apt's own words, because "nothing to fetch" is a
+		// claim this test then builds on: the install after it is
+		// bounded as an install, not as a download.
+		t.Logf("apt lists nothing to fetch for %v; it printed:\n%s", pkgs, uris)
 		return
 	}
 	t.Logf("apt will fetch %d files, %d bytes, for %v from %s", len(files), total, pkgs, files[0].host)
@@ -465,13 +468,35 @@ func aptURIs(out string) []aptURI {
 		if err != nil {
 			continue
 		}
-		host := strings.Trim(fields[0], "'")
-		if _, after, ok := strings.Cut(host, "://"); ok {
-			host, _, _ = strings.Cut(after, "/")
-		}
-		files = append(files, aptURI{host: host, file: fields[1], size: n})
+		files = append(files, aptURI{host: aptMirrorOf(strings.Trim(fields[0], "'")), file: fields[1], size: n})
 	}
 	return files
+}
+
+// aptMirrorOf names the server a URI is fetched from. A GitHub runner's
+// sources are `mirror+file:/etc/apt/apt-mirrors.txt`, a list apt walks
+// in order, so the name is the list's first entry: the one apt tries
+// first, and on the runners of issue 852 the only one its update used.
+func aptMirrorOf(uri string) string {
+	if rest, ok := strings.CutPrefix(uri, "mirror+file:"); ok {
+		list, _, _ := strings.Cut(rest, ".txt")
+		list += ".txt"
+		first := ""
+		if data, err := os.ReadFile(list); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if f := strings.Fields(line); len(f) > 0 && !strings.HasPrefix(f[0], "#") {
+					first = f[0]
+					break
+				}
+			}
+		}
+		return fmt.Sprintf("%s (the first of the mirrors in %s)", first, list)
+	}
+	if _, after, ok := strings.Cut(uri, "://"); ok {
+		host, _, _ := strings.Cut(after, "/")
+		return host
+	}
+	return uri
 }
 
 // aptCachedBytes is how much of files apt has so far: the finished ones
