@@ -51125,6 +51125,115 @@ jobs name no environment, so it does not reach `ForEnv` at all.
 capacity, because none can be built through the agent's own
 configuration; the test drives `fileserver` directly.
 
+### 5.729 The kernelpkg install test waited forty minutes on a slow mirror, and said nothing (2026-11-24)
+
+Issue 852. Three runs of the Fleet workflow's linux leg (45298405859,
+45302982685 and its re-run) failed at `go test`'s forty-minute alarm. In
+each, `TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest` logged
+`installing [linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws] for
+the test` and then nothing. The goroutine dump showed `apt-get install`
+itself still running after 19 minutes, with the test reading its output.
+All three runners had a `7.0.0-1014-aws` kernel. A run of main on an
+`-azure` runner passed the same test in 135 s.
+
+**What it was.** The mirror. An `-aws` runner fetches from its region's
+EC2 archive mirror, and an `-azure` one from Azure's. The workflow's own
+`apt-get update`, in the same three jobs, fetched the 13.4 MB index at
+556 kB/s, 498 kB/s and 152 kB/s, and two 161 kB files at 8.6 kB/s and
+10.2 kB/s. Main's passing `-azure` run fetched the index at 9.6 MB/s.
+The test's download is about 184 MB: the image, its modules and the
+headers. At 152 kB/s that is twenty minutes, and `apt-get -q` prints
+nothing while it downloads.
+
+The kernel flavour was not the cause; it only picked the mirror. On
+this change's diagnostic draft, an `-aws` runner in the same region, on
+the same runner image release and the same kernel, fetched the index at
+9.9 MB/s. The test then downloaded the same two packages in 7 s,
+installed them in 11 s and passed in 43.8 s. Nothing in apt's options or
+hooks changed between those runs.
+
+5.688 had already met this: the test at 1,320 s against the old 25-minute
+limit, "apt downloading kernels from a slow mirror". The fix then was
+more time, and that entry said why that was not enough: "a mirror slower
+still will reach it". The three failures were that mirror.
+
+**Why nothing said so.** Both runners in the Debian half of the test,
+`kpRunOut` and `runEnv`, were `CombinedOutput` with no limit. The output
+was collected rather than streamed, so it died with the binary when the
+alarm fired. go test also leaves its children running, so the `apt-get`
+would have kept the dpkg lock. The rpm half learnt all of this in 5.319
+and has bounded every step since. The Debian half was not changed then.
+
+**Fixed.**
+- Every command the Debian half runs now goes through the OSRunner,
+  under a limit: two minutes for reads and four for the put-back. The
+  child is in its own process group and stdin is `/dev/null`. On a
+  timeout the whole group is killed, and the error carries the command
+  and everything it had printed.
+- The test's install is two `kpStep` steps, the download and then the
+  install from the cache. So a slow mirror and a slow hook (initramfs,
+  the boot loader) name themselves apart. Before a kill, `kpStep`
+  prints the process table and the last lines of apt's and dpkg's logs.
+  The module's own `remove`, `cleanup` and `upgrade` run under limits
+  through `c.Ctx`.
+- apt runs with `DEBIAN_FRONTEND=noninteractive`,
+  `-o DPkg::Lock::Timeout=60` and `-y`. `--no-install-recommends` was
+  not added: `--print-uris` gave the same four files and the same bytes
+  with and without Recommends, on both flavours.
+- The download has two attempts of four minutes. apt resumes a partial
+  download, so this is one eight-minute budget with a new connection
+  in the middle. If the mirror cannot deliver in that time, the test
+  skips. The reason begins `slow mirror:` and names the mirror, the
+  bytes that arrived and the runner's kernel flavour. The upgrade test
+  fetches its kernel the same way, before it changes the kernel set.
+- The linux leg has a new step, "the kernelpkg install tests ran rather
+  than skipping". It requires both tests to pass on an `-azure` runner.
+  On any other runner it also accepts the `slow mirror:` skip, and no
+  other. The upgrade test may also skip when the newest kernel offered
+  is the running one.
+
+**Shown.**
+- A unit test, `TestKernelpkgTestRunnerKillsAHungCommandAndKeepsItsOutput`,
+  runs a shell whose background `sleep 60` holds the output pipe, with a
+  1 s limit. The runner returned in 1.02 s, with the partial output in
+  the error. With main's unbounded `CombinedOutput` the test failed after
+  60.01 s. With a deadline that killed only the started process, it also
+  failed after 60.01 s.
+- With the bounded download and install, the test passed on an `-aws`
+  runner (Fleet run 45434174731, job 138593764231) and on `-azure`
+  runners (jobs 138587337486 and 138593811749). The runs of the final
+  code are named in the pull request.
+- To drive the skip, a diagnostic branch only added
+  `-o Acquire::http::Dl-Limit=100`, throttling apt to 100 kB/s as the
+  slow mirrors were. On an `-aws` runner (job 138603165785), 61.5 of the
+  184 MB arrived in 8m0s, at 128 kB/s, and the test skipped by name.
+- That run also failed the new workflow step, and the step was wrong.
+  It read the skip reason from the line before `--- SKIP`. The test's
+  put-back runs in a Cleanup, after the skip, and logs the kernel set,
+  so the step read a package name and refused a correct skip. It now
+  reads the test's whole block. Checked against nine fixture cases and
+  against that run's own log, it accepts the skip on an `-aws` kernel
+  and refuses it on an `-azure` one. The same run printed the mirror as
+  the raw `mirror+file:` path; the reason now names the first entry of
+  the runner's `apt-mirrors.txt`.
+
+**Not covered.** The skip was driven by a throttle, not by a slow mirror
+on a real runner. The throttled skip has not run on an `-azure` runner,
+so the step's refusal there rests on the fixtures and the log. Nothing
+here makes a slow EC2 mirror faster, so an `-aws` runner on one now
+skips both install tests, by name, and covers them less. Whether the
+slowness is regular or was one bad evening is not known: the three
+failures fell within two hours of each other, on 2026-11-24. The
+eight-minute download budget was chosen, not measured against a
+distribution of mirror speeds. In the throttled run the upgrade test's
+fetch listed nothing to fetch and the module's upgrade then installed
+the kernel in 8.8 s, which this change does not explain; the test now
+logs apt's own output when that happens.
+
+The workflow's older step, "what ran, and what skipped and why", reads
+the line before `--- SKIP` the same way, so it shows the wrong reason
+for any test whose Cleanup logs after a skip. It is not changed here.
+
 
 
 
