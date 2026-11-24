@@ -50917,6 +50917,86 @@ host. A P-384 job-signing key verified by a node over the wire; the
 verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
 build making the P-384 CA; `make fips-test` runs the unit tests above as a
 FIPS build.
+### 5.725 The operator command line dialled localhost when the hub listened on one address
+
+`operatorClient` (`cmd/halite-hub/run.go`) chose the hub's address in this
+order: `--hub`, then `hub` in `hub.yaml`, and then `localhost`. It took the
+port from `listen`. With `listen: 10.0.0.5:4510`, the hub listens on that
+address alone. So on the hub itself, `halite-hub run …`, `runner`, `jobs`,
+`orch`, `metrics` and `event` without `--hub` dialled `localhost:4510`, where
+nothing answers. They failed with `dial tcp 127.0.0.1:4510: connect:
+connection refused`. That was seen in the issue 306 runs of 2026-11-05 and
+2026-11-06 (5.282, "Seen again, not fixed"). On 2026-11-23 every command on
+a hub with a specific `listen` passed `--hub` by hand. Issue 840 recorded it
+as a decision for the owner, and the owner chose to dial the `listen`
+address.
+
+**Fix.** `defaultHubAddress(listen)` is the host that `listen` names. For a
+wildcard (`:4510`, `0.0.0.0`, `::`) or no host, it is `localhost`, because
+the hub then answers on loopback too. `--hub` and `hub` still come first. A
+specific `listen` host is also one of the names the hub puts in its own
+certificate. `serverNames` adds it by the same wildcard test, unless
+`--names` replaces the list. So the name dialled is one that verifies.
+
+**Test.** `TestTheDefaultHubAddressFollowsListen`
+(`cmd/halite-hub/huburl_test.go`) checks the URL an operator command dials
+for ten `listen` values. They cover an IPv4 and a host name with ports,
+IPv6 with and without a port, an address with no port, three wildcards and
+an empty value. It was broken on purpose by returning `localhost` always,
+and it failed on every specific address (`dials "https://localhost:4510",
+want "https://10.0.0.5:4510"`).
+
+**Run end to end on Linux.** On 2026-11-23, on an arm64 Ubuntu 22.04 host
+(`host-d` of 5.282), two `halite-hub` binaries were built with Go 1.27.4:
+`main` at `2db3fd7c` and this branch. A hub was started unprivileged with
+`listen: <private-ip>:47511`, and `ss` showed it listening on that address
+alone. An admin operator was made, and then `runner manage.status` was run
+with the hub's own `--config` and no `--hub`:
+
+- `main`: `Post "https://localhost:47511/v1/runners": dial tcp
+  127.0.0.1:47511: connect: connection refused`. This is the defect.
+- this branch: it answered `up: []` and `down: []`.
+- this branch with `--hub localhost`: it was refused as `main` was, so an
+  explicit `--hub` still wins.
+
+The build tree, the hub's directories and the toolchain were removed from
+the host afterwards.
+
+The same run on this Mac said nothing either way. No client could reach a
+hub on the LAN address, with `--hub` given or without it: the handshake
+ended in `EOF`, and the hub logged `socket is not connected`. That is the
+Mac's network path.
+### 5.726 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
+
+SPEC 14.1 said `fips_mode` "reads `/proc/sys/crypto/fips_enabled` and, on
+Ubuntu, the Ubuntu Pro FIPS package state". SPEC 27.4 said the grain
+"reports both the host's kernel FIPS state and the binary's own mode". No
+build has done either. On Linux the grain is `/proc/sys/crypto/fips_enabled`
+alone (`internal/grains/platform_linux.go`). On Windows it is the
+`FipsAlgorithmPolicy` setting. On the BSDs and macOS it is `false`. The
+binary's own state has always been three separate grains, `fips_build`,
+`fips_enabled` and `fips_module` (DIVERGENCE 1.11). Issue 840 asked which
+should give way, and the owner decided that the kernel is the authority,
+so SPEC changes.
+
+The evidence for that choice is from 5.282's last run. An arm64 host on
+Pro `fips-updates` was booted with `fips=0`, with the FIPS kernel and
+packages still installed. `fips_enabled` read 0, `fips_mode` read False, and
+`pro status` reported `fips-updates` as **disabled**. So Pro's own report
+follows the kernel, and reading it as well would have added nothing on
+that host. It would have added a second source that could disagree.
+
+**Fix.** SPEC 14.1 says what each platform reads and that the kernel is the
+authority. It says that Pro is not read and why, and what the earlier text
+claimed. SPEC 27.4 says `fips_mode` is the host's state and that the other
+three grains are the binary's. The comment on `collectFIPSBuild` says the
+same. No code changed.
+
+**Not covered.** No test holds SPEC 14.1's prose to the grain collectors.
+
+
+
+
 
 
 
