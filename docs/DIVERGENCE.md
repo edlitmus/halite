@@ -50994,13 +50994,92 @@ same. No code changed.
 
 **Not covered.** No test holds SPEC 14.1's prose to the grain collectors.
 
+### 5.727 A job the tracer sampled lost the hub's tree for another environment (2026-11-23)
 
+Issue 803, filed as a suspicion from reading and not reproduced. It was
+real. `executeJob` wrapped the job's tree for tracing (`traceFiles`, which
+returns a `tracedFiles` around the tree for a sampled job and the tree
+unchanged otherwise) before `adoptJobEnvironment` ran, and
+`adoptJobEnvironment` told the hub's tree from the node's own by asserting
+`n.files.(*fileserver.Remote)`. For a sampled job that assertion failed on
+the wrapper, so a job naming an environment other than the node's own was
+given `localTree(env)`: the node's own `file_roots` for that environment,
+or, where none are configured, the packaged defaults (`<root>/state`,
+`/srv/halite/states`, `/srv/salt`, whichever exist). It applied whatever
+those held and reported success. The same job unsampled fetched from the
+hub. Only the jobs the sample rate picked were affected, so at a rate below
+1 it would look like chance.
 
+**Seen.** `TestATracedJobForAnotherEnvironmentFetchesFromTheHubsTree`, real
+binaries: a hub serving `base` and `dev`, and two nodes whose own
+environment is `base`: `traced1`, with `tracing: otlp` and
+`tracing_sample_rate: 1`, exporting to a collector the test runs, and
+`plain1`, with tracing off. Each node also has its own `dev` roots holding a
+decoy state and payload that say `from-node-local`, so losing the hub's
+tree shows as a wrong file rather than a failure, which is the shape the
+issue suspected. `halite-hub run <node> state.apply app --env dev`, whose
+state manages a file from `salt://payload.txt`, on main's code:
 
+```
+plain1:  from-hub-dev      (exit 0)
+traced1: from-node-local   (exit 0, the job reported success)
+```
 
+**The change.** `executeJob` wraps the tree after `adoptJobEnvironment`,
+so the environment is settled on the hub's tree, or on the node's own,
+before anything hides which it is. This also traces a sampled job's
+fetches from the node's own roots for another environment: the old order
+replaced the wrapper with an unwrapped local tree there.
 
+The test asserts that the traced path ran: the collector must receive a
+`file fetch` span for `payload.txt` naming `dev`. Without that, a tracer
+that sampled nothing would make the file assertion pass for the wrong
+reason.
 
+**Broken on purpose**, with the fix otherwise in place:
 
+| Break | Result |
+|---|---|
+| `traceFiles` before `adoptJobEnvironment` again | `traced1` wrote `from-node-local`; the test failed |
+| `traceFiles` never wraps | the file was right and the collector check failed: "the traced path did not run" |
+
+**Not verified.** Run only on the development host's Linux compatibility
+layer, not on a native FreeBSD or Linux machine. Only a node-side sample
+rate of 1 was run. A job sampled because the hub's `traceparent` said so,
+on a node whose own rate would not have picked it, takes the same branch
+by reading (`traceFiles` checks the job span's sampled flag), and was not
+run. A job naming another environment on a node with no `file_roots` for
+it, which would have read the packaged defaults, was not run: the test
+gives each node its own roots so as not to read a real tree.
+
+### 5.727.1 A sampled `saltutil.sync_*` was refused as if the node had no hub
+
+Found while fixing 5.727, by looking for every other assertion on the type
+of a job's `n.files`. `extensionSource`, which `saltutil.sync_all` and its
+siblings reach for, asserted `n.files.(*fileserver.Remote)` too, and a job's
+`n.files` is the `tracedFiles` wrapper for the whole of a sampled job. So a
+sampled sync was refused with "extensions are delivered by the hub's file
+server, and this node is working from its own tree" on a node attached to
+its hub, and the same sync unsampled succeeded.
+
+**Seen.** `TestATracedExtensionSyncReachesTheHubsTree`, on the same lab as
+5.727, with only that fix in place: `plain1` answered `extensions: []`,
+`changed: False` and exit 0; `traced1` exited 1 with the refusal above.
+
+**The change.** `hubTreeOf` answers "is this the hub's tree?" through the
+wrapper, and `extensionSource` asks it. Reordering cannot help here, as it
+did in 5.727, because the wrapper is in place for the whole job. The other
+assertion of that kind, in `pinTreeForRun`, runs before the wrapper is
+applied. The test also checks that the collector received `traced1`'s
+`job saltutil.sync_all` span.
+
+**Broken on purpose.** With the unwrap taken out of `hubTreeOf`, `traced1`
+was refused again and the test failed.
+
+**Not verified.** No extension bundle was published on the hub, so the
+sync that ran fetched nothing: what was shown is that a sampled sync
+reaches the hub's tree, not that it delivers a bundle. Run on the
+development host's Linux compatibility layer only.
 
 
 
