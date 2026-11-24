@@ -134,3 +134,56 @@ func TestLedgerSectionsSitInTheChapterTheyAreNumberedFor(t *testing.T) {
 	}
 	t.Logf("checked %d sections across %d chapters, %d misfiled", sections, chapters, misfiled)
 }
+
+// Every heading in the ledger has a blank line before it.
+//
+// `ledger renumber` used to paste a moved section straight after the last
+// line of its chapter (issue 844), and twenty headings on main had nothing
+// in front of them when this check was written, sixteen of them sections
+// the tool had moved. Markdown renders that, which is why nobody saw it,
+// but the source reads as one entry running into the next, and it is the
+// shape a hand edit makes too. The tool's own test holds what it writes;
+// this holds the file, whoever wrote it.
+//
+// Only "at least one" is held. "Exactly one" is the file's convention,
+// and the tool now keeps it, but about fifty older headings have two or
+// more blank lines before them -- among them the gap before `## 6.`,
+// which is where every branch in flight appends -- and collapsing those
+// would conflict with each such branch for the sake of a blank line. A
+// missing separator joins two entries; a doubled one does not.
+//
+// A fenced block is skipped, because a `#` line in a fence is a comment
+// and not a heading. The fence count must be even, so that a fence left
+// open -- which would silently skip the rest of the file -- fails rather
+// than passes.
+func TestLedgerHeadingsHaveABlankLineBeforeThem(t *testing.T) {
+	ledger := repoFile(t, ledgerFile)
+
+	heading := regexp.MustCompile(`^#{2,4} `)
+	lines := strings.Split(ledger, "\n")
+	inFence := false
+	fences, headings := 0, 0
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inFence = !inFence
+			fences++
+			continue
+		}
+		if inFence || !heading.MatchString(line) {
+			continue
+		}
+		headings++
+		if i > 0 && strings.TrimSpace(lines[i-1]) != "" {
+			t.Errorf("%s:%d: %q has no blank line before it, so it runs on from %q",
+				ledgerFile, i+1, line, lines[i-1])
+		}
+	}
+
+	if fences%2 != 0 {
+		t.Errorf("found %d fence lines, an odd number: one is unclosed, and every heading after it was skipped", fences)
+	}
+	if headings < 100 {
+		t.Fatalf("found %d headings; this check has stopped checking", headings)
+	}
+	t.Logf("checked %d headings outside %d fences", headings, fences/2)
+}

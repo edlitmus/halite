@@ -655,12 +655,24 @@ func renumberAndMove(lines []string, moves []move, mine []section) error {
 		}
 	}
 
-	// Re-insert each at the end of its chapter: before the next `## `
-	// heading, or at the end of the file.
+	// Re-insert each at the end of its chapter, just past its last
+	// non-blank line, with one blank line in front: the separator the
+	// ledger puts before every heading. The blank lines already there stay
+	// where they are, after the block, because they are the gap before the
+	// next `## ` (or the file's last newline), and that gap belongs to the
+	// chapter rather than to the section that happens to end it.
+	//
+	// This used to insert the block with nothing in front and two blank
+	// lines behind, on top of the gap it kept: the heading ran on from the
+	// last line of the section before it, and the next chapter heading had
+	// three blank lines over it. It was put right by hand on three
+	// branches in one day before anybody wrote it down (issue 844). The
+	// test compares the whole file, because the headings-only assertions
+	// skip blank lines and so could not see it.
 	for _, b := range lifted {
 		at := chapterEnd(out, b.major)
-		tail := append([]string(nil), out[at:]...)
-		out = append(out[:at], append(append([]string(nil), b.body...), append([]string{"", ""}, tail...)...)...)
+		block := append([]string{""}, b.body...)
+		out = append(out[:at], append(block, out[at:]...)...)
 	}
 
 	// One trailing newline, however the lifting left it.
@@ -672,7 +684,9 @@ func renumberAndMove(lines []string, moves []move, mine []section) error {
 }
 
 // chapterEnd is the index at which a new section of a chapter belongs:
-// just past that chapter's last line.
+// just past that chapter's last non-blank line, so that the blank lines
+// separating it from the next chapter, or ending the file, come after
+// whatever is inserted there.
 func chapterEnd(lines []string, major int) int {
 	start := -1
 	prefix := fmt.Sprintf("## %d. ", major)
@@ -695,7 +709,14 @@ func chapterEnd(lines []string, major int) int {
 			return j
 		}
 	}
-	return len(lines)
+	// The last chapter: the same, against the end of the file, whose final
+	// newline splits into a trailing "". It came out right before only
+	// because the old insertion landed after that "" (issue 844).
+	j := len(lines)
+	for j > start+1 && strings.TrimSpace(lines[j-1]) == "" {
+		j--
+	}
+	return j
 }
 
 func gitShow(ref string) (string, error) {

@@ -1556,6 +1556,7 @@ a batched job's delivery accounting, for instance.
 What found it was CI running the suite on four platforms on every
 change. It had been in the tree since the queue policy was built and no
 local run had ever failed on it.
+
 ### 4.12 A reader that fell behind the event bus was not told
 
 Found on 2026-09-06 by the chaos suite, on its first run, which is what
@@ -26456,6 +26457,7 @@ SPEC 23.5, not for this change.
   platforms.
 - The second-tier list above came from reading parameter names in the
   registry. It is not complete.
+
 #### Since: issue 619
 
 The second tier above is decided. Eleven execution functions and the
@@ -27659,6 +27661,7 @@ other function failed the static check. So no other function had passed
   the dynamic audit catches that, and only on functions it reaches.
 - **State functions are not in the new static check.** 5.135's state
   differential is unchanged.
+
 #### 5.308, `mount.set_fstab` fell out of the dynamic audit
 
 `auditMustReach` names 24 functions now, not 23: `mount.set_fstab`
@@ -34689,6 +34692,7 @@ succession cancels CI on the first.
 **Measured.** `gh run list --workflow CI --branch main --event push
 --status cancelled` listed ten cancelled runs, the most it was asked
 for, between 2026-10-09 and 2026-10-18, among them the merges of #362,
+
 #363, #364, #365, #367 and #413. Those commits have no CI result. It
 happened again while this waited: the merge of #446 (`b968e9b`, run
 39370683108) was cancelled by #447's.
@@ -34734,6 +34738,7 @@ pinned by 5.358) started failing on every branch with GO-2026-6809,
 fixed in `crypto/x509@go1.27.3`, reached from
 `internal/ldap/conn.go:191` (`ldap.Conn.startTLS` calls
 `tls.Conn.Handshake`, which reaches `x509.Certificate.Verify`). Seen on
+
 #454's run 39530409287. The pin was go1.27.2.
 
 **The change.** `toolchain go1.27.3`, and everything 5.403 and the
@@ -44204,6 +44209,7 @@ The same shape as 5.424, a month later. From 2026-11-11 the `govulncheck`
 job (v1.9.0, pinned by 5.358) failed on every branch with GO-2026-6859,
 "HTTP/1 server crash due to MaxBytesReader header race in net/http",
 found in `net/http@go1.27.3` and fixed in `net/http@go1.27.4`. Seen on
+
 #711's run 43048808936; main's last green CI was 2026-11-10 21:58. The
 pin was go1.27.3.
 
@@ -45712,6 +45718,7 @@ it does not, so that request dies. The resets before the acknowledgement
 cost nothing and the first one after it is fatal. Upstream this is
 golang/go#13774 and #16582 -- the connection-reuse check does not account
 for streams already in flight -- with #39389 and #47635 adjacent, and
+
 #42777 is the change that makes the Transport stop reusing a connection
 after a stream protocol error.
 
@@ -47320,6 +47327,7 @@ of them; the log could say which. Left for its own change.
 **Not covered:** TOTP as root under the rc.d script; Linux; a code from an
 authenticator app; the clock skew of a real phone; LDAP, OIDC and a directory
 group's role map, the rest of item 5.
+
 ### 5.681 An idle connection ended in an RST, and making the timeouts differ would not have stopped it
 
 Issue 757 (`internal/transport/client.go`, `internal/transport/closedrain.go`).
@@ -47591,6 +47599,7 @@ spools until `url` is corrected; and the other clients built with the
 default policy (`awskms`, `s3fs`, `awsauth`, the Secrets Manager extension),
 whose peers are AWS endpoints, some carrying secrets in the body, and which
 were not looked at.
+
 ### 5.687 A failed `pro.attach` put the contract token in its error
 
 Reported privately as GHSA-cgg8-h9pj-fq34 (2026-11-20), from a reading of
@@ -48060,6 +48069,7 @@ value that applies.
   same warnings. Only the node binary was run.
 - Settings given another way, such as a command-line flag, are not
   checked here.
+
 ### 5.696 `migrate` said nothing about a blackout set where Salt reads it (2026-11-21)
 
 **The defect.** Salt reads `minion_blackout` and <!-- lexicon:allow -->
@@ -48128,6 +48138,7 @@ key, so this changes nothing for its migration.
 - **A blackout key built by a template**, for example from a Jinja
   variable, is not found. The audit reads the text.
 - **No real Salt estate that uses blackout has been migrated.**
+
 ### 5.697 A scheduled job ran alongside a dispatched one (2026-11-21)
 
 Issue 781, which 5.694 found by reading the code. SPEC 9.6 and the
@@ -48166,6 +48177,7 @@ Breaking it to drop the tail of the queue fails the first.
 `TestAScheduledHighstateSurvivesAHubOutage` runs real binaries with a
 one-second schedule, and it passes with the schedule going through the
 queue. The node package passes under `-race`.
+
 ### 5.698 `parallel_jobs` was accepted and did nothing, and `--parallel` did not exist (2026-11-21)
 
 The rest of issue 763. SPEC 9.6 promised a named lock per module family
@@ -48379,6 +48391,7 @@ Each of these was broken on purpose, and a test failed each time:
   signed job is not reached from here.
 - **`salt.function` steps in `--test` mode** dispatch nothing, so the flag
   goes nowhere then, as every other option does.
+
 ### 5.699 A node took a `quiesce` from the hub as an unknown message (2026-11-21)
 
 Issue 782, found while building quiesce for issue 763 (5.694).
@@ -48408,6 +48421,7 @@ quiesce silently. Issue 782 stays open for those.
 
 **Not verified.** No hub or relay sent either message to a running node; the
 test calls the node's handler directly.
+
 ### 5.700 A rolling upgrade, run with the release binaries (2026-11-21)
 
 Issue 766. Every upgrade test so far (`internal/hub/upgrade_test.go`) built
@@ -48829,6 +48843,7 @@ which is the node-side check the row needs and does not have yet.
 The same table's state-tree row still lists *"optional signed state trees"*,
 which describes issue 764 as a design and is not built; it is left as SPEC's
 statement of intent.
+
 ### 5.705 A node verifies signed state content before it applies it (2026-11-22)
 
 Issue 764, built from the reviewed proposal in
@@ -49078,6 +49093,7 @@ narrow.
 **Not verified:** this change's own CI run is a workflow change, so it runs
 every leg; the first documentation-only PR after it is the check that it
 skips them.
+
 ### 5.707 A resume after a hub crash ran the steps that had already run (2026-11-22)
 
 Found by reading while writing the proposal for issue 765 (PR 801), filed
@@ -49392,6 +49408,7 @@ app. OIDC through a browser, and from any provider but dex. LDAP with
 `starttls` or with `memberOf`. A FreeBSD node enrolled by
 `--token-file` on the command line, rather than through rc. `make install`
 on any Linux but Rocky 9. arm64.
+
 ### 5.709 The node's unit gave it a private /tmp, and a managed file there vanished at each restart (2026-11-23)
 
 Found by 5.708's drift report. `halite-node.service` and
@@ -49437,6 +49454,7 @@ From the next tick, the mailed report no longer listed either node.
 FIPS drop-in was not run with the new unit. A node already installed keeps the
 old unit until it is reinstalled: an upgrade that replaces the binary alone,
 as chapter 36's state does, leaves `PrivateTmp=yes` in place.
+
 ### 5.710 An orchestration runs on nodes that require signed jobs, from a plan signed off the hub (2026-11-22)
 
 Issue 765, built from the reviewed proposal in
@@ -49796,6 +49814,7 @@ admission check (`TestAStateJobWithAnUnusablePillarOverrideIsRefused`).
 - Run on the dev host only (FreeBSD, through its Linux compatibility
   layer), on a hub and a node over loopback. No lab machine, no relay, no
   API-submitted job (`/v1/run` sends the same keyword).
+
 ### 5.713 `orch run` gave up on a run after thirty seconds while the run went on (2026-11-23)
 
 Issue 815, seen once in the first attempt at 5.707's reproduction.
@@ -49904,6 +49923,7 @@ read the record. The old read path failed all ten reads with a sharing
 violation. The new read path passed all ten reads. Each job used its own
 Windows Server 2022 runner and ran the test under the standard CI account.
 [File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
+
 ### 5.715 A job settled partial at its expiry became complete when its node answered late (2026-11-23)
 
 Issue 810, suspected while revising the issue 765 proposal and filed as
@@ -49964,6 +49984,7 @@ its job's 15-minute default TTL still succeeds on a late return, while
 the job it sent reads `partial`. Whether a step's `timeout` should set its
 job's TTL, which SPEC 6.3 allows ("orchestration steps may extend it"),
 is the second question issue 810 asks and is not answered here.
+
 ### 5.716 A state job's `pillarenv` was carried to the node and ignored (2026-11-23)
 
 Issue 826, the sibling of 5.712, which recorded it as not fixed there. A
@@ -50075,6 +50096,7 @@ compile left on the node's own environment (both no-hub-pillar tests).
 - `halite-node state apply pillarenv=...` on the command line is unchanged;
   `--pillarenv` is the flag there.
 - `pillarenv_from_saltenv` is not read, here or anywhere.
+
 ### 5.717 `runner state.orchestrate` and the API still gave up on a run after thirty seconds (2026-11-23)
 
 Issue 822, the rest of 5.713. Two more callers made the call `orch run`
@@ -50164,6 +50186,7 @@ against an old hub. The added `async` is not seen by the API's own policy
 check, which is made before it is added, so a role with `deny_kwargs:
 ['async']` is not refused by the API for it; whether the hub's delegated
 check refuses it was not tried.
+
 ### 5.718 atomicfile replaced a file with MoveFileEx, which no reader can share (2026-11-23)
 
 Issue 799, `internal/atomicfile`, Windows. 5.619 records two rounds of
@@ -50743,6 +50766,7 @@ windows-2022 legs run the audit, which is platform-independent, and
 `TestAReplaceLandsWhileAStreamingReaderHoldsTheFile`, which is the only
 test that tells `Open` from `os.Open`, and only on Windows. No stress run
 measured the 7 and 18 in 4,000 going to zero.
+
 ### 5.722 The hub's key algorithms: SPEC and the configuration reference offered three that were never built
 
 SPEC 7.1 had a table of four rows, and two of them did not exist. The
@@ -50784,6 +50808,7 @@ pattern now takes any lowercase word with a digit in it. With only
 
 **Not covered.** SPEC 7.1's prose is not held to the parser by the test.
 Only the key table, and the reference generated from it, are.
+
 ### 5.723 Ed25519 is approved under FIPS 140-3, and the x509 module refused it as if it were not
 
 SPEC 27.4 said that in FIPS mode "Ed25519 is unavailable". SPEC 7.1 said it
@@ -50852,6 +50877,7 @@ not approved under FIPS 140-3`.
 peer built on OpenSSL. The hub's own PKI still issues only ECDSA (5.722).
 Whether it should offer Ed25519 is a separate decision. Issue 840's first
 question is answered here.
+
 ### 5.724 P-384 is the default key algorithm
 
 The owner chose this on 2026-11-23, alongside allowing Ed25519 in FIPS mode
@@ -50917,6 +50943,7 @@ host. A P-384 job-signing key verified by a node over the wire; the
 verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
 build making the P-384 CA; `make fips-test` runs the unit tests above as a
 FIPS build.
+
 ### 5.725 The operator command line dialled localhost when the hub listened on one address
 
 `operatorClient` (`cmd/halite-hub/run.go`) chose the hub's address in this
@@ -50966,6 +50993,7 @@ The same run on this Mac said nothing either way. No client could reach a
 hub on the LAN address, with `--hub` given or without it: the handshake
 ended in `EOF`, and the hub logged `socket is not connected`. That is the
 Mac's network path.
+
 ### 5.726 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
 
 SPEC 14.1 said `fips_mode` "reads `/proc/sys/crypto/fips_enabled` and, on
@@ -51124,6 +51152,7 @@ jobs name no environment, so it does not reach `ForEnv` at all.
 **Not verified.** No agent was run with a Remote that had spare
 capacity, because none can be built through the agent's own
 configuration; the test drives `fileserver` directly.
+
 ### 5.729 A slow Ubuntu mirror took the linux leg, and nothing in the kernelpkg tests could say so (2026-11-24)
 
 **What happened.** The linux fleet leg hit `go test`'s 40-minute alarm four
@@ -51369,6 +51398,66 @@ would send the alert, and was not measured. Windows was not run (the
 binary test skips there). The `403` that a revoked node gets on a reused
 connection is still retried, as before; no run showed a node reaching it
 after the revoke message failed to arrive.
+
+### 5.731 `renumber` pasted a moved section with no blank line before it (2026-11-23)
+
+Issue 844, `tools/ledger`. When `renumber` moved a section to the end of its
+chapter, it put the heading directly after the last line of the chapter, with
+no blank line. It also put two blank lines after the block, on top of the gap
+that was already there, so the next `## ` heading had three blank lines before
+it. This was put right by hand on three branches on 2026-11-23, and it had
+happened before that without anybody noticing: of the twenty headings on main
+that had no blank line before them, sixteen were sections from 5.681 on, which
+is the tool's shape.
+
+**What the file uses.** Measured on main, outside fenced blocks: 696 `###`
+headings have one blank line before them, about fifty have two or more, and 17
+have none. Seven of the eight `## ` chapter headings have one blank line
+before them. The one with two is `## 6.`, which is where `renumber` inserts
+for chapter 5. So the convention is one blank line before every heading. No
+audit held any of this, and the 5.720 tests could not see it either: they
+compare the list of headings and skip every blank line.
+
+**Demonstrated before it was fixed.** `tools/ledger/separators_test.go` runs
+the built tool in a throwaway repository, as the 5.720 tests do, and compares
+the whole ledger after `renumber` byte for byte against the base with the
+renumbered block written in by hand. So it holds the separators around the
+moved block and also that nothing else in the file changed. On main's code:
+
+| Case | Result on main's code |
+|---|---|
+| a colliding section, no subsections | no blank line before `### 9.3`, three before `## 10.` |
+| the same, with a `###` and a `####` subsection | the same |
+| a colliding section in the last chapter | passed, by accident: the block landed after the file's final empty line |
+
+**The change.** `chapterEnd` now gives the index just past the chapter's last
+non-blank line, for the last chapter as well as for the others. The block goes
+there with one blank line in front of it. The blank lines that were already
+there stay after the block, because they are the chapter's gap before the next
+`## ` (or the end of the file).
+
+**Broken on purpose.** Without the blank line in front, all three cases fail.
+Without the back-up over blank lines at the end of the file, the last-chapter
+case fails.
+
+**An audit of the file, too.** `TestLedgerHeadingsHaveABlankLineBeforeThem`
+in `internal/specaudit` holds that every heading outside a fence has a blank
+line before it, so a hand edit cannot drift either. It failed on the twenty
+headings before they were given one; that edit adds twenty blank lines and
+changes nothing else. Deleting the blank line before 4.12 fails it again, and
+an unclosed fence fails it on the fence count rather than skipping the rest of
+the file. It holds "at least one", not "exactly one". Making it exactly one
+means deleting a blank line at about fifty older headings, one of them the gap
+before `## 6.`, where every branch in flight appends, so each of those branches
+would get a merge conflict for a blank line. A missing blank line joins two
+entries; an extra one does not.
+
+**Not verified.** `renumber` was not run against a real branch: every run was
+in a throwaway repository. A ledger whose chapter gap is already wrong keeps
+it, because the tool now leaves that gap alone; `## 6.` still has two blank
+lines before it. A section lifted out of the middle of a chapter was already
+handled correctly and is held only by the "nothing else changed" half of these
+tests.
 
 
 
@@ -52273,6 +52362,7 @@ half). That was not part of this decision and is left as it stands;
 see the next subsection.
 `internal/transport/tls.go` cited "SPEC 26.1" for the suites; 26.1 is
 logging, and the citation now says 25.3.
+
 #### 6.4, the cipher suites: SPEC now lists ChaCha20 outside FIPS mode
 
 The owner then chose the same for the cipher suite. SPEC 25.3's
