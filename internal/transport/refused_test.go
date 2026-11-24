@@ -43,6 +43,15 @@ func issueFrom(t *testing.T, ca *pki.CA, nodeID string, lifetime time.Duration) 
 // attempt reads the alert.
 const lostAlert = "http2: client conn could not be established"
 
+// lostTheAlert reports an error that carries no word of why the handshake
+// ended. Besides HTTP/2's own message, the client's next write can meet the
+// server's reset before the alert is read: "connection reset by peer", seen
+// once for the expired-certificate case on CI's fips-test leg (PR 846). A
+// node retries both, and so does this helper, until the alert itself comes.
+func lostTheAlert(err error) bool {
+	return strings.Contains(err.Error(), lostAlert) || strings.Contains(err.Error(), "connection reset by peer")
+}
+
 // getWith makes one request on a fresh client, again while the alert was
 // lost, so that each case is checked against the alert it gets rather than
 // against the race.
@@ -56,7 +65,7 @@ func getWith(cfg *tls.Config, url string) error {
 			res.Body.Close()
 			return nil
 		}
-		if !strings.Contains(err.Error(), lostAlert) {
+		if !lostTheAlert(err) {
 			return err
 		}
 	}
