@@ -97,6 +97,13 @@ func kernelpkgConformanceCases() []liveCase {
 					if why != "" {
 						return fmt.Errorf("%s", why)
 					}
+					// Before the kernel is taken away: on a slow archive
+					// putting it back is what took 25 minutes (5.729).
+					note, err := kernelArchiveCheck()
+					if err != nil {
+						return err
+					}
+					fmt.Fprintf(os.Stderr, "kernelpkg.latest_installed conformance setup: %s\n", note)
 					return takeAwayDebianKernel(release)
 				},
 				Probe: probe,
