@@ -51735,6 +51735,46 @@ orchestration steps today and is not changed. Whether a step's job should
 outlive the step by a margin, for a node that answers at the very end, is
 not decided: it expires when the step stops waiting.
 
+### 5.736 SigV4's canonical query was sorted before encoding, and AWS refused it (2026-11-24)
+
+Issue 613, item 3, from the issue 321 audit, where it was run only against a
+local server. `canonicalQuery` sorted the query's names, and a repeated
+name's values, as they were, and encoded them afterwards. SigV4 sorts the
+encoded form. A character that sorts one way and encodes another, such as
+`{` (0x7B, after `b`; `%7B`, before it), put the pairs in a different
+order from the one the server signs.
+
+**Shown against AWS** on 2026-11-24, from ref-salt1 (Ubuntu 22.04, arm64,
+kernel `5.15.0-1121-aws-fips`, preprod, us-west-2), with STS
+`GetCallerIdentity` signed with the instance's own credentials and
+`TestLiveSTSAcceptsASignedQueryWhoseKeysSortDifferentlyEncoded` built from
+`main` at `10cde67d`:
+
+| Query added to the call | Before | After |
+|---|---|---|
+| nothing (control) | 200 | 200 |
+| `ab=2&a%7B=1` | 403 `SignatureDoesNotMatch` | 200 |
+| `z=ab&z=a%7B` | 403 `SignatureDoesNotMatch` | 200 |
+
+The second row was not in the issue: two values of one name had the same
+fault.
+
+**Fix.** The pairs are encoded first and sorted by encoded name, then by
+encoded value. `TestTheCanonicalQuerySortsWhatItEncodes` holds both orders
+and the one that never changed; with the raw sort put back it fails on the
+first two. The AWS test-suite vectors already in `sigv4_test.go` pass
+unchanged: none of them has a name or value whose order changes when
+encoded, which is why they never caught this.
+
+**Who it affected.** Nobody yet: no caller sends such a name. The S3
+listing's are fixed. It would have been the first caller to pass a user's
+key or value into a query.
+
+**Not covered.** No CI leg runs the live test: it needs an EC2 instance's
+credentials. The issue asked for a published vector with a key that sorts
+differently encoded; none was found in the AWS suite, and STS's own
+answer stands in for it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
