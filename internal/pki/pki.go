@@ -63,7 +63,7 @@ func NodeIDFromCert(cert *x509.Certificate) (string, error) {
 // KeyAlgorithm selects the key to generate. SPEC 7.1: the hub's PKI
 // issues ECDSA on P-384 (the default) or P-256, and nothing else. SPEC once listed RSA
 // and Ed25519 here too, and the configuration reference repeated it,
-// while this type has only ever had the two constants below (5.720).
+// while this type has only ever had the two constants below (5.722).
 type KeyAlgorithm string
 
 const (
@@ -75,7 +75,7 @@ const (
 func ParseKeyAlgorithm(s string) (KeyAlgorithm, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", string(ECDSAP384), "p384", "ecdsa":
-		// P-384 is the default (5.722). "ecdsa" alone means the
+		// P-384 is the default (5.724). "ecdsa" alone means the
 		// default, as it always has; the default is what moved.
 		return ECDSAP384, nil
 	case string(ECDSAP256), "p256":

@@ -124,7 +124,7 @@ func parseKeySpec(algo string, keysize int64) (keySpec, error) {
 		// EdDSA key generation, signing and verification as approved,
 		// with its own self-tests in crypto/internal/fips140/ed25519.
 		// This used to refuse it, on SPEC 27.4's word that Ed25519 was
-		// not approved, which was true only before FIPS 186-5 (5.721).
+		// not approved, which was true only before FIPS 186-5 (5.723).
 		// A FIPS peer built on an older OpenSSL FIPS provider may still
 		// not accept an Ed25519 key; that is the peer's limit, and the
 		// tree that names the algorithm is the place to know it.

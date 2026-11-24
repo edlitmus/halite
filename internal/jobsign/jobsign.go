@@ -382,7 +382,7 @@ func FormatSignerKey(name string, pub *ecdsa.PublicKey) (string, error) {
 }
 
 // GenerateKey makes a signing key. `algorithm` is "ecdsa-p384" (the
-// default, 5.722) or "ecdsa-p256", the same spellings `--key-algorithm`
+// default, 5.724) or "ecdsa-p256", the same spellings `--key-algorithm`
 // takes.
 func GenerateKey(algorithm string) (*ecdsa.PrivateKey, error) {
 	switch algorithm {

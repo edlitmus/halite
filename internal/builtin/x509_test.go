@@ -74,7 +74,7 @@ func TestEveryAlgorithmRoundTrips(t *testing.T) {
 		value.MapOf("algo", "ed25519"),
 	} {
 		// Every algorithm, in FIPS mode too: Ed25519 is approved under
-		// FIPS 186-5 and generated there (5.721). `make fips-test` runs
+		// FIPS 186-5 and generated there (5.723). `make fips-test` runs
 		// this as a FIPS build, which is the run that matters.
 		out := x509Call(t, r, "x509.create_private_key", args)
 		pemText, ok := out.(string)
@@ -91,7 +91,7 @@ func TestEveryAlgorithmRoundTrips(t *testing.T) {
 // FIPS mode the test runs in.
 //
 // This module refused Ed25519 in FIPS mode on SPEC 27.4's word that it was
-// not approved (5.721). FIPS 186-5 approves it and the Go Cryptographic
+// not approved (5.723). FIPS 186-5 approves it and the Go Cryptographic
 // Module certifies it, so key generation alone would not show that the
 // module also signs and verifies with it under fips140=on: this does. It
 // is the `make fips-test` run that exercises that, and the log line says

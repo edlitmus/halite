@@ -71,7 +71,7 @@ func Enforced() bool { return fips140.Enforced() }
 //
 // Ed25519 was on this list, on the belief that it was not approved under
 // FIPS 140-3. FIPS 186-5 approves it and the module certifies it, so it
-// is not restricted any more (DIVERGENCE 5.721).
+// is not restricted any more (DIVERGENCE 5.723).
 //
 // Keyed on FIPS mode rather than on the artifact, because an operator
 // who turned FIPS mode on asked for those restrictions whichever binary

@@ -485,8 +485,8 @@ authoritative; the CN is for human readability.
 
 These are the only two, in every build, FIPS included. The hub's PKI does not issue RSA or Ed25519
 keys. An earlier version of this table listed RSA-3072 and RSA-4096, and said that Ed25519 was
-permitted by configuration, and none of those was ever built (DIVERGENCE 5.720). The default is
-ECDSA so that one certificate profile works everywhere, and P-384 since DIVERGENCE 5.722; it was
+permitted by configuration, and none of those was ever built (DIVERGENCE 5.722). The default is
+ECDSA so that one certificate profile works everywhere, and P-384 since DIVERGENCE 5.724; it was
 P-256. The default chooses new keys only. A node's key keeps its algorithm across renewal, and an
 existing enrollment CA keeps its own. A node enrols with P-384 unless `--key-algorithm` says
 otherwise, and job-signing keys from `keys signer create` default to P-384 too.
@@ -2881,7 +2881,7 @@ exchange (X25519 is not approved for key exchange), SHA-1 is unavailable except 
 which is therefore disabled, and `halite-*-fips version` reports the module version and self-test
 status. Ed25519 *is* available: FIPS 186-5 (2023) approves it for signatures, and the Go
 Cryptographic Module v1.0.0 (CMVP #5247) certifies EdDSA. An earlier version of this section said
-Ed25519 was unavailable, and the x509 module refused it on that word (DIVERGENCE 5.721). A FIPS peer
+Ed25519 was unavailable, and the x509 module refused it on that word (DIVERGENCE 5.723). A FIPS peer
 built on an older OpenSSL FIPS provider may still not accept an Ed25519 key. The
 `fips_mode` grain reports both the host's kernel FIPS state and the binary's own mode, and a
 mismatch is a `doctor` warning.

@@ -458,7 +458,7 @@ For estates under FIPS 140-3, a parallel set of artifacts, suffixed
 Cryptographic Module, and runs with FIPS mode enforced. In that mode TLS is
 restricted to approved suites and P-256/P-384 key exchange, and the TOTP
 second factor (which needs SHA-1) is disabled. Ed25519 is available: FIPS
-186-5 approves it and the module certifies it (DIVERGENCE 5.721).
+186-5 approves it and the module certifies it (DIVERGENCE 5.723).
 `halite-node version` on a FIPS build reports the module and self-test
 status. The `fips_mode` grain is the host kernel's state alone;
 `fips_build`, `fips_enabled` and `fips_module` describe the binary. A mismatch

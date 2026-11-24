@@ -9,7 +9,7 @@ import (
 
 // The configuration reference and the parser must name the same algorithms.
 //
-// They did not (DIVERGENCE 5.720): the reference, generated from the key
+// They did not (DIVERGENCE 5.722): the reference, generated from the key
 // table, said `key_algorithm` took "ecdsa-p256, ecdsa-p384, rsa-3072,
 // rsa-4096, or ed25519 in non-FIPS builds", while ParseKeyAlgorithm has
 // only ever accepted the two ECDSA curves. An operator who chose rsa-4096

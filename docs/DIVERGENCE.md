@@ -50743,9 +50743,7 @@ windows-2022 legs run the audit, which is platform-independent, and
 `TestAReplaceLandsWhileAStreamingReaderHoldsTheFile`, which is the only
 test that tells `Open` from `os.Open`, and only on Windows. No stress run
 measured the 7 and 18 in 4,000 going to zero.
-
-
-### 5.720 The hub's key algorithms: SPEC and the configuration reference offered three that were never built
+### 5.722 The hub's key algorithms: SPEC and the configuration reference offered three that were never built
 
 SPEC 7.1 had a table of four rows, and two of them did not exist. The
 "Legacy interoperability" row offered RSA-3072 and RSA-4096. The paragraph
@@ -50786,9 +50784,7 @@ pattern now takes any lowercase word with a digit in it. With only
 
 **Not covered.** SPEC 7.1's prose is not held to the parser by the test.
 Only the key table, and the reference generated from it, are.
-
-
-### 5.721 Ed25519 is approved under FIPS 140-3, and the x509 module refused it as if it were not
+### 5.723 Ed25519 is approved under FIPS 140-3, and the x509 module refused it as if it were not
 
 SPEC 27.4 said that in FIPS mode "Ed25519 is unavailable". SPEC 7.1 said it
 "is not approved under FIPS 140-3". `fips.Restricted` was documented as "no
@@ -50853,15 +50849,13 @@ passed. It was broken on purpose by putting a refusal back under
 not approved under FIPS 140-3`.
 
 **Not run.** An Ed25519 certificate from this module, presented to a FIPS
-peer built on OpenSSL. The hub's own PKI still issues only ECDSA (5.720).
+peer built on OpenSSL. The hub's own PKI still issues only ECDSA (5.722).
 Whether it should offer Ed25519 is a separate decision. Issue 840's first
 question is answered here.
-
-
-### 5.722 P-384 is the default key algorithm
+### 5.724 P-384 is the default key algorithm
 
 The owner chose this on 2026-11-23, alongside allowing Ed25519 in FIPS mode
-(5.721). halite's own keys had defaulted to ECDSA P-256. They now default to
+(5.723). halite's own keys had defaulted to ECDSA P-256. They now default to
 P-384. P-256 is still accepted everywhere it was.
 
 **What changed.**
@@ -50923,6 +50917,12 @@ host. A P-384 job-signing key verified by a node over the wire; the
 verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
 build making the P-384 CA; `make fips-test` runs the unit tests above as a
 FIPS build.
+
+
+
+
+
+
 
 
 ## 6. Everything else not started

@@ -390,7 +390,7 @@ func TestThisPackageVerifiesWhatOpenSSLSigns(t *testing.T) {
 }
 
 // A signing key made with no algorithm named, as `keys signer create`
-// makes one by default, is P-384 (5.722), and it signs a job a node
+// makes one by default, is P-384 (5.724), and it signs a job a node
 // verifies: the node's verifier accepted P-384 before this default
 // changed, and this is the test that would say if it stopped.
 func TestTheDefaultSigningKeyIsP384AndVerifies(t *testing.T) {

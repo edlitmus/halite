@@ -164,7 +164,7 @@ func fingerprintOf(t *testing.T, csrDER []byte) (string, error) {
 
 func TestKeyAlgorithmNames(t *testing.T) {
 	for name, want := range map[string]KeyAlgorithm{
-		// The default, unnamed or named only "ecdsa", is P-384 (5.722).
+		// The default, unnamed or named only "ecdsa", is P-384 (5.724).
 		"": ECDSAP384, "ecdsa": ECDSAP384, "p384": ECDSAP384, "ECDSA-P384": ECDSAP384,
 		"p256": ECDSAP256, "ecdsa-p256": ECDSAP256,
 	} {
@@ -173,7 +173,7 @@ func TestKeyAlgorithmNames(t *testing.T) {
 			t.Errorf("%q = %v, %v; want %v", name, got, err, want)
 		}
 	}
-	// The hub's PKI issues ECDSA only (5.720); asking for Ed25519 should
+	// The hub's PKI issues ECDSA only (5.722); asking for Ed25519 should
 	// say so rather than quietly give ECDSA.
 	if _, err := ParseKeyAlgorithm("ed25519"); err == nil {
 		t.Error("an algorithm this build does not issue should be refused by name")
@@ -249,7 +249,7 @@ func TestAFingerprintIsRecognisedInEverySpelling(t *testing.T) {
 // What the default *generates*, not only what it parses to: the hub's CA,
 // its certificate, operators and nodes all come from GenerateKey, and a
 // default that parsed to P-384 while GenerateKey still fell through to
-// P-256 would pass TestKeyAlgorithmNames and issue the old curve (5.722).
+// P-256 would pass TestKeyAlgorithmNames and issue the old curve (5.724).
 func TestTheDefaultKeyIsP384(t *testing.T) {
 	alg, err := ParseKeyAlgorithm("")
 	if err != nil {
