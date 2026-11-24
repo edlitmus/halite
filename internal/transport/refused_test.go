@@ -101,9 +101,12 @@ func TestOnlyARevokedOrUnacceptableCertificateIsRefusedForGood(t *testing.T) {
 		{"a hub whose CA is not the one this node pinned",
 			ClientConfig(issueFrom(t, other.ca, "moved.example", time.Hour), other.ca.Cert, "localhost"), hub.url,
 			"certificate signed by unknown authority", false},
+		// "refused", not "connection refused": Windows words the same
+		// failure "No connection could be made because the target machine
+		// actively refused it".
 		{"a hub that is down",
 			ClientConfig(issueFrom(t, hub.ca, "patient.example", time.Hour), hub.ca.Cert, "localhost"), stoppedURL,
-			"connection refused", false},
+			"refused", false},
 	}
 	// The lost alert is not a refusal: it carries nothing that says which
 	// failure it was, so the node must retry it.
