@@ -51308,6 +51308,133 @@ here demonstrates it again. If the archive offers no older kernel for the
 running flavour, the removal test skips and the leg now fails, which is
 the intent, but it has not happened on a runner.
 
+### 5.730 A revoked node started again retried the hub's refusal for ever (2026-11-23)
+
+Issue 839, `cmd/halite-node` and `internal/transport`. Found in the lab
+run for issue 812 on Alpine under OpenRC. `keys revoke` on a running node
+made it exit 1, on the hub's revoke message. Its supervisor started it
+again, and the new agent did not exit. The hub refused its certificate at
+the TLS handshake, and `connect` retried that as it retries a hub that is
+down: with backoff, and for ever while `hub_tries` is 0, the default.
+`RestartPreventExitStatus=1` in the systemd unit and the OpenRC respawn
+cap both wait for an exit 1, so neither stopped it.
+
+**How a node hears that it is revoked.** There were two ways, and both
+need a node that is connected. A node on a stream gets the revoke message
+(`transport.MsgRevoke`), and exits 1. A node that reuses a connection made
+before the revocation gets `403` from every request, because the hub checks
+the denylist on each one as well as at the handshake (`authenticated` in
+`internal/hub/server.go`). A node that connects after the revocation gets
+neither: `verifyNotRevoked` fails the handshake. Go's server answers a
+failed `VerifyPeerCertificate` with the `bad certificate` alert, and the
+reason the hub logs does not reach the node. The revoke reason is not in
+the alert, and no request is answered after it.
+
+**What the hub sends in each case.** Measured against a real Go TLS
+server with the hub's own `ServerConfig`, go1.27.4, in
+`TestOnlyARevokedOrUnacceptableCertificateIsRefusedForGood`:
+
+| Case | What the node gets |
+|---|---|
+| Revoked certificate | `remote error: tls: bad certificate` |
+| Certificate from a CA the hub does not hold | `remote error: tls: unknown certificate authority` |
+| Expired certificate | `remote error: tls: expired certificate` |
+| The hub's CA is not the one the node pinned | the node's own `x509: certificate signed by unknown authority`, with no alert from the hub |
+| Hub down | `connection refused` |
+
+Read from go1.27.4's `crypto/tls/handshake_server.go`: when the client's
+certificate fails to verify, the server sends `unknown certificate
+authority` for an unknown issuer, `expired certificate` for a certificate
+outside its validity, and `bad certificate` for any other failure. It also
+sends `bad certificate` when `VerifyPeerCertificate` or `VerifyConnection`
+fails. The hub sets no `VerifyConnection`. 5.639 kept the one refusal that
+is transient, a full hub, out of the handshake for this reason, and answers
+it with `503`. So on a halite hub, `bad certificate` means the denylist, or
+a certificate the hub will never accept, such as one without client
+authentication or one the FIPS module refuses. A second try gets the same
+answer for each of these. None of the transient failures in the table
+gets this alert.
+
+**The change.** `transport.CertificateRefused` is true for the `bad
+certificate` alert and for `revoked certificate` (which Go never sends, but
+another TLS stack in front of a hub may). When the stream fails with
+either, `connect` logs `the hub refused this node's certificate, so this
+node will not retry`, names `halite-node enroll --force`, removes the last
+known good pillar as the revoke message does, and exits 1. It does this on
+the first refusal, whatever `hub_tries` is. `unknown certificate authority`
+and `expired certificate` still retry. Each can be put right without
+touching the node: a hub restored with the wrong CA can be restored again,
+and a clock that is wrong on either side can be set. The CA-changed case
+still retries, as before: chapter 39's row for it says what to do.
+
+**The alert is sometimes lost.** In TLS 1.3 the client finishes its half
+of the handshake before the hub has read the certificate, so the alert
+comes after. Go's HTTP/2 client sometimes reports only `http2: client conn
+could not be established`, with no cause attached. The first full run of
+the transport test failed on that. Then 300 runs found it 40 times in
+1,200 refused handshakes: 38 times in the expired case, once in the
+revoked case and once in the unknown-CA case. That error says nothing about
+which failure it was, so it is retried, and the next attempt reads the
+alert. A revoked node can therefore take a second attempt, after one
+backoff, before it exits. The transport test asks again when it gets that
+error, and the binary test allows three attempts.
+
+**What it changes in 5.719.3's advice.** 5.719.3 told the operator to stop
+and disable the OpenRC service on a node they revoke, because the cap
+never fired. Chapter 31, the OpenRC script's comment and the changelog now
+say that a revoked node exits 1 at every start. The 5.719.3 run with
+`hub_tries: 1` is the same exit at every start, and the cap stopped it
+after six exits in 27 seconds. That is the expected result now, but the
+revoked node was not run under `supervise-daemon` with this change.
+`rc-update del` is still how to keep the service from starting at boot.
+
+**Why not a hub change.** The issue asked whether the hub should make the
+revocation explicit. It could do so in two ways, and both are worse. It
+could accept a revoked certificate at the handshake and answer `403` with a
+code. Then a revoked peer would reach the HTTP layer, and SPEC 7.4's
+check at the handshake would become a check in each handler. Or it could
+answer a question about a serial on an anonymous route, beside `/v1/health`
+and `/v1/enroll`. That is a protocol change, and it tells anybody which
+certificates are revoked, to say what the alert already says. Neither
+route says anything about revocation today. The alert is enough, because
+on this hub it has one meaning that a retry cannot change.
+
+**Shown,** on the development host (FreeBSD 15.1, amd64, go1.27.4, the
+binaries built for FreeBSD), with real hub and node binaries over a real
+socket:
+
+- `TestARevokedNodeStartedAgainExitsOneAndSaysToReEnroll` enrols a node,
+  revokes it while it runs, and checks that it exits 1. Then it starts
+  `connect` again and asserts an exit 1 within 30 seconds, after one
+  `connecting` line, with a log that names the refusal and `halite-node
+  enroll`. **On main it failed**: `the process was still running after
+  30s`, with five `connecting` attempts, each `remote error: tls: bad
+  certificate`. With the change it passes.
+- `TestANodeStartedWhileItsHubIsDownConnectsWhenItComesBack` enrols a
+  node, stops the hub, starts `connect`, waits for three refused attempts,
+  starts the hub, and waits for the hub's `node connected`. It passed on
+  main and passes with the change.
+- **Broken on purpose, twice.** With `CertificateRefused` matching no
+  alert, the revoked-node test failed again (`still running after 30s`),
+  and so did the revoked row of the transport test. With `connect` exiting
+  on any stream error, the hub-down test failed: `the node exited while its
+  hub was down: exit status 1`.
+
+**Seen and not changed.** `transport.Rejected`, which removes the cached
+pillar, matches `certificate revoked` and `unknown certificate`. Go's
+alert text is `revoked certificate`, so the first never matches a Go peer.
+The second also matches `unknown certificate authority`, so a hub that
+lacks this node's CA removes its pillar. That is a cautious choice for a
+cache and may be what was meant. It is recorded here and not decided.
+
+**Not verified.** No supervisor was run with the change: not systemd's
+`RestartPreventExitStatus=1`, not the OpenRC respawn cap, and not FreeBSD's
+rc.d script. A node behind a relay was not run: the relay's own listener
+would send the alert, and was not measured. Windows was not run (the
+binary test skips there). The `403` that a revoked node gets on a reused
+connection is still retried, as before; no run showed a node reaching it
+after the revoke message failed to arrive.
+
 
 
 ## 6. Everything else not started
