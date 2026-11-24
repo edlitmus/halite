@@ -349,6 +349,19 @@ func (o *orchRunner) dispatchAndWait(c *exec.Context, args *value.Map, sub Submi
 		d.Signed = true
 		o.mu.Unlock()
 	}
+	// An unsigned step's job lives as long as the step will wait for it,
+	// and never less than the default (DIVERGENCE 5.735; SPEC 6.3 lets an
+	// orchestration step extend it). Its job got the fifteen-minute
+	// default whatever the step's `timeout`: a longer step still succeeded
+	// on the node's late return while its job was settled partial and
+	// counted expired, and a batched one stopped sending waves at minute
+	// fifteen, because a node refuses a job past its expiry, and left the
+	// rest of the estate untouched. A signed step's expiry is the plan's,
+	// fixed when it was signed (orchplan), and is not changed here.
+	timeout := stepTimeout(c)
+	if !signed && timeout > job.DefaultTTL {
+		sub.TTL = timeout
+	}
 	o.dispatching(c.StateID)
 	j, err := o.server.dispatchFor(o.principal, o.onBehalfOf, sub)
 	if err != nil {
@@ -364,7 +377,6 @@ func (o *orchRunner) dispatchAndWait(c *exec.Context, args *value.Map, sub Submi
 	})
 	o.dispatched(c.StateID, j)
 
-	timeout := stepTimeout(c)
 	_, returns, missing, err := o.server.awaitReturns(c.Ctx, j.JID, timeout)
 	if err != nil {
 		return states.False(fmt.Sprintf("Waiting for %s: %v", j.JID, err)), nil

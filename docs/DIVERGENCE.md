@@ -51644,6 +51644,97 @@ the record, against a step timeout of a second, which is fragile in its
 own right; that is left as it was, because changing it now would hide
 the evidence this is meant to collect.
 
+### 5.734 A step waited out its timeout for nodes its stopped batch never reached (2026-11-24)
+
+Found while answering issue 810's open question. A step waits for
+its job in `awaitReturns`, until every node has answered or its own
+`timeout` passes. A batched job can stop short of its nodes in two ways:
+its `batch_safe_limit` aborts it, or its expiry passes and the hub stops
+sending waves a node would refuse. The nodes it never reached stay missing
+for ever, so the step sat out the rest of its timeout on a job the hub had
+already closed. Seen in the hub lab before any change: two nodes,
+`batch: 1`, `timeout: 3600`, the hub's clock moved past the job's
+expiry, and the first wave's answer. The hub logged *"batch stopped: the
+job expired before every node was reached"*, the job read `aborted`, and
+eight seconds later the orchestration was still waiting, as it would have
+for the hour.
+
+**Fix.** `awaitReturns` stops once every node still missing was never sent
+the job and none ever will be: the job is not batching and was aborted or
+has expired (`noneCanStillAnswer`). A node that was sent the job is still
+waited for, because it may be running it and its late return is filed
+and counts (5.715). The step's comment names the nodes never sent the job
+and why. The expiry is asked first, because an expired batch is closed as
+`aborted` too (`settleExpired`), and blaming the safe limit for an expiry
+would send someone to the wrong setting. A step whose missing nodes were
+all sent the job reads exactly as before.
+
+**Demonstrated.** `TestAStepWhoseBatchIsAbortedStopsWaitingForTheNodesItNeverReached`
+(a safe-limit abort through a real orchestration) finishes in under a
+second, and `TestAWaitEndsWhenAnExpiredBatchStopsShortOfItsNodes` (the
+expiry, asked of `awaitReturns` directly) ends after about 300 ms. With
+`noneCanStillAnswer` taken out of the wait, both were still waiting at
+their 15-second guards. `TestAStepSaysWhyANodeWasNeverSentItsJob` pins the
+comment's wording, the old one included, and fails with the expiry and
+abort questions in the other order. In the hub lab on macOS, with the
+hub's clock moved, not with real binaries.
+
+**Not covered.** The safe-limit route needs no clock and is the more
+likely one in practice, but no real fleet has met it. A `salt.runner`
+step or the API waiting on a job is not changed here; this is the
+orchestration step's wait.
+
+### 5.735 An orchestration step's job expired at fifteen minutes whatever the step's timeout (2026-11-24)
+
+Issue 810's second question, which 5.715 left open: whether a step's
+`timeout` should set its job's TTL, which SPEC 6.3 allowed (*"orchestration
+steps may extend it"*). The owner decided it should, on 2026-11-24.
+
+An unsigned step never set its job's TTL (`baseSubmission`), so the job
+got `job.DefaultTTL`, fifteen minutes, whatever the step's `timeout`;
+`stepTimeout` is that timeout, or five minutes without one. A signed
+step's expiry is its plan's whole-run window (`orchplan`), so signed runs
+did not have this. Seen in the hub lab before the change, with the hub's
+clock moved sixteen minutes on:
+
+| Step | What happened |
+|---|---|
+| one node, `timeout: 3600` | The job lived 15m0s. `Settle` closed it `partial`; the node then answered, the step **succeeded and the run completed**, and the job still read `partial` and was counted expired. |
+| two nodes, `batch: 1`, `timeout: 3600` | The batch stopped at the expiry and the second node was **never sent the job**; then the step waited for it (5.734). |
+
+The second is the one that matters on an estate: a rolling deploy that
+takes more than fifteen minutes stopped part-way and left the rest of its
+targets as they were.
+
+**Fix.** An unsigned step's job gets a TTL of the step's timeout when that
+is longer than the default (`dispatchAndWait`). A step with no `timeout`,
+which waits five minutes, and a step with a shorter one keep fifteen.
+Signed steps are not changed. SPEC 6.3 now says this rather than "may".
+
+**Trade.** A long `timeout` keeps the job valid on its nodes that long.
+An unsigned job is one the hub could mint again at any time, so the
+window adds nothing a hub could not already do; a signed job's window
+stays its plan's, under the node's `job_signature_max_ttl`.
+
+**Demonstrated.** `TestAStepsJobLivesAsLongAsTheStepWaitsForIt` (an hour
+for `timeout: 3600`, fifteen minutes for none and for `60`),
+`TestALongStepsJobIsNotSettledExpiredWhileTheStepStillWaits` (nothing
+settled at sixteen minutes; job and run both complete) and
+`TestABatchedStepKeepsSendingWavesPastFifteenMinutes` (the second wave is
+sent sixteen minutes in; both complete). With the TTL line taken out, all
+three fail as the table above: 15m0s, *"Settle closed 1 jobs"*, and the
+second wave not sent. `internal/hub`, and the orchestration, resume and
+plan tests of `cmd/halite-node` and `cmd/halite-hub` with real binaries,
+pass. In the hub lab on macOS with the hub's clock moved: issue 810 asked
+for a test with real hub and node binaries running a job past its expiry,
+and that is still not done, because the default TTL is a constant and a
+real run would take fifteen minutes.
+
+**Not covered.** A job queued for an offline node (`queue`) is refused by
+orchestration steps today and is not changed. Whether a step's job should
+outlive the step by a margin, for a node that answers at the very end, is
+not decided: it expires when the step stops waiting.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

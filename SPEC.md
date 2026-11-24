@@ -415,7 +415,7 @@ operator from replaying an old job, so jobs carry their own guarantees:
 |---|---|
 | `jid` | Monotonic, hub-assigned, `YYYYMMDDThhmmssffffff` for operator readability and Salt familiarity |
 | `nonce` | 128-bit random, recorded by the node in a bounded replay cache keyed by `jid` |
-| `expires` | Absolute RFC 3339 timestamp. A node refuses a job past expiry. Default TTL 15 minutes; orchestration steps may extend it. |
+| `expires` | Absolute RFC 3339 timestamp. A node refuses a job past expiry. Default TTL 15 minutes. An unsigned orchestration step's job lives as long as the step's `timeout` when that is longer (DIVERGENCE 5.735); a signed step's expiry is its plan's. |
 
 A node refuses a job whose `jid` it has already executed, whose `nonce` it has already seen, or
 whose `expires` has passed, and returns a structured refusal rather than dropping it silently.
