@@ -108,7 +108,9 @@ func TestAStepWhoseBatchIsAbortedStopsWaitingForTheNodesItNeverReached(t *testin
 
 // The other way a batch stops: the job expires part-way, and the hub stops
 // sending waves a node would refuse. Asked of awaitReturns directly with a
-// batched job of one minute.
+// batched job of one minute, because an orchestration step's job now lives
+// as long as the step waits (5.735), so this no longer happens through a
+// plain step.
 func TestAWaitEndsWhenAnExpiredBatchStopsShortOfItsNodes(t *testing.T) {
 	l := orchLab(t, nil)
 	clients := map[string]*transport.Client{}
