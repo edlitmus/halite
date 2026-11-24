@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -77,55 +78,157 @@ func (l *lab) answeringWith(t *testing.T, client *transport.Client, nodeID strin
 }
 
 // newestRun is the most recent record in the store, as it is on disk at
-// the moment of the call, or nil. Called from the node's goroutine, so it
-// reports nothing itself: the test's assertions on a nil say what is
-// missing.
-func newestRun(l *lab) *OrchRun {
+// the moment of the call, or nil and what stood in the way: the listing's
+// error, the records that could not be read, or no record yet. Called from
+// the node's goroutine, so it reports nothing itself.
+//
+// It returned a bare nil for all three, and the caller polled again, so a
+// read that kept losing to a replace looked exactly like a record that was
+// slow to name its step. On windows-2022 that is the difference between
+// issue 799's race and a slow runner, and the failure on main in run
+// 45449999937 could not tell them apart (DIVERGENCE 5.733). 5.714 did the
+// same for the signed-checkpoint test.
+func newestRun(l *lab) (*OrchRun, string) {
 	runs, bad, err := l.server.orchStore().List(1)
-	if err != nil || len(bad) > 0 || len(runs) == 0 {
-		return nil
+	switch {
+	case err != nil:
+		return nil, "listing the store: " + err.Error()
+	case len(bad) > 0:
+		var parts []string
+		for _, b := range bad {
+			parts = append(parts, fmt.Sprintf("record %s unreadable: %v", b.JID, b.Err))
+		}
+		return nil, strings.Join(parts, "; ")
+	case len(runs) == 0:
+		return nil, "no record yet"
 	}
-	return runs[0]
+	return runs[0], ""
 }
 
 // recordNaming waits for the newest record to name step as dispatched as
-// jid, and returns it, or the last record read if it never does.
+// jid, and returns it, or the last record read if it never does, with an
+// account of the reads: how many, over how long, when the step first
+// appeared with its jid, and each thing that stood in the way, with when it
+// was first met and how often.
 //
 // A wait, because the job reaches the node before dispatchFor returns to
 // the step that sent it: the record written before the dispatch names the
 // step with no jid, and the one written after it names the jid, and a node
 // that reads the record the instant its job arrives can see either.
-func recordNaming(l *lab, step, jid string) *OrchRun {
-	deadline := time.Now().Add(5 * time.Second)
+func recordNaming(l *lab, step, jid string) (*OrchRun, string) {
+	return recordNamingWithin(l, step, jid, 5*time.Second)
+}
+
+func recordNamingWithin(l *lab, step, jid string, wait time.Duration) (*OrchRun, string) {
+	start := time.Now()
+	deadline := start.Add(wait)
+	var (
+		last    *OrchRun
+		reads   int
+		order   []string
+		first   = map[string]time.Duration{}
+		times   = map[string]int{}
+		without int // reads whose record did not yet name the jid
+	)
+	account := func(found string) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%d read(s) of the store over %s; %s", reads,
+			time.Since(start).Round(time.Millisecond), found)
+		if without > 0 {
+			fmt.Fprintf(&b, "; %d read(s) found a record that did not yet name it", without)
+		}
+		for _, p := range order {
+			fmt.Fprintf(&b, "; from +%s, %d time(s): %s", first[p].Round(time.Millisecond), times[p], p)
+		}
+		return b.String()
+	}
 	for {
-		run := newestRun(l)
+		run, problem := newestRun(l)
+		reads++
+		if problem != "" {
+			if _, ok := first[problem]; !ok {
+				first[problem] = time.Since(start)
+				order = append(order, problem)
+			}
+			times[problem]++
+		}
 		if run != nil {
+			last = run
 			for _, st := range run.Steps {
 				if st.ID == step && st.JID == jid {
-					return run
+					return run, account(fmt.Sprintf("%s named as %s after %s", step, jid,
+						time.Since(start).Round(time.Millisecond)))
 				}
 			}
+			without++
 		}
 		if time.Now().After(deadline) {
-			return run
+			return last, account(fmt.Sprintf("%s was never named as %s", step, jid))
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 }
 
+// describeSteps is a run's steps as a person reads them. `%+v` of the
+// slice printed three pointers, which is all the failure in run
+// 45449999937 said about why its run failed.
+func describeSteps(run *OrchRun) string {
+	if run == nil {
+		return "  (no run)\n"
+	}
+	var b strings.Builder
+	for _, st := range run.Steps {
+		result := "none"
+		if st.Result != nil {
+			result = fmt.Sprint(*st.Result)
+		}
+		fmt.Fprintf(&b, "  %s (%s): result %s, pending %v, job %q, %dms", st.ID, st.Fun, result, st.Pending,
+			st.JID, st.DurationMS)
+		if len(st.Failed) > 0 || len(st.Missing) > 0 {
+			fmt.Fprintf(&b, ", failed %v, missing %v", st.Failed, st.Missing)
+		}
+		if st.Comment != "" {
+			fmt.Fprintf(&b, ": %s", st.Comment)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // seen is what the node's goroutine saw, handed to the test's. The two
 // meet only through a socket, which the race detector cannot see through.
 type seen struct {
-	mu  sync.Mutex
-	run *OrchRun
-	jid string
-	fun []string
+	mu    sync.Mutex
+	run   *OrchRun
+	jid   string
+	reads string // recordNaming's account of how it got run
+	fun   []string
 }
 
-func (s *seen) set(run *OrchRun, jid string) {
+func (s *seen) set(run *OrchRun, jid, reads string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.run, s.jid = run, jid
+	s.run, s.jid, s.reads = run, jid, reads
+}
+
+// account waits up to d for the node's goroutine to have finished reading
+// the record, and returns what it found. A failed run can return to the
+// test while that goroutine is still polling: the migrate step's timeout
+// is a second and recordNaming waits five.
+func (s *seen) account(d time.Duration) string {
+	deadline := time.Now().Add(d)
+	for {
+		s.mu.Lock()
+		reads := s.reads
+		s.mu.Unlock()
+		if reads != "" {
+			return reads
+		}
+		if time.Now().After(deadline) {
+			return fmt.Sprintf("the node was still reading the record %s later", d)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (s *seen) get() (*OrchRun, string) {
@@ -151,7 +254,8 @@ func TestTheRecordNamesFinishedAndWaitingStepsWhileAStepIsOut(t *testing.T) {
 	var saw seen
 	defer l.answeringWith(t, l.enrolled(t, "web1.example"), "web1.example", func(msg transport.Message) bool {
 		if msg.Fun == "test.echo" {
-			saw.set(recordNaming(l, "migrate", msg.JID), msg.JID)
+			run, reads := recordNaming(l, "migrate", msg.JID)
+			saw.set(run, msg.JID, reads)
 		}
 		return true
 	})()
@@ -162,8 +266,11 @@ func TestTheRecordNamesFinishedAndWaitingStepsWhileAStepIsOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reads := saw.account(6 * time.Second)
+	t.Logf("the node's reads of the record while migrate was out: %s", reads)
 	if run.State != OrchComplete {
-		t.Fatalf("the run is %s: %+v", run.State, run.Steps)
+		t.Fatalf("the run is %s:\n%sthe node's reads of the record while migrate was out: %s",
+			run.State, describeSteps(run), reads)
 	}
 	during, migrateJob := saw.get()
 	if during == nil {
@@ -206,7 +313,8 @@ func TestAResumedRunRecordsItsCarriedStepsBeforeItsFirstStepReturns(t *testing.T
 	var saw seen
 	defer l.answeringWith(t, node, "web1.example", func(msg transport.Message) bool {
 		if msg.Fun == "pkg.install" {
-			saw.set(recordNaming(l, "deploy_web", msg.JID), msg.JID)
+			run, reads := recordNaming(l, "deploy_web", msg.JID)
+			saw.set(run, msg.JID, reads)
 		}
 		return true
 	})()
@@ -240,7 +348,8 @@ func TestAResumePastAStepThatWasOutReadsItsJob(t *testing.T) {
 		if msg.Fun == "test.echo" {
 			// What was on disk at this moment is what a hub killed now
 			// would have left.
-			saw.set(recordNaming(l, "migrate", msg.JID), msg.JID)
+			run, reads := recordNaming(l, "migrate", msg.JID)
+			saw.set(run, msg.JID, reads)
 			return false
 		}
 		return true
@@ -320,7 +429,8 @@ func TestAResumePastAStepCaughtDispatchingIsRefused(t *testing.T) {
 	var saw seen
 	stop := l.answeringWith(t, node, "web1.example", func(msg transport.Message) bool {
 		if msg.Fun == "test.echo" {
-			saw.set(recordNaming(l, "migrate", msg.JID), msg.JID)
+			run, reads := recordNaming(l, "migrate", msg.JID)
+			saw.set(run, msg.JID, reads)
 		}
 		return true
 	})
