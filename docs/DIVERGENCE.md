@@ -50743,9 +50743,7 @@ windows-2022 legs run the audit, which is platform-independent, and
 `TestAReplaceLandsWhileAStreamingReaderHoldsTheFile`, which is the only
 test that tells `Open` from `os.Open`, and only on Windows. No stress run
 measured the 7 and 18 in 4,000 going to zero.
-
-
-### 5.721 A job the tracer sampled lost the hub's tree for another environment (2026-11-23)
+### 5.722 A job the tracer sampled lost the hub's tree for another environment (2026-11-23)
 
 Issue 803, filed as a suspicion from reading and not reproduced. It was
 real. `executeJob` wrapped the job's tree for tracing (`traceFiles`, which
@@ -50803,9 +50801,9 @@ run. A job naming another environment on a node with no `file_roots` for
 it, which would have read the packaged defaults, was not run: the test
 gives each node its own roots so as not to read a real tree.
 
-### 5.721.1 A sampled `saltutil.sync_*` was refused as if the node had no hub
+### 5.722.1 A sampled `saltutil.sync_*` was refused as if the node had no hub
 
-Found while fixing 5.721, by looking for every other assertion on the type
+Found while fixing 5.722, by looking for every other assertion on the type
 of a job's `n.files`. `extensionSource`, which `saltutil.sync_all` and its
 siblings reach for, asserted `n.files.(*fileserver.Remote)` too, and a job's
 `n.files` is the `tracedFiles` wrapper for the whole of a sampled job. So a
@@ -50814,12 +50812,12 @@ server, and this node is working from its own tree" on a node attached to
 its hub, and the same sync unsampled succeeded.
 
 **Seen.** `TestATracedExtensionSyncReachesTheHubsTree`, on the same lab as
-5.721, with only that fix in place: `plain1` answered `extensions: []`,
+5.722, with only that fix in place: `plain1` answered `extensions: []`,
 `changed: False` and exit 0; `traced1` exited 1 with the refusal above.
 
 **The change.** `hubTreeOf` answers "is this the hub's tree?" through the
 wrapper, and `extensionSource` asks it. Reordering cannot help here, as it
-did in 5.721, because the wrapper is in place for the whole job. The other
+did in 5.722, because the wrapper is in place for the whole job. The other
 assertion of that kind, in `pinTreeForRun`, runs before the wrapper is
 applied. The test also checks that the collector received `traced1`'s
 `job saltutil.sync_all` span.
@@ -50831,6 +50829,9 @@ was refused again and the test failed.
 sync that ran fetched nothing: what was shown is that a sampled sync
 reaches the hub's tree, not that it delivers a bundle. Run on the
 development host's Linux compatibility layer only.
+
+
+
 
 ## 6. Everything else not started
 
