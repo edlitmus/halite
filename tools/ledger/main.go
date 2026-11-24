@@ -165,11 +165,41 @@ type section struct {
 	title  string
 	start  int // line index, 0-based
 	end    int // exclusive
+	// subs are the section's own numbered subsections, `N.M.k`, which lie
+	// inside [start, end) and move and renumber with it.
+	subs []subsection
+}
+
+// subsection is one `N.M.k` heading belonging to a section.
+type subsection struct {
+	hashes string
+	number int // the k
+	title  string
+	start  int // line index, 0-based, in the same file as its section
 }
 
 func (s section) label() string { return fmt.Sprintf("%d.%d%s", s.major, s.minor, s.suffix) }
 
+func (s section) subLabel(sub subsection) string {
+	return fmt.Sprintf("%s.%d", s.label(), sub.number)
+}
+
+// subNumbers are the k of every subsection, for citationRe.
+func (s section) subNumbers() []int {
+	out := make([]int, 0, len(s.subs))
+	for _, sub := range s.subs {
+		out = append(out, sub.number)
+	}
+	return out
+}
+
 var headingRe = regexp.MustCompile(`^(#{2,4}) (\d+)\.(\d+)([a-z]?) (.*)$`)
+
+// subHeadingRe is a numbered subsection, `### N.M.k title`. headingRe does
+// not match it -- after "N.M" it wants a space -- which is why a subsection
+// was invisible to this tool, and also why a `###` subsection ended its
+// parent's extent: it is a heading at the parent's own depth (issue 833).
+var subHeadingRe = regexp.MustCompile(`^(#{2,4}) (\d+\.\d+[a-z]?)\.(\d+) (.*)$`)
 
 func parseSections(lines []string) []section {
 	var out []section
@@ -193,9 +223,27 @@ func parseSections(lines []string) []section {
 	// subsections, and cutting at the first of them would move a heading
 	// and leave its body behind -- which is the one mistake that would
 	// make this tool worse than doing it by hand.
+	//
+	// A numbered subsection of the section's own label is part of it too,
+	// at whatever depth it is written. The ledger writes them both as
+	// `####` and as `###` -- 5.688.1 is `###` -- and the
+	// depth rule alone cut a `###` one off, so `renumber` moved the parent
+	// and left its subsections behind, and on the next run moved the
+	// parent past them (issue 833). Matched by label, so a subsection
+	// belongs to the section it names and not merely to whichever one it
+	// follows: a stray N.M.k left after N.M+1 does not become N.M+1's.
 	for i := range out {
 		out[i].end = len(lines)
 		for j := out[i].start + 1; j < len(lines); j++ {
+			if m := subHeadingRe.FindStringSubmatch(lines[j]); m != nil && m[2] == out[i].label() {
+				k, err := strconv.Atoi(m[3])
+				if err == nil {
+					out[i].subs = append(out[i].subs, subsection{
+						hashes: m[1], number: k, title: m[4], start: j,
+					})
+					continue
+				}
+			}
 			depth := headingDepth(lines[j])
 			if depth > 0 && depth <= len(out[i].hashes) {
 				out[i].end = j
@@ -359,6 +407,11 @@ func (p *plan) report(w *os.File) error {
 	fmt.Fprintf(w, "sections this branch adds, against %s:\n", baseRef())
 	for _, s := range p.mine {
 		fmt.Fprintf(w, "  %-8s %s\n", s.label(), s.title)
+		// Listed because they move with it, and a move nobody was shown
+		// is how issue 833 went unnoticed until the ordering audit.
+		for _, sub := range s.subs {
+			fmt.Fprintf(w, "    %s  %s\n", s.subLabel(sub), sub.title)
+		}
 	}
 	if !p.dirty() {
 		fmt.Fprintln(w, "\nevery one already has a free number, and sits last in its "+
@@ -367,18 +420,22 @@ func (p *plan) report(w *os.File) error {
 	}
 	if p.misplaced {
 		fmt.Fprintln(w, "\nposition: one of these sits before a section of the base's, "+
-			"which the ordering audit rejects. Moving it to the end of its chapter.")
+			"which the ordering audit rejects. Moving each, with its subsections, "+
+			"to the end of its chapter.")
 	}
 	if len(p.moves) > 0 {
 		fmt.Fprintln(w, "\nrenumbering:")
 	}
 	for _, m := range p.moves {
 		fmt.Fprintf(w, "  %s -> %s  %s\n", m.sec.label(), m.want, m.sec.title)
+		for _, sub := range m.sec.subs {
+			fmt.Fprintf(w, "    %s -> %s.%d  %s\n", m.sec.subLabel(sub), m.want, sub.number, sub.title)
+		}
 	}
 	fmt.Fprintln(w, "\ncitations to rewrite, on lines this branch added:")
 	total := 0
 	for _, m := range p.moves {
-		for _, hit := range p.citations(m.sec.label()) {
+		for _, hit := range p.citations(m.sec) {
 			fmt.Fprintf(w, "  %s:%d  %s -> %s\n", hit.file, hit.line, m.sec.label(), m.want)
 			total++
 		}
@@ -398,8 +455,49 @@ type hit struct {
 // citationRe matches a label in prose or a comment: "DIVERGENCE 5.149",
 // "(DIVERGENCE 5.149)", "5.149's", "in 5.149;". The label is required to
 // end at a non-digit so that 5.14 does not match inside 5.149.
-func citationRe(label string) *regexp.Regexp {
-	return regexp.MustCompile(regexp.QuoteMeta(label) + `([^0-9]|$)`)
+//
+// subs are the section's own subsection numbers: "N.M.2" is a citation of it
+// only when N.M has a 2. Without that a citation of N.M.1 matched as N.M
+// followed by ".", and so moved with N.M whether or not N.M had a subsection
+// 1 -- and when it did not, the N.M.1 meant was the base's, under the base's
+// N.M (issue 833).
+//
+// Group 1 is the ".k" if there is one and group 2 the character that ended
+// the match, so a replacement is the new label followed by "${1}${2}".
+func citationRe(label string, subs []int) *regexp.Regexp {
+	sub := ""
+	if len(subs) > 0 {
+		alternatives := make([]string, 0, len(subs))
+		for _, k := range subs {
+			alternatives = append(alternatives, strconv.Itoa(k))
+		}
+		sub = `\.(?:` + strings.Join(alternatives, "|") + `)`
+	}
+	// The end is "not a digit and not a dot before a digit", spelled out
+	// because RE2 has no lookahead: a dot ending a sentence is fine, a dot
+	// starting somebody else's ".k" is not.
+	return regexp.MustCompile(regexp.QuoteMeta(label) + `((?:` + sub + `)?)([^0-9.]|\.[^0-9]|\.$|$)`)
+}
+
+// ledgerHeadingPrefix is the "### N.M " or "### N.M.k " in front of a
+// ledger heading's title.
+var ledgerHeadingPrefix = regexp.MustCompile(`^#{2,4} \d+\.\d+[a-z]?(?:\.\d+)? `)
+
+// citable is the offset in a line from which a label is a citation.
+//
+// The number in a ledger heading is not a citation of itself, and the
+// citation pass rewriting it was half of issue 833: it renumbered a
+// subsection heading in place on any line this branch added, so the
+// subsection kept its position with a new number -- and a branch's own
+// subsection under the *base's* section was renumbered along with the
+// branch's colliding section. Heading numbers are set by renumberAndMove,
+// which knows which section each subsection belongs to. A heading's title is
+// still prose and may cite something.
+func citable(file, line string) int {
+	if file != ledgerPath {
+		return 0
+	}
+	return len(ledgerHeadingPrefix.FindString(line))
 }
 
 // citations are the places this branch cites a label.
@@ -409,8 +507,8 @@ func citationRe(label string) *regexp.Regexp {
 // would silently repoint somebody else's reference. Nothing in the audits
 // would catch it -- `TestLedgerDivergenceCitationsResolve` checks that a
 // cited number exists, not that it is the one meant.
-func (p *plan) citations(label string) []hit {
-	re := citationRe(label)
+func (p *plan) citations(sec section) []hit {
+	re := citationRe(sec.label(), sec.subNumbers())
 	var out []hit
 	files := make([]string, 0, len(p.touched))
 	for f := range p.touched {
@@ -427,7 +525,8 @@ func (p *plan) citations(label string) []hit {
 			if n-1 < 0 || n-1 >= len(lines) {
 				continue
 			}
-			if re.MatchString(lines[n-1]) {
+			line := lines[n-1]
+			if re.MatchString(line[citable(file, line):]) {
 				out = append(out, hit{file: file, line: n})
 			}
 		}
@@ -443,17 +542,22 @@ func (p *plan) apply() error {
 	// Citations first, and in every file including the ledger, while the
 	// line numbers still describe the file on disk. Moving sections
 	// invalidates them.
-	edits := map[string]map[int]struct{ from, to string }{}
+	type edit struct {
+		from *regexp.Regexp
+		to   string
+	}
+	edits := map[string]map[int]edit{}
 	for _, m := range p.moves {
-		for _, h := range p.citations(m.sec.label()) {
+		re := citationRe(m.sec.label(), m.sec.subNumbers())
+		for _, h := range p.citations(m.sec) {
 			if edits[h.file] == nil {
-				edits[h.file] = map[int]struct{ from, to string }{}
+				edits[h.file] = map[int]edit{}
 			}
 			// A line citing two renumbered sections is rare and would
 			// need both; taking the first keeps this honest by failing
 			// the audit rather than half-writing.
 			if _, taken := edits[h.file][h.line]; !taken {
-				edits[h.file][h.line] = struct{ from, to string }{m.sec.label(), m.want}
+				edits[h.file][h.line] = edit{from: re, to: m.want}
 			}
 		}
 	}
@@ -464,8 +568,9 @@ func (p *plan) apply() error {
 		}
 		lines := strings.Split(string(body), "\n")
 		for n, e := range byLine {
-			re := citationRe(e.from)
-			lines[n-1] = re.ReplaceAllString(lines[n-1], e.to+"$1")
+			line := lines[n-1]
+			at := citable(file, line)
+			lines[n-1] = line[:at] + e.from.ReplaceAllString(line[at:], e.to+"${1}${2}")
 		}
 		if err := os.WriteFile(file, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", file, err)
@@ -519,9 +624,16 @@ func renumberAndMove(lines []string, moves []move, mine []section) error {
 		if !isMine[s.title] {
 			continue
 		}
+		// The extent includes the section's subsections (parseSections),
+		// so lifting it lifts them; their headings are renumbered here,
+		// with the parent's, because the citation pass leaves heading
+		// numbers alone.
 		body := append([]string(nil), lines[s.start:s.end]...)
 		if label, ok := want[s.title]; ok {
 			body[0] = fmt.Sprintf("%s %s %s", s.hashes, label, s.title)
+			for _, sub := range s.subs {
+				body[sub.start-s.start] = fmt.Sprintf("%s %s.%d %s", sub.hashes, label, sub.number, sub.title)
+			}
 		}
 		// Trailing blank lines travel with the gap, not the section.
 		for len(body) > 0 && strings.TrimSpace(body[len(body)-1]) == "" {
