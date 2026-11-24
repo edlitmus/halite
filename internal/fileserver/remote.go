@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -595,7 +596,16 @@ func (r *Remote) ForEnv(env string) *Remote {
 			return r
 		}
 	}
-	r.Environments = append(r.Environments, env)
+	// Clipped first, so the append always gets an array of its own. The
+	// receiver is normally a job's shallow copy of the agent's Remote
+	// (ForRun, WithContext), and the copy shares the agent's array: an
+	// append into spare capacity would write the one slot every other copy
+	// writes too, and a job would read another job's environment (issue
+	// 849, DIVERGENCE 5.722). The agent's Remote is built today with a
+	// one-element literal, so the capacity is never spare in practice --
+	// but that is a property of a line in another package, and this one
+	// must not depend on it.
+	r.Environments = append(slices.Clip(r.Environments), env)
 	return r
 }
 
