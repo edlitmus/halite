@@ -69,7 +69,8 @@ It keeps the connection alive with a ping every `hub_alive_interval`
 its side. If the hub is unreachable, the node **retries with backoff
 forever** (`hub_tries: 0`, the default). Set `hub_tries` to a number if you
 want an agent that gives up and exits. The only two reasons a node exits
-by itself are a revoked enrollment and `hub_tries` being reached, both of
+by itself are a revoked enrollment (told on its stream, or refused at the
+handshake when it next starts) and `hub_tries` being reached, both of
 which a restart could not fix, and the service files are written so that
 exit status `1` stops the unit instead of restarting it into a loop.
 

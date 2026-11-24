@@ -244,6 +244,19 @@ func (n *node) traceFiles(parent *tracing.Span) stateTree {
 	return tracedFiles{inner: inner, tracer: n.tracer, parent: sc}
 }
 
+// hubTreeOf is the hub's file server under a tree, whether or not the
+// tree is wrapped for tracing. Anything that asks "is this the hub's
+// tree?" of a job's n.files must ask here: the wrapper is there only for
+// the jobs the tracer samples, so an assertion on n.files's own type is
+// right on most jobs and wrong on the sampled few (issue 803).
+func hubTreeOf(files stateTree) (*fileserver.Remote, bool) {
+	if traced, ok := files.(tracedFiles); ok {
+		files = traced.inner
+	}
+	remote, ok := files.(*fileserver.Remote)
+	return remote, ok
+}
+
 // compile-time check that the decorator still satisfies what a module
 // is handed. A method added to FileFetcher and not to tracedFiles would
 // otherwise be found by a state that used it.

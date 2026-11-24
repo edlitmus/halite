@@ -31,6 +31,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 
 - `ApprovedCurves` (func): ApprovedCurves is approvedCurves for a listener outside this package: the API's, which must hold to the same rule (SPEC 25.3, 27.4) and did not (issue 321, section 5).
 - `AsyncRunners` (func): AsyncRunners names the runners that take `async`, which the callers wait for; it exists so that the hub's test can compare the list with the registry.
+- `CertificateRefused` (func): CertificateRefused reports whether the hub refused this node's certificate in a way no retry can change: the certificate is revoked, or is one the hub will never accept.
 - `Client` (type): Client is a node's connection to its hub.
 - `ClientConfig` (func): ClientConfig builds a node's TLS configuration.
 - `CodeOf` (func): CodeOf answers with the stable code the hub attached to a failure, or an empty string when it attached none.

@@ -50766,6 +50766,633 @@ windows-2022 legs run the audit, which is platform-independent, and
 `TestAReplaceLandsWhileAStreamingReaderHoldsTheFile`, which is the only
 test that tells `Open` from `os.Open`, and only on Windows. No stress run
 measured the 7 and 18 in 4,000 going to zero.
+### 5.722 The hub's key algorithms: SPEC and the configuration reference offered three that were never built
+
+SPEC 7.1 had a table of four rows, and two of them did not exist. The
+"Legacy interoperability" row offered RSA-3072 and RSA-4096. The paragraph
+under the table said Ed25519 "is permitted in non-FIPS builds by
+configuration, and the protocol negotiates it". The configuration reference
+(`docs/configuration.md`, generated from `internal/config/keys.go`) said the
+same: `key_algorithm` took "ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or
+ed25519 in non-FIPS builds".
+
+`pki.ParseKeyAlgorithm` has only ever accepted `ecdsa-p256` and `ecdsa-p384`,
+with the aliases `p256`, `ecdsa` and `p384`. `pki.GenerateKey` makes nothing
+but ECDSA. Any other value stops the hub at start with `key_algorithm
+"rsa-4096" is not one this build issues; try ecdsa-p256 or ecdsa-p384`. So an
+operator who chose from the documentation got a hub that would not start. Two
+paths that must agree did not: the documentation of a setting and the parser
+of that setting.
+
+This was found while correcting SPEC 27.4's claim about Ed25519 and FIPS
+(issue 840). That paragraph was where the Ed25519 half of this was written, and
+reading it beside `pki.go` showed that the option it described did not exist.
+
+**Fix.** SPEC 7.1's table now names the two values of `key_algorithm`, says
+they are the only two in every build, and says what the earlier table
+claimed. The key table's text is "ecdsa-p256 or ecdsa-p384.". Its longer
+description no longer offers Ed25519, and the reference is regenerated. The
+comment on `pki.KeyAlgorithm` says the same. No code changed. Adding RSA or
+Ed25519 to the hub's PKI would be a feature, and nobody has asked for it.
+
+**Test.** `TestKeyAlgorithmDocumentationNamesOnlyWhatParses`
+(`internal/pki/keyalgorithm_doc_test.go`) takes every algorithm name in the
+key table's text for `key_algorithm`, and the documented default. Each must
+parse, and each must parse to a different algorithm. It was broken on
+purpose twice, by putting the old text back. With the full old text it
+failed on `rsa-3072` and `rsa-4096` and **passed `ed25519`**: the first
+pattern required a hyphen, so it never saw the name the test exists for. The
+pattern now takes any lowercase word with a digit in it. With only
+`ed25519` added back, it failed on `ed25519`.
+
+**Not covered.** SPEC 7.1's prose is not held to the parser by the test.
+Only the key table, and the reference generated from it, are.
+### 5.723 Ed25519 is approved under FIPS 140-3, and the x509 module refused it as if it were not
+
+SPEC 27.4 said that in FIPS mode "Ed25519 is unavailable". SPEC 7.1 said it
+"is not approved under FIPS 140-3". `fips.Restricted` was documented as "no
+Ed25519, no SHA-1, and so no TOTP". `x509.create_private_key` with `algo:
+ed25519` refused under `fips140=on` with `ed25519 is not approved under FIPS
+140-3 and this process is in FIPS mode`. README, handbook 28 and
+`docs/operations.md` repeated it.
+
+**That was true until February 2023, and has not been since.** Four sources
+were checked on 2026-11-23:
+
+- FIPS 186-5 (final, 3 February 2023, superseding 186-4) approves EdDSA,
+  Ed25519 included, for digital signatures, citing RFC 8032.
+- NIST's certificate page for the Go Cryptographic Module (CMVP #5247,
+  FIPS 140-3, Active; the Go documentation ties v1.0.0 to it and to CAVP
+  A6650) lists `EDDSA KeyGen`, `KeyVer`, `SigGen` and `SigVer` as approved
+  algorithms under A6650.
+- The certified snapshot that `GOFIPS140=v1.0.0` selects
+  (`lib/fips140/certified.txt`: `v1.0.0-c2097c7c`) holds `fips140/ed25519`
+  with its own self-tests: the CAST `Ed25519 sign and verify` and a
+  pairwise-consistency test.
+- Go's EdDSA is Ed25519 only, so the certificate's EdDSA entries are this
+  algorithm. Go's TLS stack lists Ed25519 among the signature algorithms it
+  allows in FIPS mode, which is why the hub offered `ed25519` in its
+  CertificateRequest (5.282, "An observation on Ed25519").
+
+The module's security policy (the PDF for #5247) was fetched but could not
+be rendered here, so its table rows were not read. The certificate page and
+the module source are the evidence. **X25519 is a different question.** No
+source read here approves it for key agreement, and halite still refuses it
+for TLS key exchange in FIPS mode (SPEC 25.3). This change does not touch
+that.
+
+The SPEC had the claim and the code obeyed it. The two agreed with each
+other, and both disagreed with the standard. Every check looked at whether
+the code followed the SPEC, and none looked at whether the SPEC was right.
+
+**Fix.**
+- `x509.create_private_key` generates Ed25519 in FIPS mode as in any other
+  mode. Its comment gives the standard and the certificate.
+- `fips.Restricted` now documents only what it restricts: TLS key exchange
+  and SHA-1, so TOTP. `transport` and `account` were already its only other
+  callers.
+- SPEC 27.4 says Ed25519 is available, gives both sources, and says X25519
+  is not approved for key exchange. README, handbook 28 and the FIPS table
+  in `docs/operations.md` drop the refusal. That table now has two rows.
+
+An older OpenSSL FIPS provider may still refuse an Ed25519 key. RHEL 9's
+and Ubuntu's `openssl-fips-module-3` 3.0.5 are examples: Rocky's sshd
+refused an Ed25519 login key after the FIPS reboot, and Ubuntu's FIPS
+OpenSSL did not share `ed25519` in a handshake (5.282). That is a limit
+of the peer, so the SPEC states it and does not enforce it.
+
+**Test.** `TestEveryAlgorithmRoundTrips` asserted the refusal under FIPS,
+and it now generates Ed25519 in every mode. A new test,
+`TestEd25519SignsAndVerifiesInEveryMode`, has an Ed25519 CA sign an
+Ed25519 leaf and checks that the leaf verifies against its CA and not
+against itself. It logs which FIPS mode it ran in. With `GOFIPS140=v1.0.0`
+(the environment `make fips-test` uses) it logged `FIPS mode: true` and
+passed. It was broken on purpose by putting a refusal back under
+`fips140.Enabled()`: both tests failed in the FIPS build with `ed25519 is
+not approved under FIPS 140-3`.
+
+**Not run.** An Ed25519 certificate from this module, presented to a FIPS
+peer built on OpenSSL. The hub's own PKI still issues only ECDSA (5.722).
+Whether it should offer Ed25519 is a separate decision. Issue 840's first
+question is answered here.
+### 5.724 P-384 is the default key algorithm
+
+The owner chose this on 2026-11-23, alongside allowing Ed25519 in FIPS mode
+(5.723). halite's own keys had defaulted to ECDSA P-256. They now default to
+P-384. P-256 is still accepted everywhere it was.
+
+**What changed.**
+- `pki.ParseKeyAlgorithm` reads an empty value, or `ecdsa` alone, as
+  `ecdsa-p384`. `pki.GenerateKey` makes P-384 for anything but
+  `ecdsa-p256`.
+- The hub's `key_algorithm` default is `ecdsa-p384`. That setting chooses
+  the enrollment CA, the hub's serving certificate and operator
+  certificates.
+- `halite-node enroll`'s `--key-algorithm` defaults to `ecdsa-p384`.
+- `halite-hub keys signer create` makes a P-384 job-signing key unless
+  told otherwise, and `jobsign.GenerateKey("")` is P-384.
+- SPEC 7.1's table, the key table and its description, both commands'
+  usage text and the generated references all say P-384 is the default.
+
+**What did not change, and why.**
+- **Existing keys.** The setting chooses new keys only. An enrollment CA
+  that exists keeps its key. A node's renewal keeps the algorithm of the
+  key the node holds (`renewal.Identity` with `alg ""` reads it with
+  `pki.AlgorithmOf`), so an estate enrolled on P-256 stays on P-256 until a
+  node is re-enrolled. A P-384 node under a P-256 CA, or the other way
+  round, is an ordinary pair. `ecdsa-p384` was already an accepted value,
+  and the renewal path was written for nodes enrolled on it.
+- **The x509 execution module.** `x509.create_private_key` with `algo: ec`
+  and no `keysize` still makes P-256. That module follows Salt's
+  `x509_v2`, and a tree written for Salt that leaves out `keysize` means
+  256. This change is about halite's own keys, not about what a state
+  asks for.
+- **The AWS KMS signer** (`internal/awskms`) still takes P-256 only,
+  because it signs SHA-256 digests and KMS pairs those with P-256.
+- **TLS key exchange.** It is still offered as P-256 then P-384. That is
+  the curve for the handshake's ephemeral key, which is separate from the
+  key a certificate holds.
+
+**Test.** `TestKeyAlgorithmNames` now expects `""` and `ecdsa` to parse to
+P-384. `TestTheDefaultKeyIsP384` (`internal/pki`) generates from the
+parsed default, from both named curves, and from an unset algorithm, and
+reads each key back with `AlgorithmOf`.
+`TestTheDefaultSigningKeyIsP384AndVerifies` (`internal/jobsign`) checks
+the curve of the default signing key. Each was broken on purpose:
+
+- The parser's default put back to P-256 failed both pki tests.
+- The signing default put back to P-256 failed the jobsign test.
+- `GenerateKey`'s branches swapped back to fall through to P-256 **passed
+  at first**. Both named algorithms still had their own case, so only an
+  unset `KeyAlgorithm` reached the fall-through, and no test passed one. No
+  production caller does either, because each one parses first. The test
+  now generates from `""` too, and the same break fails it with
+  `GenerateKey("") made a ecdsa-p256 key; want ecdsa-p384`.
+
+**Run.** A hub built from this change, started unprivileged on macOS on
+loopback with a fresh `pki_dir`, logged `created a new enrollment CA
+algorithm=ecdsa-p384`. Its `ca.crt` and `hub.crt` were on `secp384r1` and
+signed `ecdsa-with-SHA384`. Handbook 30 keeps its captured P-256 line and
+now says what a hub prints today.
+
+**Not run.** A node enrolling with the new default against a hub, on a real
+host. A P-384 job-signing key verified by a node over the wire; the
+verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
+build making the P-384 CA; `make fips-test` runs the unit tests above as a
+FIPS build.
+### 5.725 The operator command line dialled localhost when the hub listened on one address
+
+`operatorClient` (`cmd/halite-hub/run.go`) chose the hub's address in this
+order: `--hub`, then `hub` in `hub.yaml`, and then `localhost`. It took the
+port from `listen`. With `listen: 10.0.0.5:4510`, the hub listens on that
+address alone. So on the hub itself, `halite-hub run …`, `runner`, `jobs`,
+`orch`, `metrics` and `event` without `--hub` dialled `localhost:4510`, where
+nothing answers. They failed with `dial tcp 127.0.0.1:4510: connect:
+connection refused`. That was seen in the issue 306 runs of 2026-11-05 and
+2026-11-06 (5.282, "Seen again, not fixed"). On 2026-11-23 every command on
+a hub with a specific `listen` passed `--hub` by hand. Issue 840 recorded it
+as a decision for the owner, and the owner chose to dial the `listen`
+address.
+
+**Fix.** `defaultHubAddress(listen)` is the host that `listen` names. For a
+wildcard (`:4510`, `0.0.0.0`, `::`) or no host, it is `localhost`, because
+the hub then answers on loopback too. `--hub` and `hub` still come first. A
+specific `listen` host is also one of the names the hub puts in its own
+certificate. `serverNames` adds it by the same wildcard test, unless
+`--names` replaces the list. So the name dialled is one that verifies.
+
+**Test.** `TestTheDefaultHubAddressFollowsListen`
+(`cmd/halite-hub/huburl_test.go`) checks the URL an operator command dials
+for ten `listen` values. They cover an IPv4 and a host name with ports,
+IPv6 with and without a port, an address with no port, three wildcards and
+an empty value. It was broken on purpose by returning `localhost` always,
+and it failed on every specific address (`dials "https://localhost:4510",
+want "https://10.0.0.5:4510"`).
+
+**Run end to end on Linux.** On 2026-11-23, on an arm64 Ubuntu 22.04 host
+(`host-d` of 5.282), two `halite-hub` binaries were built with Go 1.27.4:
+`main` at `2db3fd7c` and this branch. A hub was started unprivileged with
+`listen: <private-ip>:47511`, and `ss` showed it listening on that address
+alone. An admin operator was made, and then `runner manage.status` was run
+with the hub's own `--config` and no `--hub`:
+
+- `main`: `Post "https://localhost:47511/v1/runners": dial tcp
+  127.0.0.1:47511: connect: connection refused`. This is the defect.
+- this branch: it answered `up: []` and `down: []`.
+- this branch with `--hub localhost`: it was refused as `main` was, so an
+  explicit `--hub` still wins.
+
+The build tree, the hub's directories and the toolchain were removed from
+the host afterwards.
+
+The same run on this Mac said nothing either way. No client could reach a
+hub on the LAN address, with `--hub` given or without it: the handshake
+ended in `EOF`, and the hub logged `socket is not connected`. That is the
+Mac's network path.
+### 5.726 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
+
+SPEC 14.1 said `fips_mode` "reads `/proc/sys/crypto/fips_enabled` and, on
+Ubuntu, the Ubuntu Pro FIPS package state". SPEC 27.4 said the grain
+"reports both the host's kernel FIPS state and the binary's own mode". No
+build has done either. On Linux the grain is `/proc/sys/crypto/fips_enabled`
+alone (`internal/grains/platform_linux.go`). On Windows it is the
+`FipsAlgorithmPolicy` setting. On the BSDs and macOS it is `false`. The
+binary's own state has always been three separate grains, `fips_build`,
+`fips_enabled` and `fips_module` (DIVERGENCE 1.11). Issue 840 asked which
+should give way, and the owner decided that the kernel is the authority,
+so SPEC changes.
+
+The evidence for that choice is from 5.282's last run. An arm64 host on
+Pro `fips-updates` was booted with `fips=0`, with the FIPS kernel and
+packages still installed. `fips_enabled` read 0, `fips_mode` read False, and
+`pro status` reported `fips-updates` as **disabled**. So Pro's own report
+follows the kernel, and reading it as well would have added nothing on
+that host. It would have added a second source that could disagree.
+
+**Fix.** SPEC 14.1 says what each platform reads and that the kernel is the
+authority. It says that Pro is not read and why, and what the earlier text
+claimed. SPEC 27.4 says `fips_mode` is the host's state and that the other
+three grains are the binary's. The comment on `collectFIPSBuild` says the
+same. No code changed.
+
+**Not covered.** No test holds SPEC 14.1's prose to the grain collectors.
+
+### 5.727 A job the tracer sampled lost the hub's tree for another environment (2026-11-23)
+
+Issue 803, filed as a suspicion from reading and not reproduced. It was
+real. `executeJob` wrapped the job's tree for tracing (`traceFiles`, which
+returns a `tracedFiles` around the tree for a sampled job and the tree
+unchanged otherwise) before `adoptJobEnvironment` ran, and
+`adoptJobEnvironment` told the hub's tree from the node's own by asserting
+`n.files.(*fileserver.Remote)`. For a sampled job that assertion failed on
+the wrapper, so a job naming an environment other than the node's own was
+given `localTree(env)`: the node's own `file_roots` for that environment,
+or, where none are configured, the packaged defaults (`<root>/state`,
+`/srv/halite/states`, `/srv/salt`, whichever exist). It applied whatever
+those held and reported success. The same job unsampled fetched from the
+hub. Only the jobs the sample rate picked were affected, so at a rate below
+1 it would look like chance.
+
+**Seen.** `TestATracedJobForAnotherEnvironmentFetchesFromTheHubsTree`, real
+binaries: a hub serving `base` and `dev`, and two nodes whose own
+environment is `base`: `traced1`, with `tracing: otlp` and
+`tracing_sample_rate: 1`, exporting to a collector the test runs, and
+`plain1`, with tracing off. Each node also has its own `dev` roots holding a
+decoy state and payload that say `from-node-local`, so losing the hub's
+tree shows as a wrong file rather than a failure, which is the shape the
+issue suspected. `halite-hub run <node> state.apply app --env dev`, whose
+state manages a file from `salt://payload.txt`, on main's code:
+
+```
+plain1:  from-hub-dev      (exit 0)
+traced1: from-node-local   (exit 0, the job reported success)
+```
+
+**The change.** `executeJob` wraps the tree after `adoptJobEnvironment`,
+so the environment is settled on the hub's tree, or on the node's own,
+before anything hides which it is. This also traces a sampled job's
+fetches from the node's own roots for another environment: the old order
+replaced the wrapper with an unwrapped local tree there.
+
+The test asserts that the traced path ran: the collector must receive a
+`file fetch` span for `payload.txt` naming `dev`. Without that, a tracer
+that sampled nothing would make the file assertion pass for the wrong
+reason.
+
+**Broken on purpose**, with the fix otherwise in place:
+
+| Break | Result |
+|---|---|
+| `traceFiles` before `adoptJobEnvironment` again | `traced1` wrote `from-node-local`; the test failed |
+| `traceFiles` never wraps | the file was right and the collector check failed: "the traced path did not run" |
+
+**Not verified.** Run only on the development host's Linux compatibility
+layer, not on a native FreeBSD or Linux machine. Only a node-side sample
+rate of 1 was run. A job sampled because the hub's `traceparent` said so,
+on a node whose own rate would not have picked it, takes the same branch
+by reading (`traceFiles` checks the job span's sampled flag), and was not
+run. A job naming another environment on a node with no `file_roots` for
+it, which would have read the packaged defaults, was not run: the test
+gives each node its own roots so as not to read a real tree.
+
+### 5.727.1 A sampled `saltutil.sync_*` was refused as if the node had no hub
+
+Found while fixing 5.727, by looking for every other assertion on the type
+of a job's `n.files`. `extensionSource`, which `saltutil.sync_all` and its
+siblings reach for, asserted `n.files.(*fileserver.Remote)` too, and a job's
+`n.files` is the `tracedFiles` wrapper for the whole of a sampled job. So a
+sampled sync was refused with "extensions are delivered by the hub's file
+server, and this node is working from its own tree" on a node attached to
+its hub, and the same sync unsampled succeeded.
+
+**Seen.** `TestATracedExtensionSyncReachesTheHubsTree`, on the same lab as
+5.727, with only that fix in place: `plain1` answered `extensions: []`,
+`changed: False` and exit 0; `traced1` exited 1 with the refusal above.
+
+**The change.** `hubTreeOf` answers "is this the hub's tree?" through the
+wrapper, and `extensionSource` asks it. Reordering cannot help here, as it
+did in 5.727, because the wrapper is in place for the whole job. The other
+assertion of that kind, in `pinTreeForRun`, runs before the wrapper is
+applied. The test also checks that the collector received `traced1`'s
+`job saltutil.sync_all` span.
+
+**Broken on purpose.** With the unwrap taken out of `hubTreeOf`, `traced1`
+was refused again and the test failed.
+
+**Not verified.** No extension bundle was published on the hub, so the
+sync that ran fetched nothing: what was shown is that a sampled sync
+reaches the hub's tree, not that it delivers a bundle. Run on the
+development host's Linux compatibility layer only.
+
+### 5.728 `Remote.ForEnv` appended into an array its copies shared (2026-11-23)
+
+Issue 849, found by reading while fixing issue 803. Each job runs on a
+shallow copy of the agent's `fileserver.Remote` (`ForRun`, and
+`WithContext` when traced), so every copy's `Environments` points at the
+agent's backing array. A job that names another environment calls
+`ForEnv`, which appended to that slice in place. With spare capacity in
+the array, every copy wrote the same slot, and each would then read
+whichever environment was written last.
+
+**Shown.** `TestForEnvOnCopiesWithSpareCapacityKeepsEachCopysEnvironment`
+(`internal/fileserver/forenv_test.go`) builds a Remote whose
+`Environments` has length 1 and capacity 16, has eight goroutines each
+take a `ForRun` copy and switch it to its own environment, and only then
+reads every copy. On main it failed without `-race`, deterministically:
+seven of eight jobs saw `[base env4]`, the last writer's. Under `-race`
+the detector also reported the write-write race at the append. With the
+fix it passed once plain, once under `-race` and 200 times under `-race`.
+With the fix taken back out (append without the clip), it failed again,
+plain and under `-race`.
+
+**The fix.** `append(slices.Clip(r.Environments), env)`, so the append
+always gets its own array and the copy owns what it wrote.
+
+**Why production never hit it.** The capacity condition does not occur
+in the shipped node today. The one place a node builds a hub-backed
+Remote (`useHubTree` in `cmd/halite-node/enroll.go`) passes nil to
+`NewRemote` and then sets `Environments` to a one-element literal, whose
+capacity equals its length, and nothing appends to the agent's own
+Remote: every `ForEnv` call is on a per-job copy made just before it
+(`adoptJobEnvironment`, after `pinTreeForRun`). So the first append on
+any copy reallocated. The fix removes a dependence on one line in another
+package, not a fault anybody saw.
+
+**And not issue 808.** The two parallel jobs that ran one after the
+other in CI could not have been serialised by this: a shared slot gives
+a job the wrong environment, it does not make one job wait for another,
+and nothing in `ForEnv` blocks. That test's node has no hub tree and its
+jobs name no environment, so it does not reach `ForEnv` at all.
+
+**Not verified.** No agent was run with a Remote that had spare
+capacity, because none can be built through the agent's own
+configuration; the test drives `fileserver` directly.
+### 5.729 A slow Ubuntu mirror took the linux leg, and nothing in the kernelpkg tests could say so (2026-11-24)
+
+**What happened.** The linux fleet leg hit `go test`'s 40-minute alarm four
+times between 00:35 and about 04:30 UTC on 2026-11-24 (issue 852): three
+runs on two branches that do not touch kernelpkg, and `main`'s scheduled run
+at 04:01. The goroutine dumps found the kernelpkg tests waiting on apt, twice
+in the removal test's install of an older kernel and once in the upgrade
+test's cleanup. The issue then read the cause as the runner's kernel flavour,
+because each failing runner had a `-aws` kernel and `main`'s passing run had
+an `-azure` one.
+
+**What it was.** A slow archive mirror. Every linux-leg log since the
+40-minute limit went in (38 runs from 11-20 to 11-24) was read for the
+runner's region, its archive host, apt's own `Fetched ... (rate)` lines from
+the job's setup, and the kernelpkg tests' times:
+
+| | Runs | Setup's fetch rates | Conformance `kernelpkg.latest_installed` | Removal test |
+|---|---|---|---|---|
+| AWS runner, normal | 15 | 375–985 kB/s on the archive, 7.8–11 MB/s on the first fetch | 21–29 s where read | 35–52 s |
+| AWS runner, 00:35–04:30 on 11-24 | 4 | **8.5–107 kB/s**, first fetch 152–830 kB/s | **928–1,483 s** | alarm at 10, 14 and 19 min; one pass in 1,208 s |
+| Azure runner | 19 | mostly 0.2–6 MB/s | | 41–136 s, and two slow passes (770 s, 1,320 s) on westus2, both with slow fetches (80 and 643 kB/s) |
+
+Every AWS runner, in us-east-1 and us-west-2 alike, fetched from
+`us-east-2.ec2.archive.ubuntu.com`. The same `-aws` kernel on the same
+mirror passed in under a minute thirteen times before the window and twice
+after it (14:25 and 15:14). So the flavour was a coincidence of which runners
+GitHub handed out that night, and the slowness was there from the job's
+first `apt-get`, before any test ran.
+
+The sizes, from that mirror's `noble-updates` index: the removal test
+installs `linux-image-7.0.0-1013-aws` (16.7 MB), `linux-modules-...`
+(148.2 MB), `linux-headers-...` (3.9 MB) and `linux-aws-7.0-headers-...`
+(14.9 MB), about 184 MB; the conformance case fetches the newest kernel's
+set, about the same again. At 10–100 kB/s 184 MB is half an hour to five
+hours. The apt the alarm found was downloading, not wedged. Read on
+2026-11-24 from ref-salt1 (us-west-2), which fetched the index from that
+mirror at 2.6 MB/s.
+
+**Where the alarm lands is incidental.** In the run where it found a purge
+(45302982685, attempt 1), the conformance case had taken 928 s and the
+removal test 1,208 s, which is 35.6 of the 40 minutes before anything else;
+the purge was simply what was running at minute 40. The issue's quoted
+stack, through `putBack` and `runEnv`, was the one run of four where that
+happened.
+
+**Fixed here.** Every package command these tests run goes through
+`runBounded` (`internal/builtin/live_kernelpkg_cmd_test.go`):
+
+- Each command has ten minutes (`kernelpkgCommandLimit`). On the limit it
+  is stopped with everything it started, and the test fails with the
+  command line, how long it ran, and the last 40 lines it printed.
+- The command runs in a process group of its own and the whole group is
+  killed, since killing apt alone leaves dpkg and the maintainer scripts
+  holding the output pipe and the dpkg lock. `WaitDelay` covers anything
+  that escapes the group.
+- `apt-get` is given a two-minute dpkg lock timeout and
+  `--force-confdef --force-confold`, which cover what `DEBIAN_FRONTEND`
+  does not.
+- The removal test's install is `--download-only` and then the install,
+  each timed and logged.
+
+`TestKernelpkgLiveCommandsStopAtTheirLimitWithEverythingTheyStarted` runs a
+shell that prints and then starts a child that holds the pipe for five
+minutes, with a one-second limit: it returns in about a second, names the
+command and what it printed, and the child is gone. With the process-group
+kill taken out it returned after 11 s, which is WaitDelay, and the child was
+still alive. Run on macOS (darwin arm64).
+
+**The ten minutes alone would not have held the leg.** The conformance case
+installs through the module (`kernelpkg.latest_installed`, `c.Run` with no
+`Timeout`), which `runBounded` does not cover, and it alone took up to 25
+minutes on that night. So the archive is now measured once, before the
+first kernel is fetched or taken away, and on a slow one every kernel test
+refuses at once:
+
+- `kernelArchiveCheck` has apt itself fetch the running kernel's image
+  (`apt-get download`, into a temporary directory; nothing is installed)
+  and times it. apt does the fetching because the fleet's runners name
+  their mirrors through `mirror+file:` lists, which only apt reads.
+- Under 1 MB/s it refuses, naming the package, the rate, and how long the
+  tests' 370 MB would take at it; a fetch still running at three minutes is
+  refused as such. 1 MB/s sits well clear of both sides of the table: a
+  normal removal test fetched 184 MB and installed it in under 35 s, so
+  faster than 5 MB/s, and the night's one finished test averaged about
+  0.17 MB/s.
+- It runs in `kernelpkgMutateGate` for apt hosts and in the conformance
+  case's Setup, before the kernel is taken away. A fetch that cannot be
+  made (the running image no longer in the archive) is logged and not
+  refused, and the ten-minute limit is still behind it.
+
+**Demonstrated on ref-salt1** (Ubuntu 22.04, arm64, kernel
+`5.15.0-1121-aws-fips`, whose image comes from Pro's authenticated FIPS
+pocket), 2026-11-24, built from this change in a scratch directory under
+`/root` and removed after:
+
+| apt's `Dl-Limit` | `TestLiveKernelpkgArchiveIsMeasuredWithoutInstallingAnything` |
+|---|---|
+| none | passed on two runs: 15.2 MB at 6,042 and 4,740 kB/s, in about three seconds |
+| 100 | refused after 105 s: 145 kB/s, "which at that rate is 42m0s" |
+| 50 | refused at the three-minute limit, with apt's command line |
+
+The limit was set through `APT_CONFIG` pointing at a scratch file, so the
+host's own apt configuration was not touched, and a listing of `/boot` was
+the same before and after. The four `runBounded` tests passed there too,
+the process-group one included. `TestTheKernelArchiveCheckRefusesTheMirrorOfIssue852`
+holds the decision to the numbers above; with the rate comparison turned
+off it fails on the three slow cases, and `TestKernelpkgLiveCommandsMarkAStopAsOne`
+fails when the stop is not wrapped as `errStoppedAtLimit`.
+
+**Not covered.** No fleet run has met a slow mirror with this change in
+place, and the measurement has not run on a GitHub runner, whose
+`mirror+file:` list is the reason apt does the fetching: the first linux
+leg after this change is the check that it measures there. Nor on Debian,
+where the running image may have left the archive and the check would
+then only log. The conformance case and the upgrade test still install
+through the module with no time limit; on an archive that passes the check
+and then slows, they are not bounded. The rpm legs' commands go through
+the same runner and have not been run since.
+
+### 5.730 A revoked node started again retried the hub's refusal for ever (2026-11-23)
+
+Issue 839, `cmd/halite-node` and `internal/transport`. Found in the lab
+run for issue 812 on Alpine under OpenRC. `keys revoke` on a running node
+made it exit 1, on the hub's revoke message. Its supervisor started it
+again, and the new agent did not exit. The hub refused its certificate at
+the TLS handshake, and `connect` retried that as it retries a hub that is
+down: with backoff, and for ever while `hub_tries` is 0, the default.
+`RestartPreventExitStatus=1` in the systemd unit and the OpenRC respawn
+cap both wait for an exit 1, so neither stopped it.
+
+**How a node hears that it is revoked.** There were two ways, and both
+need a node that is connected. A node on a stream gets the revoke message
+(`transport.MsgRevoke`), and exits 1. A node that reuses a connection made
+before the revocation gets `403` from every request, because the hub checks
+the denylist on each one as well as at the handshake (`authenticated` in
+`internal/hub/server.go`). A node that connects after the revocation gets
+neither: `verifyNotRevoked` fails the handshake. Go's server answers a
+failed `VerifyPeerCertificate` with the `bad certificate` alert, and the
+reason the hub logs does not reach the node. The revoke reason is not in
+the alert, and no request is answered after it.
+
+**What the hub sends in each case.** Measured against a real Go TLS
+server with the hub's own `ServerConfig`, go1.27.4, in
+`TestOnlyARevokedOrUnacceptableCertificateIsRefusedForGood`:
+
+| Case | What the node gets |
+|---|---|
+| Revoked certificate | `remote error: tls: bad certificate` |
+| Certificate from a CA the hub does not hold | `remote error: tls: unknown certificate authority` |
+| Expired certificate | `remote error: tls: expired certificate` |
+| The hub's CA is not the one the node pinned | the node's own `x509: certificate signed by unknown authority`, with no alert from the hub |
+| Hub down | `connection refused` |
+
+Read from go1.27.4's `crypto/tls/handshake_server.go`: when the client's
+certificate fails to verify, the server sends `unknown certificate
+authority` for an unknown issuer, `expired certificate` for a certificate
+outside its validity, and `bad certificate` for any other failure. It also
+sends `bad certificate` when `VerifyPeerCertificate` or `VerifyConnection`
+fails. The hub sets no `VerifyConnection`. 5.639 kept the one refusal that
+is transient, a full hub, out of the handshake for this reason, and answers
+it with `503`. So on a halite hub, `bad certificate` means the denylist, or
+a certificate the hub will never accept, such as one without client
+authentication or one the FIPS module refuses. A second try gets the same
+answer for each of these. None of the transient failures in the table
+gets this alert.
+
+**The change.** `transport.CertificateRefused` is true for the `bad
+certificate` alert and for `revoked certificate` (which Go never sends, but
+another TLS stack in front of a hub may). When the stream fails with
+either, `connect` logs `the hub refused this node's certificate, so this
+node will not retry`, names `halite-node enroll --force`, removes the last
+known good pillar as the revoke message does, and exits 1. It does this on
+the first refusal, whatever `hub_tries` is. `unknown certificate authority`
+and `expired certificate` still retry. Each can be put right without
+touching the node: a hub restored with the wrong CA can be restored again,
+and a clock that is wrong on either side can be set. The CA-changed case
+still retries, as before: chapter 39's row for it says what to do.
+
+**The alert is sometimes lost.** In TLS 1.3 the client finishes its half
+of the handshake before the hub has read the certificate, so the alert
+comes after. Go's HTTP/2 client sometimes reports only `http2: client conn
+could not be established`, with no cause attached. The first full run of
+the transport test failed on that. Then 300 runs found it 40 times in
+1,200 refused handshakes: 38 times in the expired case, once in the
+revoked case and once in the unknown-CA case. That error says nothing about
+which failure it was, so it is retried, and the next attempt reads the
+alert. A revoked node can therefore take a second attempt, after one
+backoff, before it exits. The transport test asks again when it gets that
+error, and the binary test allows three attempts.
+
+**What it changes in 5.719.3's advice.** 5.719.3 told the operator to stop
+and disable the OpenRC service on a node they revoke, because the cap
+never fired. Chapter 31, the OpenRC script's comment and the changelog now
+say that a revoked node exits 1 at every start. The 5.719.3 run with
+`hub_tries: 1` is the same exit at every start, and the cap stopped it
+after six exits in 27 seconds. That is the expected result now, but the
+revoked node was not run under `supervise-daemon` with this change.
+`rc-update del` is still how to keep the service from starting at boot.
+
+**Why not a hub change.** The issue asked whether the hub should make the
+revocation explicit. It could do so in two ways, and both are worse. It
+could accept a revoked certificate at the handshake and answer `403` with a
+code. Then a revoked peer would reach the HTTP layer, and SPEC 7.4's
+check at the handshake would become a check in each handler. Or it could
+answer a question about a serial on an anonymous route, beside `/v1/health`
+and `/v1/enroll`. That is a protocol change, and it tells anybody which
+certificates are revoked, to say what the alert already says. Neither
+route says anything about revocation today. The alert is enough, because
+on this hub it has one meaning that a retry cannot change.
+
+**Shown,** on the development host (FreeBSD 15.1, amd64, go1.27.4, the
+binaries built for FreeBSD), with real hub and node binaries over a real
+socket:
+
+- `TestARevokedNodeStartedAgainExitsOneAndSaysToReEnroll` enrols a node,
+  revokes it while it runs, and checks that it exits 1. Then it starts
+  `connect` again and asserts an exit 1 within 30 seconds, after one
+  `connecting` line, with a log that names the refusal and `halite-node
+  enroll`. **On main it failed**: `the process was still running after
+  30s`, with five `connecting` attempts, each `remote error: tls: bad
+  certificate`. With the change it passes.
+- `TestANodeStartedWhileItsHubIsDownConnectsWhenItComesBack` enrols a
+  node, stops the hub, starts `connect`, waits for three refused attempts,
+  starts the hub, and waits for the hub's `node connected`. It passed on
+  main and passes with the change.
+- **Broken on purpose, twice.** With `CertificateRefused` matching no
+  alert, the revoked-node test failed again (`still running after 30s`),
+  and so did the revoked row of the transport test. With `connect` exiting
+  on any stream error, the hub-down test failed: `the node exited while its
+  hub was down: exit status 1`.
+
+**Seen and not changed.** `transport.Rejected`, which removes the cached
+pillar, matches `certificate revoked` and `unknown certificate`. Go's
+alert text is `revoked certificate`, so the first never matches a Go peer.
+The second also matches `unknown certificate authority`, so a hub that
+lacks this node's CA removes its pillar. That is a cautious choice for a
+cache and may be what was meant. It is recorded here and not decided.
+
+**Not verified.** No supervisor was run with the change: not systemd's
+`RestartPreventExitStatus=1`, not the OpenRC respawn cap, and not FreeBSD's
+rc.d script. A node behind a relay was not run: the relay's own listener
+would send the alert, and was not measured. Windows was not run (the
+binary test skips there). The `403` that a revoked node gets on a reused
+connection is still retried, as before; no run showed a node reaching it
+after the revoke message failed to arrive.
+
 
 ### 5.722 `renumber` pasted a moved section with no blank line before it (2026-11-23)
 

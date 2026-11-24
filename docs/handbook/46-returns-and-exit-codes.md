@@ -55,7 +55,8 @@ Notes:
   down.
 - An agent (`halite-node connect`) that exits `1` by itself has hit one of two
   things a restart cannot fix: its enrolment was revoked, or `hub_tries` was
-  reached. The node's unit carries `RestartPreventExitStatus=1` for it.
+  reached. A revoked node exits `1` again at every later start, because the
+  hub refuses its certificate at the handshake. The node's unit carries `RestartPreventExitStatus=1` for it.
 
 ## Structures
 

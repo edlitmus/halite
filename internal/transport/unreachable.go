@@ -27,6 +27,45 @@ func Rejected(err error) bool {
 		strings.Contains(msg, "unknown certificate")
 }
 
+// CertificateRefused reports whether the hub refused this node's certificate
+// in a way no retry can change: the certificate is revoked, or is one the hub
+// will never accept. It is narrower than Rejected, which decides whether to
+// drop a cached pillar and can afford to be cautious; this decides whether the
+// agent exits, and so whether its supervisor stops restarting it (issue 839).
+//
+// It is read from the TLS alert, because that is all a hub that refused the
+// certificate sends: Go's server answers a failed VerifyPeerCertificate -- the
+// hub's denylist -- with `bad certificate` and no reason, and there is no
+// later answer to read. What else a Go server sends `bad certificate` for is
+// also a property of the certificate rather than of the moment: a chain that
+// verifies but not for client authentication, one the FIPS module refuses, a
+// failed VerifyConnection (which the hub does not set; connlimit.go says why).
+// None of them is fixed by asking again. `revoked certificate` is the explicit
+// alert, which Go never sends but another TLS stack in front of a hub may.
+//
+// Two alerts are deliberately not here, because each can be put right on the
+// hub or by a clock without touching the node: `unknown certificate
+// authority`, a hub that does not hold the CA that issued this certificate (a
+// rebuilt or wrongly restored hub), and `expired certificate`, which a clock
+// that is wrong on either side also produces. A hub whose own certificate
+// this node cannot verify -- its CA changed -- sends no alert at all: that is
+// this node refusing the hub, and it is not here either. Nor is an outage: a
+// refused dial, a reset, a timeout.
+//
+// TLS 1.3 sends the alert after the hub has proved its identity, so only a
+// hub this node trusts can make it exit.
+func CertificateRefused(err error) bool {
+	var op *net.OpError
+	if !errors.As(err, &op) || op.Op != "remote error" {
+		return false
+	}
+	switch op.Err.Error() {
+	case "tls: bad certificate", "tls: revoked certificate":
+		return true
+	}
+	return false
+}
+
 // Unreachable reports whether a request failed because no hub answered.
 //
 // A node acts on this by running from what it last received, so the

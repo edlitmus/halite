@@ -182,10 +182,12 @@ before you start the unit. Nor do the OpenRC and sysvinit scripts.
 install` from a source checkout picks the right one of the four for the host
 it runs on, by asking which init is there. The OpenRC script runs the agent
 under `supervise-daemon`, which restarts it when it dies, but gives up after
-six deaths in a minute. That cap does not stop a node whose enrollment was
-revoked: it is restarted once, and the new agent keeps retrying the hub,
-which refuses it. Stop and disable the service on a node you revoke
-(`rc-service halite-node stop`, `rc-update del halite-node`).
+six deaths in a minute. A node whose enrollment was revoked exits `1` at
+every start, because the hub refuses its certificate, so the cap should stop
+it as it stopped a node exiting `1` at every start in the lab: six exits in
+27 seconds. The revoked node itself has not been run under the cap since
+that change (DIVERGENCE 5.730). It still starts at every boot until you
+remove it with `rc-update del halite-node`.
 The sysvinit script has no supervisor: a node that crashes stays down until
 it is started again. Both log to `/var/log/halite/node.log`, and neither
 takes `reload`: change the configuration and restart. Settings go in
@@ -451,13 +453,15 @@ Check with `halite-node state show_top`.
 | `the hub presented 2 certificates and none matches the fingerprint this node pinned (…)` | The wrong fingerprint in `node.yaml`, or something is intercepting the connection | **Stop.** Re-obtain the fingerprint by an independent route before doing anything else |
 | Enrol stays pending forever | No operator has accepted; or in `token` mode the token was not accepted | `halite-hub keys list`; check `enrollment_mode` |
 | `--BLy… is not a flag of halite-node enroll` | The token began with `-` | `--token=SECRET` |
-| The node enrols and the agent exits at once | The enrolment was revoked, or `hub_tries` is reached | `journalctl -u halite-node`; the message names which |
+| The node enrols and the agent exits at once | The enrolment was revoked (`this node's enrollment has been revoked`, or at a later start `the hub refused this node's certificate`), or `hub_tries` is reached | `journalctl -u halite-node`; the message names which. A revoked node that belongs in the fleet: `halite-node enroll --force` |
 | Connected, but `state.apply` says `no top file match` | The node ID matches no rule | `halite-node state show_top`; fix the target or the ID |
 | `clock skew` in `doctor` | The clock is off | Fix NTP |
 | Two nodes keep displacing each other | They share an identity (cloned key or ID) | Revoke both; re-enrol each from a clean state |
 
 To **remove a node**: `halite-hub keys revoke <id> --reason …` first (it stops
-the agent and ends its trust at once), then `keys delete <id>` when you want
+the agent and ends its trust at once; started again, by its supervisor or a
+reboot, the agent is refused at the handshake and exits `1` at once rather
+than retrying), then `keys delete <id>` when you want
 the record gone. [Chapter 40](40-incidents.md) covers a node you cannot
 trust.
 

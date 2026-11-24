@@ -8,7 +8,9 @@ import (
 // collectFIPSBuild records what this binary's own cryptography is doing,
 // beside the `fips_mode` grain that reports the host kernel's state.
 //
-// SPEC 27.4 asks the grain to report both. They are kept as separate
+// SPEC 27.4 asks for both. SPEC 14.1 once said `fips_mode` also read
+// Ubuntu Pro's package state. It never did, and SPEC now says the kernel
+// is the authority (issue 840). They are kept as separate
 // grains rather than folded into one, because `fips_mode` is a boolean
 // that trees target on and templates branch on — it is in SPEC 12.4's
 // default `pillar_trusted_grains` — and a map there would be truthy on
