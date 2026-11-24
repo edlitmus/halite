@@ -51243,6 +51243,71 @@ through the module with no time limit; on an archive that passes the check
 and then slows, they are not bounded. The rpm legs' commands go through
 the same runner and have not been run since.
 
+### 5.729.1 The module's own apt, the conformance case's download, and whether the kernel tests ran
+
+Three gaps 5.729 left, all of them in what it said it had not covered or
+in what nothing checked.
+
+**The module's apt had no limit.** `runBounded` covers the commands the
+tests run themselves. The removal test's `kernelpkg.remove` and
+`kernelpkg.cleanup`, and the upgrade test's two `kernelpkg.upgrade`
+calls, run apt through the module, and nothing bounded them. They now go
+through `kpBoundedCall`, which the rpm half already used: the module's
+context is cancelled at `kernelpkgCommandLimit` (a short limit for the
+second upgrade, which has nothing to do), and that kills its apt's
+process group. Before the kill, `kpStep` prints the process table and
+the tails of the package manager's logs, which now include apt's
+`term.log` and `dpkg.log` as well as dnf's.
+
+**The conformance case's download had no limit.** The archive check is
+one measurement, made before the case starts. After it,
+`kernelpkg.latest_installed` installs the newest kernel through the
+module. In the re-run of Fleet run 45302982685 (job 138159254006) the
+case passed after 1,285 s of the leg's forty minutes, nearly all of it on
+that download. Setup now fetches the kernel itself with `runEnv`, inside
+the command limit, after taking it away: a kernel still installed is not
+fetched, and Cleanup runs whether Setup succeeded or not. The state then
+installs from apt's cache. A purge leaves the package in the cache, so
+the upgrade test that runs later usually finds its kernel there too:
+apt said `Need to get 0 B/166 MB` on one throttled run.
+
+**Nothing read whether the kernel tests ran.** The removal and upgrade
+tests skip by name on a machine that cannot run them. So does the
+conformance case. On a green leg a skip reads as coverage, which is what
+5.147 found for the snap tests. The linux leg has a new step, "the
+kernelpkg install tests ran rather than skipping". It requires all three
+to pass. The one skip it accepts is the newest kernel offered being the
+running one, for the upgrade test and the conformance case, because the
+runner image has then caught up with the archive and there is nothing
+they may take away. A slow archive is not accepted, because since 5.729
+it fails the tests rather than skipping them.
+
+The step reads each test's whole block, from its `=== RUN` to its
+`--- SKIP`. Its first version, on an earlier branch, read the line before
+the `--- SKIP`. On a run with apt throttled to make the removal test skip
+(job 138603165785), that line was the put-back Cleanup's last package,
+`linux-modules-7.0.0-1014-aws ... (auto)`, and the step refused a skip it
+should have accepted. The older step "what ran, and what skipped and
+why" still reads the line before; that is issue 857.
+
+**Shown.**
+- `TestKernelpkgStepStopsAModuleCommandAtItsLimit` runs a command through
+  the OSRunner under `kpStep`'s context, as the module's apt runs, with a
+  forked `sleep 60` holding the pipe. It returned in 1.01 s against a
+  1 s limit. With the timer's cancel taken out it failed after 60.01 s.
+- The step, against eleven fixture cases and three real linux job logs.
+  It passed the passing `-aws` and `-azure` jobs 138593764231 and
+  138593811749, and failed 138603165785, where the removal test had
+  skipped.
+- This change's own Fleet runs are named in its pull request.
+
+**Not covered.** No slow mirror has been met with this in place. The
+conformance case's fetch has not been seen to stop at its limit; it is
+bounded by the same `runBounded` that 5.729 demonstrated, and nothing
+here demonstrates it again. If the archive offers no older kernel for the
+running flavour, the removal test skips and the leg now fails, which is
+the intent, but it has not happened on a runner.
+
 
 
 ## 6. Everything else not started
