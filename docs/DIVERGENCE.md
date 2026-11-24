@@ -51081,6 +51081,50 @@ sync that ran fetched nothing: what was shown is that a sampled sync
 reaches the hub's tree, not that it delivers a bundle. Run on the
 development host's Linux compatibility layer only.
 
+### 5.728 `Remote.ForEnv` appended into an array its copies shared (2026-11-23)
+
+Issue 849, found by reading while fixing issue 803. Each job runs on a
+shallow copy of the agent's `fileserver.Remote` (`ForRun`, and
+`WithContext` when traced), so every copy's `Environments` points at the
+agent's backing array. A job that names another environment calls
+`ForEnv`, which appended to that slice in place. With spare capacity in
+the array, every copy wrote the same slot, and each would then read
+whichever environment was written last.
+
+**Shown.** `TestForEnvOnCopiesWithSpareCapacityKeepsEachCopysEnvironment`
+(`internal/fileserver/forenv_test.go`) builds a Remote whose
+`Environments` has length 1 and capacity 16, has eight goroutines each
+take a `ForRun` copy and switch it to its own environment, and only then
+reads every copy. On main it failed without `-race`, deterministically:
+seven of eight jobs saw `[base env4]`, the last writer's. Under `-race`
+the detector also reported the write-write race at the append. With the
+fix it passed once plain, once under `-race` and 200 times under `-race`.
+With the fix taken back out (append without the clip), it failed again,
+plain and under `-race`.
+
+**The fix.** `append(slices.Clip(r.Environments), env)`, so the append
+always gets its own array and the copy owns what it wrote.
+
+**Why production never hit it.** The capacity condition does not occur
+in the shipped node today. The one place a node builds a hub-backed
+Remote (`useHubTree` in `cmd/halite-node/enroll.go`) passes nil to
+`NewRemote` and then sets `Environments` to a one-element literal, whose
+capacity equals its length, and nothing appends to the agent's own
+Remote: every `ForEnv` call is on a per-job copy made just before it
+(`adoptJobEnvironment`, after `pinTreeForRun`). So the first append on
+any copy reallocated. The fix removes a dependence on one line in another
+package, not a fault anybody saw.
+
+**And not issue 808.** The two parallel jobs that ran one after the
+other in CI could not have been serialised by this: a shared slot gives
+a job the wrong environment, it does not make one job wait for another,
+and nothing in `ForEnv` blocks. That test's node has no hub tree and its
+jobs name no environment, so it does not reach `ForEnv` at all.
+
+**Not verified.** No agent was run with a Remote that had spare
+capacity, because none can be built through the agent's own
+configuration; the test drives `fileserver` directly.
+
 
 
 
