@@ -50766,6 +50766,7 @@ windows-2022 legs run the audit, which is platform-independent, and
 `TestAReplaceLandsWhileAStreamingReaderHoldsTheFile`, which is the only
 test that tells `Open` from `os.Open`, and only on Windows. No stress run
 measured the 7 and 18 in 4,000 going to zero.
+
 ### 5.722 The hub's key algorithms: SPEC and the configuration reference offered three that were never built
 
 SPEC 7.1 had a table of four rows, and two of them did not exist. The
@@ -50807,6 +50808,7 @@ pattern now takes any lowercase word with a digit in it. With only
 
 **Not covered.** SPEC 7.1's prose is not held to the parser by the test.
 Only the key table, and the reference generated from it, are.
+
 ### 5.723 Ed25519 is approved under FIPS 140-3, and the x509 module refused it as if it were not
 
 SPEC 27.4 said that in FIPS mode "Ed25519 is unavailable". SPEC 7.1 said it
@@ -50875,6 +50877,7 @@ not approved under FIPS 140-3`.
 peer built on OpenSSL. The hub's own PKI still issues only ECDSA (5.722).
 Whether it should offer Ed25519 is a separate decision. Issue 840's first
 question is answered here.
+
 ### 5.724 P-384 is the default key algorithm
 
 The owner chose this on 2026-11-23, alongside allowing Ed25519 in FIPS mode
@@ -50940,6 +50943,7 @@ host. A P-384 job-signing key verified by a node over the wire; the
 verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
 build making the P-384 CA; `make fips-test` runs the unit tests above as a
 FIPS build.
+
 ### 5.725 The operator command line dialled localhost when the hub listened on one address
 
 `operatorClient` (`cmd/halite-hub/run.go`) chose the hub's address in this
@@ -50989,6 +50993,7 @@ The same run on this Mac said nothing either way. No client could reach a
 hub on the LAN address, with `--hub` given or without it: the handshake
 ended in `EOF`, and the hub logged `socket is not connected`. That is the
 Mac's network path.
+
 ### 5.726 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
 
 SPEC 14.1 said `fips_mode` "reads `/proc/sys/crypto/fips_enabled` and, on
@@ -51147,6 +51152,7 @@ jobs name no environment, so it does not reach `ForEnv` at all.
 **Not verified.** No agent was run with a Remote that had spare
 capacity, because none can be built through the agent's own
 configuration; the test drives `fileserver` directly.
+
 ### 5.729 A slow Ubuntu mirror took the linux leg, and nothing in the kernelpkg tests could say so (2026-11-24)
 
 **What happened.** The linux fleet leg hit `go test`'s 40-minute alarm four
@@ -51393,8 +51399,7 @@ binary test skips there). The `403` that a revoked node gets on a reused
 connection is still retried, as before; no run showed a node reaching it
 after the revoke message failed to arrive.
 
-
-### 5.722 `renumber` pasted a moved section with no blank line before it (2026-11-23)
+### 5.731 `renumber` pasted a moved section with no blank line before it (2026-11-23)
 
 Issue 844, `tools/ledger`. When `renumber` moved a section to the end of its
 chapter, it put the heading directly after the last line of the chapter, with
@@ -51453,6 +51458,8 @@ it, because the tool now leaves that gap alone; `## 6.` still has two blank
 lines before it. A section lifted out of the middle of a chapter was already
 handled correctly and is held only by the "nothing else changed" half of these
 tests.
+
+
 
 ## 6. Everything else not started
 
