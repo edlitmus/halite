@@ -50917,15 +50917,7 @@ host. A P-384 job-signing key verified by a node over the wire; the
 verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
 build making the P-384 CA; `make fips-test` runs the unit tests above as a
 FIPS build.
-
-
-
-
-
-
-
-
-### 5.720 The operator command line dialled localhost when the hub listened on one address
+### 5.725 The operator command line dialled localhost when the hub listened on one address
 
 `operatorClient` (`cmd/halite-hub/run.go`) chose the hub's address in this
 order: `--hub`, then `hub` in `hub.yaml`, and then `localhost`. It took the
@@ -50974,8 +50966,7 @@ The same run on this Mac said nothing either way. No client could reach a
 hub on the LAN address, with `--hub` given or without it: the handshake
 ended in `EOF`, and the hub logged `socket is not connected`. That is the
 Mac's network path.
-
-### 5.721 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
+### 5.726 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
 
 SPEC 14.1 said `fips_mode` "reads `/proc/sys/crypto/fips_enabled` and, on
 Ubuntu, the Ubuntu Pro FIPS package state". SPEC 27.4 said the grain
@@ -51002,6 +50993,16 @@ three grains are the binary's. The comment on `collectFIPSBuild` says the
 same. No code changed.
 
 **Not covered.** No test holds SPEC 14.1's prose to the grain collectors.
+
+
+
+
+
+
+
+
+
+
 
 
 ## 6. Everything else not started
