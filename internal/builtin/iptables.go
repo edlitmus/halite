@@ -1119,7 +1119,7 @@ func iptablesSaveFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 	want := res.Stdout
 
-	existing, _ := os.ReadFile(path)
+	existing, _ := atomicfile.Read(path)
 	if iptablesSaveBody(string(existing)) == iptablesSaveBody(want) {
 		return iptablesMutateResult(c, false, fmt.Sprintf("%s already holds the running ruleset.", path), nil), nil
 	}

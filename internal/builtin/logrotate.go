@@ -1087,7 +1087,7 @@ func applyPlan(c *exec.Context, confPath string, p lrPlan) error {
 	if err != nil {
 		return err
 	}
-	old, err := os.ReadFile(target)
+	old, err := atomicfile.Read(target)
 	if err != nil {
 		return err
 	}

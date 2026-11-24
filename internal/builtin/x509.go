@@ -15,10 +15,9 @@ import (
 	"math/big"
 	"net"
 	"net/url"
-	"os"
 	"strings"
 
-	"github.com/edlitmus/halite/internal/fips"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"time"
 
 	"github.com/edlitmus/halite/internal/value"
@@ -119,13 +118,16 @@ func parseKeySpec(algo string, keysize int64) (keySpec, error) {
 		if keysize != 0 {
 			return k, fmt.Errorf("ed25519 keys have one size, so keysize: %d cannot be honoured; remove it", keysize)
 		}
-		// SPEC 27.4: Ed25519 is not approved under FIPS 140-3. Refused
-		// by name rather than left to fail somewhere inside the module,
-		// so the operator is told which setting to change.
-		if fips.Restricted() {
-			return k, fmt.Errorf("ed25519 is not approved under FIPS 140-3 and this process " +
-				"is in FIPS mode; use algo: ec with keysize 256 or 384 (SPEC 27.4)")
-		}
+		// Generated in FIPS mode too. Ed25519 is an approved signature
+		// algorithm under FIPS 186-5 (February 2023), and the Go
+		// Cryptographic Module v1.0.0 (CMVP #5247, CAVP A6650) lists
+		// EdDSA key generation, signing and verification as approved,
+		// with its own self-tests in crypto/internal/fips140/ed25519.
+		// This used to refuse it, on SPEC 27.4's word that Ed25519 was
+		// not approved, which was true only before FIPS 186-5 (5.723).
+		// A FIPS peer built on an older OpenSSL FIPS provider may still
+		// not accept an Ed25519 key; that is the peer's limit, and the
+		// tree that names the algorithm is the place to know it.
 	default:
 		return k, fmt.Errorf("unknown key algorithm %q; halite generates rsa, ec, and ed25519 keys", algo)
 	}
@@ -215,7 +217,7 @@ func pemSource(source string) ([]byte, error) {
 	if source == "" {
 		return nil, fmt.Errorf("no path or PEM text was given")
 	}
-	return os.ReadFile(source)
+	return atomicfile.Read(source)
 }
 
 // loadCertificate reads a certificate from a path or from PEM text.

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
@@ -103,7 +104,7 @@ func (m *MineStore) Get(nodeID string) (*MineData, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("%s: %w", nodeID, ErrNoMineData)
 	}

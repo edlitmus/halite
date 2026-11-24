@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"unicode"
@@ -1286,7 +1285,7 @@ func nftSaveFn(c *exec.Context, args *value.Map) (any, error) {
 	// on top of whatever an initramfs left.
 	want := "#!/usr/sbin/nft -f\n\nflush ruleset\n\n" + strings.TrimRight(res.Stdout, "\n") + "\n"
 
-	existing, _ := os.ReadFile(path)
+	existing, _ := atomicfile.Read(path)
 	if string(existing) == want {
 		return nftMutateResult(c, false, fmt.Sprintf("%s already holds the running ruleset.", path), nil), nil
 	}

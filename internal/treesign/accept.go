@@ -159,7 +159,7 @@ func (s Store) Load(env string) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(p)
+	raw, err := atomicfile.Read(p)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -180,11 +180,11 @@ func (s Store) Saved(env string) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 	sp, _ := s.path(env, ".manifest.sig")
-	m, err := os.ReadFile(mp)
+	m, err := atomicfile.Read(mp)
 	if err != nil {
 		return nil, nil, err
 	}
-	sig, err := os.ReadFile(sp)
+	sig, err := atomicfile.Read(sp)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -197,7 +197,7 @@ func (s Store) Previous(env string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(p)
+	return atomicfile.Read(p)
 }
 
 // Save makes a record the high-water mark, synced before it returns.
@@ -214,7 +214,7 @@ func (s Store) Save(r Record, manifest, sig []byte) error {
 	if err := fileperm.MkdirAll(s.Dir, 0o700); err != nil {
 		return err
 	}
-	if old, err := os.ReadFile(mp); err == nil && ID(old) != r.ID {
+	if old, err := atomicfile.Read(mp); err == nil && ID(old) != r.ID {
 		prev, _ := s.path(r.Env, ".previous.manifest.json")
 		if err := atomicfile.Write(prev, old, 0o600); err != nil {
 			return err

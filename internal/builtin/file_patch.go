@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/regexcompat"
@@ -331,7 +332,7 @@ func fileSedFn(c *exec.Context, args *value.Map) (any, error) {
 		}
 	}
 
-	original, err := os.ReadFile(path)
+	original, err := atomicfile.Read(path)
 	if err != nil {
 		return nil, err
 	}

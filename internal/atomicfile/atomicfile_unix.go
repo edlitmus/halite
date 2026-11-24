@@ -13,5 +13,9 @@ func Rename(oldpath, newpath string) error { return os.Rename(oldpath, newpath) 
 // whole version of the file either way.
 func Read(path string) ([]byte, error) { return os.ReadFile(path) }
 
+// Open is os.Open, for the same reason: a rename onto path after the open
+// leaves the descriptor on the file that was there when it was opened.
+func Open(path string) (*os.File, error) { return os.Open(path) }
+
 // renameIn is Rename inside a root. See WriteIn.
 func renameIn(root *os.Root, oldname, newname string) error { return root.Rename(oldname, newname) }

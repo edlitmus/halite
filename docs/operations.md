@@ -827,12 +827,11 @@ On FreeBSD, set the matching knob in `rc.conf` — `halite_hub_fips`,
 runs the `-fips` artifact with `GODEBUG=fips140=on` stated rather than
 inherited, so a `GODEBUG` already in the environment cannot turn it off.
 
-Three things change in FIPS mode, and each is refused rather than
+Two things change in FIPS mode, and each is refused rather than
 silently substituted:
 
 | Behaviour | What to do instead |
 |---|---|
-| `x509.create_private_key` refuses `algo: ed25519` | Use `algo: ec` with `keysize: 256` or `384` |
 | TLS key exchange is P-256 or P-384; X25519 is refused | Nothing — both ends of a halite connection agree |
 | TOTP cannot be checked, so accounts with a second factor cannot log in | `halite-api` names them at startup; remove the `totp` field or run those operators on a non-FIPS API |
 

@@ -50588,6 +50588,543 @@ crashes while a job is running. The probe on a systemd host with OpenRC
 installed, in a chroot, or in a container: those are still fake roots
 only. The revoked-node retry under systemd.
 
+### 5.720 `renumber` moved a section and left its subsections behind (2026-11-23)
+
+Issue 833, `tools/ledger`. It went wrong twice on 2026-11-23, in two shapes.
+First, a branch's new section had two subsections and main had taken its
+number. `renumber` gave the parent the next free number and moved it to the
+end of chapter 5. The `.1` and `.2` stayed where they were, earlier in the
+chapter. Later, after a merge of main, the subsection headings had their new
+number but the parent was after them: three `N.M.k` headings, then `N.M`. Both
+were put right by hand.
+
+**The cause, in two parts that agreed by accident.**
+
+- `headingRe` wants a space after `N.M`, so `### 5.719.1` is not a section to
+  this tool. A section's extent runs to the next heading at its own depth or
+  shallower. Most subsections are written `####` and so fall inside it. Some
+  are written `###`, as 5.688.1 is, and one of those ended its parent's
+  extent. The move then lifted the parent alone.
+- The subsection headings still got a new number, because the citation pass
+  rewrote them. A heading is on a line the branch added, and `citationRe`
+  for `N.M` matched `N.M.1`, since "." is not a digit. So the subsection got
+  its new number in place and did not move.
+
+The citation pass had a second fault. `citationRe` for `N.M` matched every
+`N.M.k`, whether or not the moved section had a subsection k. A branch can add
+a subsection under a section of main's, and give its own colliding section the
+same `N.M`. Then the subsection under main's section was renumbered with the
+branch's section.
+
+**Demonstrated before it was fixed.** `tools/ledger/subsections_test.go` builds
+the tool and runs `plan` and `renumber` in a throwaway repository. Main holds
+9.1, 9.2 (with 9.2.1) and 9.3, and a chapter 10 follows. On main's code, the
+two cases from the issue came out exactly as they had in the real ledger:
+
+```
+case (a): branch 9.2 with 9.2.1 and 9.2.2, before main's 9.2
+  9.1, 9.4.1, 9.4.2, 9.2, 9.2.1, 9.3, 9.4
+case (b): branch 9.4 with 9.4.1 and 9.4.2, a free number, before main's 9.2
+  9.1, 9.4.1, 9.4.2, 9.2, 9.2.1, 9.3, 9.4
+```
+
+A third test adds a branch subsection 9.3.1 under main's 9.3, beside the
+branch's own colliding 9.3. On main's code that subsection became 9.4.1, under
+main's 9.3. A fourth gives the branch's 9.3 a 9.3.1 of its own as well, and
+fails on main's code in the same way.
+
+**The change.**
+
+- A numbered subsection whose `N.M` is its section's label is now part of the
+  section, at any depth. The match is by label, so an `N.M.k` that has been
+  left after the next section does not become part of that section. The move
+  lifts the parent with its
+  subsections and gives each subsection heading the parent's new number.
+- The number at the start of a ledger heading is no longer a citation. The
+  citation pass reads only the title. Only the move knows which section each
+  subsection is under, so only the move renumbers headings. A test with two
+  9.3.1 headings, one under main's 9.3 and one under the branch's, shows that
+  this is necessary: the two lines are identical up to the title.
+- `citationRe` now matches `N.M.k` only when the moved section has a
+  subsection k. A citation of 9.2.1 moves with the branch's 9.2 if that 9.2
+  has a 9.2.1. Otherwise the 9.2.1 is main's, and the citation stays.
+- `plan` lists each section's subsections under it, and gives the old and new
+  label of each subsection it renumbers.
+
+A branch that adds only a subsection, under a section of main's, adds no
+section. `plan` says there is nothing to renumber, and `renumber` does not
+change the ledger. A test holds this. It passed before the fix too, so it is a
+guard and not a reproduction.
+
+**Broken on purpose, one part at a time**, with the fix in place otherwise:
+
+| Part removed | Tests that failed |
+|---|---|
+| subsections in the extent | case (a), case (b), the extent unit test |
+| headings left out of the citation pass | the two-9.3.1 test |
+| `N.M.k` only for the section's own subsections | the main's-9.3.1 test, the `citationRe` unit test |
+| subsection headings renumbered by the move | case (a), the two-9.3.1 test |
+
+**Not verified.** `renumber` was not run against a real branch with
+subsections: every run here was in a throwaway repository. A line that cites
+two renumbered sections still takes only the first, as before. A citation of
+`N.M.k` on a branch line, where both the branch's and main's `N.M` have a
+subsection k, still moves with the branch's section. The text cannot say which
+was meant. A subsection that is already apart from its parent, as case (a)
+left one, is not found and moved back; the ordering audit still reports it.
+
+### 5.721 Sixty-eight reads of files that atomicfile replaces did not share delete (2026-11-23)
+
+Issue 838, Windows. 5.718 left one class of reader in a replace's way: one
+that opens without `FILE_SHARE_DELETE`, which is every `os.ReadFile` and
+`os.Open`. windows-2022 refused 7 of 4,000 such reads during a replace on
+the plain leg and 18 under `-race`. 5.714 had moved one of them,
+`OrchStore.Get`, by hand. 5.718 named a second, `MineStore.Get`, and said
+no sweep of the other `os.ReadFile` calls had been done.
+
+**The audit first.** `TestNothingReadsAReplacedFileWithoutSharingDelete`
+(`internal/atomicfile/sharedreaders_test.go`) parses every non-test Go
+file and traces the path given to each read and each atomicfile write
+back to how it was built: a path helper by callee and fixed arguments
+(`<hub.MineStore>.path(*)`), a struct field, a join or concatenation with
+a literal or constant in it, or a package-level name. A function whose
+parameter reaches a write or a read is itself one, to a fixed point, so
+`writeAtomic`, `dataReadStore` and `fileperm.OpenFile` are seen through.
+Keys are compared across the tree. A state's arguments
+(`states.Str(args, "name", "")`) are not an origin, because two states
+that spell them are not naming one file.
+
+On main it reported 68 reads, `MineStore.Get` among them, and matched 4
+reads that already went through `Read` to their writes. Two early versions
+were wrong in the noisy direction, and each was read before it was
+believed: a helper's non-constant arguments were part of the key, so
+`m.path(nodeID)` and `m.path(data.NodeID)` were different files and
+`MineStore.Get` was missed; and a field of a value of unknown type
+matched any field of that name, so four archive reads were reported
+against logrotate's `lrFile.Path`.
+
+**The change.** Of the 68, three are exempted (below), and the other 65
+are fixed by 45 edits, because several findings are calls to one wrapper:
+43 reads move to `atomicfile.Read`, and two opens that stream
+(`fileserver.hashOf`, the archive source-hash check) move to a new
+`atomicfile.Open`, which is `os.Open` on unix and the same
+share-everything open as `Read` on Windows. Most findings in
+internal/builtin were calls to a wrapper, so the read moved inside it:
+`readLines`, `pemSource`, `dataReadStore`, `tlsReadIndex`,
+`pamReadFile`, `pamLoadForEdit`, `sudoReadDropIn`, `mergeWithFile`,
+`mdadmDropConfEntry`. The rest are the hub and node stores: API tokens,
+the keystore and its CRL number and enrollment tokens, pillarstore,
+`pki.Files`, treesign's accepted manifests, the fileserver's saved
+manifest, the node's runtime configuration, the hub's operator key pair,
+and `tree sign`'s manifest. On unix `Read` is `os.ReadFile` and `Open` is
+`os.Open`, so nothing changes on any platform but Windows.
+
+Three stay, and are exempted with their reasons: `keystore.pendingMarkers`
+lists a directory, which neither `Read` nor `Open` opens; `SignedReplay.append`
+is an append under the same lock as the rewrite that replaces the file;
+and `pki.Files.WriteKey` is an exclusive create of a key, matched only
+because every file in a `pki.Files` is one origin to the audit.
+
+**Shown.** With `MineStore.Get` put back to `os.ReadFile`, the audit
+fails naming `internal/hub/mine.go:107` and the write at line 154. It
+passes with the change, and requires at least 60 matched shared reads
+so that an audit that had stopped matching fails rather than passes.
+
+**What it cannot see**, as its comment says: a path with no origin, such
+as a parameter whose caller is out of the tree or a value from a map or
+a range; two spellings of one file, such as the old and sharded returns
+layouts; types only `go/types` would know; writes inside an `os.Root`;
+shadowed names; and opens inside the standard library. The two
+`zip.OpenReader` calls in internal/builtin open an archive that
+`archive.extracted` may have renamed into place, and are not covered.
+
+**Not verified.** Nothing here was run on Windows by hand. The CI
+windows-2022 legs run the audit, which is platform-independent, and
+`TestAReplaceLandsWhileAStreamingReaderHoldsTheFile`, which is the only
+test that tells `Open` from `os.Open`, and only on Windows. No stress run
+measured the 7 and 18 in 4,000 going to zero.
+### 5.722 The hub's key algorithms: SPEC and the configuration reference offered three that were never built
+
+SPEC 7.1 had a table of four rows, and two of them did not exist. The
+"Legacy interoperability" row offered RSA-3072 and RSA-4096. The paragraph
+under the table said Ed25519 "is permitted in non-FIPS builds by
+configuration, and the protocol negotiates it". The configuration reference
+(`docs/configuration.md`, generated from `internal/config/keys.go`) said the
+same: `key_algorithm` took "ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or
+ed25519 in non-FIPS builds".
+
+`pki.ParseKeyAlgorithm` has only ever accepted `ecdsa-p256` and `ecdsa-p384`,
+with the aliases `p256`, `ecdsa` and `p384`. `pki.GenerateKey` makes nothing
+but ECDSA. Any other value stops the hub at start with `key_algorithm
+"rsa-4096" is not one this build issues; try ecdsa-p256 or ecdsa-p384`. So an
+operator who chose from the documentation got a hub that would not start. Two
+paths that must agree did not: the documentation of a setting and the parser
+of that setting.
+
+This was found while correcting SPEC 27.4's claim about Ed25519 and FIPS
+(issue 840). That paragraph was where the Ed25519 half of this was written, and
+reading it beside `pki.go` showed that the option it described did not exist.
+
+**Fix.** SPEC 7.1's table now names the two values of `key_algorithm`, says
+they are the only two in every build, and says what the earlier table
+claimed. The key table's text is "ecdsa-p256 or ecdsa-p384.". Its longer
+description no longer offers Ed25519, and the reference is regenerated. The
+comment on `pki.KeyAlgorithm` says the same. No code changed. Adding RSA or
+Ed25519 to the hub's PKI would be a feature, and nobody has asked for it.
+
+**Test.** `TestKeyAlgorithmDocumentationNamesOnlyWhatParses`
+(`internal/pki/keyalgorithm_doc_test.go`) takes every algorithm name in the
+key table's text for `key_algorithm`, and the documented default. Each must
+parse, and each must parse to a different algorithm. It was broken on
+purpose twice, by putting the old text back. With the full old text it
+failed on `rsa-3072` and `rsa-4096` and **passed `ed25519`**: the first
+pattern required a hyphen, so it never saw the name the test exists for. The
+pattern now takes any lowercase word with a digit in it. With only
+`ed25519` added back, it failed on `ed25519`.
+
+**Not covered.** SPEC 7.1's prose is not held to the parser by the test.
+Only the key table, and the reference generated from it, are.
+### 5.723 Ed25519 is approved under FIPS 140-3, and the x509 module refused it as if it were not
+
+SPEC 27.4 said that in FIPS mode "Ed25519 is unavailable". SPEC 7.1 said it
+"is not approved under FIPS 140-3". `fips.Restricted` was documented as "no
+Ed25519, no SHA-1, and so no TOTP". `x509.create_private_key` with `algo:
+ed25519` refused under `fips140=on` with `ed25519 is not approved under FIPS
+140-3 and this process is in FIPS mode`. README, handbook 28 and
+`docs/operations.md` repeated it.
+
+**That was true until February 2023, and has not been since.** Four sources
+were checked on 2026-11-23:
+
+- FIPS 186-5 (final, 3 February 2023, superseding 186-4) approves EdDSA,
+  Ed25519 included, for digital signatures, citing RFC 8032.
+- NIST's certificate page for the Go Cryptographic Module (CMVP #5247,
+  FIPS 140-3, Active; the Go documentation ties v1.0.0 to it and to CAVP
+  A6650) lists `EDDSA KeyGen`, `KeyVer`, `SigGen` and `SigVer` as approved
+  algorithms under A6650.
+- The certified snapshot that `GOFIPS140=v1.0.0` selects
+  (`lib/fips140/certified.txt`: `v1.0.0-c2097c7c`) holds `fips140/ed25519`
+  with its own self-tests: the CAST `Ed25519 sign and verify` and a
+  pairwise-consistency test.
+- Go's EdDSA is Ed25519 only, so the certificate's EdDSA entries are this
+  algorithm. Go's TLS stack lists Ed25519 among the signature algorithms it
+  allows in FIPS mode, which is why the hub offered `ed25519` in its
+  CertificateRequest (5.282, "An observation on Ed25519").
+
+The module's security policy (the PDF for #5247) was fetched but could not
+be rendered here, so its table rows were not read. The certificate page and
+the module source are the evidence. **X25519 is a different question.** No
+source read here approves it for key agreement, and halite still refuses it
+for TLS key exchange in FIPS mode (SPEC 25.3). This change does not touch
+that.
+
+The SPEC had the claim and the code obeyed it. The two agreed with each
+other, and both disagreed with the standard. Every check looked at whether
+the code followed the SPEC, and none looked at whether the SPEC was right.
+
+**Fix.**
+- `x509.create_private_key` generates Ed25519 in FIPS mode as in any other
+  mode. Its comment gives the standard and the certificate.
+- `fips.Restricted` now documents only what it restricts: TLS key exchange
+  and SHA-1, so TOTP. `transport` and `account` were already its only other
+  callers.
+- SPEC 27.4 says Ed25519 is available, gives both sources, and says X25519
+  is not approved for key exchange. README, handbook 28 and the FIPS table
+  in `docs/operations.md` drop the refusal. That table now has two rows.
+
+An older OpenSSL FIPS provider may still refuse an Ed25519 key. RHEL 9's
+and Ubuntu's `openssl-fips-module-3` 3.0.5 are examples: Rocky's sshd
+refused an Ed25519 login key after the FIPS reboot, and Ubuntu's FIPS
+OpenSSL did not share `ed25519` in a handshake (5.282). That is a limit
+of the peer, so the SPEC states it and does not enforce it.
+
+**Test.** `TestEveryAlgorithmRoundTrips` asserted the refusal under FIPS,
+and it now generates Ed25519 in every mode. A new test,
+`TestEd25519SignsAndVerifiesInEveryMode`, has an Ed25519 CA sign an
+Ed25519 leaf and checks that the leaf verifies against its CA and not
+against itself. It logs which FIPS mode it ran in. With `GOFIPS140=v1.0.0`
+(the environment `make fips-test` uses) it logged `FIPS mode: true` and
+passed. It was broken on purpose by putting a refusal back under
+`fips140.Enabled()`: both tests failed in the FIPS build with `ed25519 is
+not approved under FIPS 140-3`.
+
+**Not run.** An Ed25519 certificate from this module, presented to a FIPS
+peer built on OpenSSL. The hub's own PKI still issues only ECDSA (5.722).
+Whether it should offer Ed25519 is a separate decision. Issue 840's first
+question is answered here.
+### 5.724 P-384 is the default key algorithm
+
+The owner chose this on 2026-11-23, alongside allowing Ed25519 in FIPS mode
+(5.723). halite's own keys had defaulted to ECDSA P-256. They now default to
+P-384. P-256 is still accepted everywhere it was.
+
+**What changed.**
+- `pki.ParseKeyAlgorithm` reads an empty value, or `ecdsa` alone, as
+  `ecdsa-p384`. `pki.GenerateKey` makes P-384 for anything but
+  `ecdsa-p256`.
+- The hub's `key_algorithm` default is `ecdsa-p384`. That setting chooses
+  the enrollment CA, the hub's serving certificate and operator
+  certificates.
+- `halite-node enroll`'s `--key-algorithm` defaults to `ecdsa-p384`.
+- `halite-hub keys signer create` makes a P-384 job-signing key unless
+  told otherwise, and `jobsign.GenerateKey("")` is P-384.
+- SPEC 7.1's table, the key table and its description, both commands'
+  usage text and the generated references all say P-384 is the default.
+
+**What did not change, and why.**
+- **Existing keys.** The setting chooses new keys only. An enrollment CA
+  that exists keeps its key. A node's renewal keeps the algorithm of the
+  key the node holds (`renewal.Identity` with `alg ""` reads it with
+  `pki.AlgorithmOf`), so an estate enrolled on P-256 stays on P-256 until a
+  node is re-enrolled. A P-384 node under a P-256 CA, or the other way
+  round, is an ordinary pair. `ecdsa-p384` was already an accepted value,
+  and the renewal path was written for nodes enrolled on it.
+- **The x509 execution module.** `x509.create_private_key` with `algo: ec`
+  and no `keysize` still makes P-256. That module follows Salt's
+  `x509_v2`, and a tree written for Salt that leaves out `keysize` means
+  256. This change is about halite's own keys, not about what a state
+  asks for.
+- **The AWS KMS signer** (`internal/awskms`) still takes P-256 only,
+  because it signs SHA-256 digests and KMS pairs those with P-256.
+- **TLS key exchange.** It is still offered as P-256 then P-384. That is
+  the curve for the handshake's ephemeral key, which is separate from the
+  key a certificate holds.
+
+**Test.** `TestKeyAlgorithmNames` now expects `""` and `ecdsa` to parse to
+P-384. `TestTheDefaultKeyIsP384` (`internal/pki`) generates from the
+parsed default, from both named curves, and from an unset algorithm, and
+reads each key back with `AlgorithmOf`.
+`TestTheDefaultSigningKeyIsP384AndVerifies` (`internal/jobsign`) checks
+the curve of the default signing key. Each was broken on purpose:
+
+- The parser's default put back to P-256 failed both pki tests.
+- The signing default put back to P-256 failed the jobsign test.
+- `GenerateKey`'s branches swapped back to fall through to P-256 **passed
+  at first**. Both named algorithms still had their own case, so only an
+  unset `KeyAlgorithm` reached the fall-through, and no test passed one. No
+  production caller does either, because each one parses first. The test
+  now generates from `""` too, and the same break fails it with
+  `GenerateKey("") made a ecdsa-p256 key; want ecdsa-p384`.
+
+**Run.** A hub built from this change, started unprivileged on macOS on
+loopback with a fresh `pki_dir`, logged `created a new enrollment CA
+algorithm=ecdsa-p384`. Its `ca.crt` and `hub.crt` were on `secp384r1` and
+signed `ecdsa-with-SHA384`. Handbook 30 keeps its captured P-256 line and
+now says what a hub prints today.
+
+**Not run.** A node enrolling with the new default against a hub, on a real
+host. A P-384 job-signing key verified by a node over the wire; the
+verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
+build making the P-384 CA; `make fips-test` runs the unit tests above as a
+FIPS build.
+### 5.725 The operator command line dialled localhost when the hub listened on one address
+
+`operatorClient` (`cmd/halite-hub/run.go`) chose the hub's address in this
+order: `--hub`, then `hub` in `hub.yaml`, and then `localhost`. It took the
+port from `listen`. With `listen: 10.0.0.5:4510`, the hub listens on that
+address alone. So on the hub itself, `halite-hub run …`, `runner`, `jobs`,
+`orch`, `metrics` and `event` without `--hub` dialled `localhost:4510`, where
+nothing answers. They failed with `dial tcp 127.0.0.1:4510: connect:
+connection refused`. That was seen in the issue 306 runs of 2026-11-05 and
+2026-11-06 (5.282, "Seen again, not fixed"). On 2026-11-23 every command on
+a hub with a specific `listen` passed `--hub` by hand. Issue 840 recorded it
+as a decision for the owner, and the owner chose to dial the `listen`
+address.
+
+**Fix.** `defaultHubAddress(listen)` is the host that `listen` names. For a
+wildcard (`:4510`, `0.0.0.0`, `::`) or no host, it is `localhost`, because
+the hub then answers on loopback too. `--hub` and `hub` still come first. A
+specific `listen` host is also one of the names the hub puts in its own
+certificate. `serverNames` adds it by the same wildcard test, unless
+`--names` replaces the list. So the name dialled is one that verifies.
+
+**Test.** `TestTheDefaultHubAddressFollowsListen`
+(`cmd/halite-hub/huburl_test.go`) checks the URL an operator command dials
+for ten `listen` values. They cover an IPv4 and a host name with ports,
+IPv6 with and without a port, an address with no port, three wildcards and
+an empty value. It was broken on purpose by returning `localhost` always,
+and it failed on every specific address (`dials "https://localhost:4510",
+want "https://10.0.0.5:4510"`).
+
+**Run end to end on Linux.** On 2026-11-23, on an arm64 Ubuntu 22.04 host
+(`host-d` of 5.282), two `halite-hub` binaries were built with Go 1.27.4:
+`main` at `2db3fd7c` and this branch. A hub was started unprivileged with
+`listen: <private-ip>:47511`, and `ss` showed it listening on that address
+alone. An admin operator was made, and then `runner manage.status` was run
+with the hub's own `--config` and no `--hub`:
+
+- `main`: `Post "https://localhost:47511/v1/runners": dial tcp
+  127.0.0.1:47511: connect: connection refused`. This is the defect.
+- this branch: it answered `up: []` and `down: []`.
+- this branch with `--hub localhost`: it was refused as `main` was, so an
+  explicit `--hub` still wins.
+
+The build tree, the hub's directories and the toolchain were removed from
+the host afterwards.
+
+The same run on this Mac said nothing either way. No client could reach a
+hub on the LAN address, with `--hub` given or without it: the handshake
+ended in `EOF`, and the hub logged `socket is not connected`. That is the
+Mac's network path.
+### 5.726 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
+
+SPEC 14.1 said `fips_mode` "reads `/proc/sys/crypto/fips_enabled` and, on
+Ubuntu, the Ubuntu Pro FIPS package state". SPEC 27.4 said the grain
+"reports both the host's kernel FIPS state and the binary's own mode". No
+build has done either. On Linux the grain is `/proc/sys/crypto/fips_enabled`
+alone (`internal/grains/platform_linux.go`). On Windows it is the
+`FipsAlgorithmPolicy` setting. On the BSDs and macOS it is `false`. The
+binary's own state has always been three separate grains, `fips_build`,
+`fips_enabled` and `fips_module` (DIVERGENCE 1.11). Issue 840 asked which
+should give way, and the owner decided that the kernel is the authority,
+so SPEC changes.
+
+The evidence for that choice is from 5.282's last run. An arm64 host on
+Pro `fips-updates` was booted with `fips=0`, with the FIPS kernel and
+packages still installed. `fips_enabled` read 0, `fips_mode` read False, and
+`pro status` reported `fips-updates` as **disabled**. So Pro's own report
+follows the kernel, and reading it as well would have added nothing on
+that host. It would have added a second source that could disagree.
+
+**Fix.** SPEC 14.1 says what each platform reads and that the kernel is the
+authority. It says that Pro is not read and why, and what the earlier text
+claimed. SPEC 27.4 says `fips_mode` is the host's state and that the other
+three grains are the binary's. The comment on `collectFIPSBuild` says the
+same. No code changed.
+
+**Not covered.** No test holds SPEC 14.1's prose to the grain collectors.
+
+### 5.727 A job the tracer sampled lost the hub's tree for another environment (2026-11-23)
+
+Issue 803, filed as a suspicion from reading and not reproduced. It was
+real. `executeJob` wrapped the job's tree for tracing (`traceFiles`, which
+returns a `tracedFiles` around the tree for a sampled job and the tree
+unchanged otherwise) before `adoptJobEnvironment` ran, and
+`adoptJobEnvironment` told the hub's tree from the node's own by asserting
+`n.files.(*fileserver.Remote)`. For a sampled job that assertion failed on
+the wrapper, so a job naming an environment other than the node's own was
+given `localTree(env)`: the node's own `file_roots` for that environment,
+or, where none are configured, the packaged defaults (`<root>/state`,
+`/srv/halite/states`, `/srv/salt`, whichever exist). It applied whatever
+those held and reported success. The same job unsampled fetched from the
+hub. Only the jobs the sample rate picked were affected, so at a rate below
+1 it would look like chance.
+
+**Seen.** `TestATracedJobForAnotherEnvironmentFetchesFromTheHubsTree`, real
+binaries: a hub serving `base` and `dev`, and two nodes whose own
+environment is `base`: `traced1`, with `tracing: otlp` and
+`tracing_sample_rate: 1`, exporting to a collector the test runs, and
+`plain1`, with tracing off. Each node also has its own `dev` roots holding a
+decoy state and payload that say `from-node-local`, so losing the hub's
+tree shows as a wrong file rather than a failure, which is the shape the
+issue suspected. `halite-hub run <node> state.apply app --env dev`, whose
+state manages a file from `salt://payload.txt`, on main's code:
+
+```
+plain1:  from-hub-dev      (exit 0)
+traced1: from-node-local   (exit 0, the job reported success)
+```
+
+**The change.** `executeJob` wraps the tree after `adoptJobEnvironment`,
+so the environment is settled on the hub's tree, or on the node's own,
+before anything hides which it is. This also traces a sampled job's
+fetches from the node's own roots for another environment: the old order
+replaced the wrapper with an unwrapped local tree there.
+
+The test asserts that the traced path ran: the collector must receive a
+`file fetch` span for `payload.txt` naming `dev`. Without that, a tracer
+that sampled nothing would make the file assertion pass for the wrong
+reason.
+
+**Broken on purpose**, with the fix otherwise in place:
+
+| Break | Result |
+|---|---|
+| `traceFiles` before `adoptJobEnvironment` again | `traced1` wrote `from-node-local`; the test failed |
+| `traceFiles` never wraps | the file was right and the collector check failed: "the traced path did not run" |
+
+**Not verified.** Run only on the development host's Linux compatibility
+layer, not on a native FreeBSD or Linux machine. Only a node-side sample
+rate of 1 was run. A job sampled because the hub's `traceparent` said so,
+on a node whose own rate would not have picked it, takes the same branch
+by reading (`traceFiles` checks the job span's sampled flag), and was not
+run. A job naming another environment on a node with no `file_roots` for
+it, which would have read the packaged defaults, was not run: the test
+gives each node its own roots so as not to read a real tree.
+
+### 5.727.1 A sampled `saltutil.sync_*` was refused as if the node had no hub
+
+Found while fixing 5.727, by looking for every other assertion on the type
+of a job's `n.files`. `extensionSource`, which `saltutil.sync_all` and its
+siblings reach for, asserted `n.files.(*fileserver.Remote)` too, and a job's
+`n.files` is the `tracedFiles` wrapper for the whole of a sampled job. So a
+sampled sync was refused with "extensions are delivered by the hub's file
+server, and this node is working from its own tree" on a node attached to
+its hub, and the same sync unsampled succeeded.
+
+**Seen.** `TestATracedExtensionSyncReachesTheHubsTree`, on the same lab as
+5.727, with only that fix in place: `plain1` answered `extensions: []`,
+`changed: False` and exit 0; `traced1` exited 1 with the refusal above.
+
+**The change.** `hubTreeOf` answers "is this the hub's tree?" through the
+wrapper, and `extensionSource` asks it. Reordering cannot help here, as it
+did in 5.727, because the wrapper is in place for the whole job. The other
+assertion of that kind, in `pinTreeForRun`, runs before the wrapper is
+applied. The test also checks that the collector received `traced1`'s
+`job saltutil.sync_all` span.
+
+**Broken on purpose.** With the unwrap taken out of `hubTreeOf`, `traced1`
+was refused again and the test failed.
+
+**Not verified.** No extension bundle was published on the hub, so the
+sync that ran fetched nothing: what was shown is that a sampled sync
+reaches the hub's tree, not that it delivers a bundle. Run on the
+development host's Linux compatibility layer only.
+
+### 5.728 `Remote.ForEnv` appended into an array its copies shared (2026-11-23)
+
+Issue 849, found by reading while fixing issue 803. Each job runs on a
+shallow copy of the agent's `fileserver.Remote` (`ForRun`, and
+`WithContext` when traced), so every copy's `Environments` points at the
+agent's backing array. A job that names another environment calls
+`ForEnv`, which appended to that slice in place. With spare capacity in
+the array, every copy wrote the same slot, and each would then read
+whichever environment was written last.
+
+**Shown.** `TestForEnvOnCopiesWithSpareCapacityKeepsEachCopysEnvironment`
+(`internal/fileserver/forenv_test.go`) builds a Remote whose
+`Environments` has length 1 and capacity 16, has eight goroutines each
+take a `ForRun` copy and switch it to its own environment, and only then
+reads every copy. On main it failed without `-race`, deterministically:
+seven of eight jobs saw `[base env4]`, the last writer's. Under `-race`
+the detector also reported the write-write race at the append. With the
+fix it passed once plain, once under `-race` and 200 times under `-race`.
+With the fix taken back out (append without the clip), it failed again,
+plain and under `-race`.
+
+**The fix.** `append(slices.Clip(r.Environments), env)`, so the append
+always gets its own array and the copy owns what it wrote.
+
+**Why production never hit it.** The capacity condition does not occur
+in the shipped node today. The one place a node builds a hub-backed
+Remote (`useHubTree` in `cmd/halite-node/enroll.go`) passes nil to
+`NewRemote` and then sets `Environments` to a one-element literal, whose
+capacity equals its length, and nothing appends to the agent's own
+Remote: every `ForEnv` call is on a per-job copy made just before it
+(`adoptJobEnvironment`, after `pinTreeForRun`). So the first append on
+any copy reallocated. The fix removes a dependence on one line in another
+package, not a fault anybody saw.
+
+**And not issue 808.** The two parallel jobs that ran one after the
+other in CI could not have been serialised by this: a shared slot gives
+a job the wrong environment, it does not make one job wait for another,
+and nothing in `ForEnv` blocks. That test's node has no hub tree and its
+jobs name no environment, so it does not reach `ForEnv` at all.
+
+**Not verified.** No agent was run with a Remote that had spare
+capacity, because none can be built through the agent's own
+configuration; the test drives `fileserver` directly.
+
 ### 5.720 A revoked node started again retried the hub's refusal for ever (2026-11-23)
 
 Issue 839, `cmd/halite-node` and `internal/transport`. Found in the lab
@@ -50714,7 +51251,6 @@ would send the alert, and was not measured. Windows was not run (the
 binary test skips there). The `403` that a revoked node gets on a reused
 connection is still retried, as before; no run showed a node reaching it
 after the revoke message failed to arrive.
-
 
 
 ## 6. Everything else not started

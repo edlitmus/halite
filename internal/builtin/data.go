@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/signature"
@@ -224,7 +225,7 @@ func dataStorePath(c *exec.Context) (string, error) {
 // empty mapping rather than an error: a node that has never called `set`
 // has an empty store, not a broken one.
 func dataReadStore(path string) (*value.Map, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return value.NewMap(8), nil

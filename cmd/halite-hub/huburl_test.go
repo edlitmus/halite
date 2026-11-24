@@ -71,3 +71,33 @@ func TestAnUnreadableHubIsAUsageError(t *testing.T) {
 		t.Errorf("exited %d: %s; want 64 naming --hub", res.code, res.stderr)
 	}
 }
+
+// Where an operator command goes when nothing names the hub: the host
+// `listen` names, or localhost for a wildcard. It went to localhost
+// always, which a hub listening on one specific address does not answer
+// (issue 840; seen on the FIPS hosts of DIVERGENCE 5.282). The URL is
+// checked end to end, port included, because that is what was wrong.
+func TestTheDefaultHubAddressFollowsListen(t *testing.T) {
+	for _, c := range []struct{ listen, want string }{
+		{"10.0.0.5:4510", "https://10.0.0.5:4510"},
+		{"172.26.24.45:8301", "https://172.26.24.45:8301"},
+		{"hub.example:4510", "https://hub.example:4510"},
+		{"[2001:db8::7]:8443", "https://[2001:db8::7]:8443"},
+		{"[::1]", "https://[::1]:4510"},
+		{"10.0.0.5", "https://10.0.0.5:4510"},
+		// Wildcards and no host: the hub answers on loopback too.
+		{":4510", "https://localhost:4510"},
+		{"0.0.0.0:4510", "https://localhost:4510"},
+		{"[::]:8443", "https://localhost:8443"},
+		{"", "https://localhost:4510"},
+	} {
+		got, err := hubURL(defaultHubAddress(c.listen), c.listen)
+		if err != nil {
+			t.Errorf("listen %q: %v", c.listen, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("listen %q: the operator command dials %q, want %q", c.listen, got, c.want)
+		}
+	}
+}

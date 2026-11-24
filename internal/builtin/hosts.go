@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
@@ -420,7 +421,7 @@ func containsString(haystack []string, needle string) bool {
 // readLines reads a file into lines, returning nothing when it is absent.
 // Several modules read a system file this way.
 func readLines(path string) []string {
-	b, err := os.ReadFile(path)
+	b, err := atomicfile.Read(path)
 	if err != nil {
 		return nil
 	}

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/ext"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/bridge"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
@@ -45,12 +46,13 @@ func operatorClient(args *cli.Args) *transport.Client {
 	}
 	// The hub's address is read first, so that one that cannot be used
 	// is a usage error before any key material is looked for.
+	listen := cfg.String("listen", fmt.Sprintf(":%d", transport.DefaultPort))
 	address := args.Flag("hub", cfg.String("hub", ""))
 	if address == "" {
 		// The operator command line most often runs on the hub itself.
-		address = "localhost"
+		address = defaultHubAddress(listen)
 	}
-	url, err := hubURL(address, cfg.String("listen", fmt.Sprintf(":%d", transport.DefaultPort)))
+	url, err := hubURL(address, listen)
 	if err != nil {
 		cli.Usagef("%v", err)
 	}
@@ -155,6 +157,31 @@ func hubURL(address, listen string) (string, error) {
 	// A zone (fe80::1%en0) is written %25 in a URL, RFC 6874; left as
 	// `%e`, url.Parse refuses the address as a bad escape.
 	return "https://" + strings.Replace(net.JoinHostPort(host, listenPort(listen)), "%", "%25", 1), nil
+}
+
+// defaultHubAddress is where an operator command on the hub reaches it
+// when neither --hub nor `hub` says: the host of `listen` when that names
+// one, and localhost when it is a wildcard or names no host.
+//
+// It was always localhost. A hub with `listen: 10.0.0.5:4510` listens on
+// that address alone, so every `halite-hub run` without --hub on the hub
+// itself failed with `dial tcp 127.0.0.1:4510: connect: connection
+// refused` (DIVERGENCE 5.282, issue 840). The host is the one serverNames
+// puts in the hub's certificate when --names does not replace the list,
+// by the same wildcard test, so the name dialled is a name the
+// certificate carries.
+func defaultHubAddress(listen string) string {
+	host := listen
+	if h, _, err := net.SplitHostPort(listen); err == nil {
+		host = h
+	} else if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		return "localhost"
+	}
+	return host
 }
 
 // listenPort is the port of a `listen` address, or the hub's default
@@ -439,11 +466,11 @@ func decodeReturn(r *job.Return) any {
 
 // loadPair reads an operator's certificate and key.
 func loadPair(certPath, keyPath string) (tls.Certificate, error) {
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := atomicfile.Read(certPath)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("reading %s: %w", certPath, err)
 	}
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := atomicfile.Read(keyPath)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("reading %s: %w", keyPath, err)
 	}

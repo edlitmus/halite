@@ -228,7 +228,7 @@ The facts come from crypto/fips140 at runtime rather than from a link time -X fl
 - `KernelMode` (func): KernelMode reports the host kernel's FIPS state, and whether the platform has one at all.
 - `Module` (func): Module is the version of the Go Cryptographic Module in use, or an empty string when this process is not using a certified one — or when the toolchain that built it cannot say.
 - `Reportable` (func): Reportable tells whether this toolchain can name the module at all.
-- `Restricted` (func): Restricted reports whether halite applies its own FIPS restrictions: no Ed25519, no SHA-1, and so no TOTP.
+- `Restricted` (func): Restricted reports whether halite applies its own FIPS restrictions: TLS key exchange on P-256 and P-384 only, and no SHA-1, so no TOTP.
 - `Status` (func): Status is the one-line summary `<binary> version` prints.
 
 ## `internal/version`
@@ -265,6 +265,7 @@ which are the two sides of one race. MoveFileEx has to open the destination for 
 **Exports.**
 
 - `Bounded` (func): Bounded runs fn holding one of the MaxConcurrentWrites slots, for a caller outside this package that makes a write with an fsync and has nothing else bounding how many of them run at once.
+- `Open` (func): Open is os.Open, for the same reason: a rename onto path after the open leaves the descriptor on the file that was there when it was opened.
 - `Read` (func): Read is os.ReadFile.
 - `Rename` (func): Rename is rename(2), which is atomic and does not care who has the destination open.
 - `Write` (func): Write replaces path with data, atomically as far as any reader is concerned: a reader sees either the old contents or the new, never a partial write and never an empty file.

@@ -203,7 +203,7 @@ func currentZone(c *exec.Context) (string, error) {
 		}
 	}
 	// FreeBSD, where /etc/localtime is a copy and this file is the name.
-	if b, err := os.ReadFile(zoneNamePath); err == nil {
+	if b, err := atomicfile.Read(zoneNamePath); err == nil {
 		if name := strings.TrimSpace(string(b)); name != "" {
 			return name, nil
 		}

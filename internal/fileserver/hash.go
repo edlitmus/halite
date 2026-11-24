@@ -8,8 +8,9 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"os"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // newHash is the one list of digests the file server publishes and a
@@ -51,7 +52,7 @@ func hashOf(path, algorithm string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if err != nil {
 		return "", err
 	}

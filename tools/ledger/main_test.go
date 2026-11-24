@@ -55,7 +55,7 @@ body of second
 // mention of 5.14 into 5.99 while renumbering 5.149. There are 186
 // sections and plenty of such pairs.
 func TestALabelDoesNotMatchInsideALongerOne(t *testing.T) {
-	re := citationRe("5.14")
+	re := citationRe("5.14", nil)
 	for _, line := range []string{
 		"see DIVERGENCE 5.149 for the reason",
 		"5.1499",
