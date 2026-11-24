@@ -3,12 +3,12 @@ package builtin
 import (
 	"fmt"
 	"os"
-	osexec "os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	hexec "github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
@@ -62,6 +62,13 @@ func kernelpkgMutateGate(t *testing.T) (*hexec.Context, kernelFamily) {
 	if os.Geteuid() != 0 {
 		t.Fatal("HALITE_KERNELPKG_LIVE is set and this is not root")
 	}
+	if _, ok := f.(aptKernels); ok {
+		note, err := kernelArchiveCheck()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Log(note)
+	}
 	return c, f
 }
 
@@ -91,21 +98,43 @@ func kpMust(t *testing.T, c *hexec.Context, fn string, args *value.Map) any {
 	return v
 }
 
+// kpRunOut and kpRun run a package command within kernelpkgCommandLimit;
+// see runBounded.
 func kpRunOut(t *testing.T, argv ...string) (string, bool) {
 	t.Helper()
-	cmd := osexec.Command(argv[0], argv[1:]...)
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	out, err := cmd.CombinedOutput()
-	return string(out), err == nil
+	out, err := runBounded(kernelpkgCommandLimit, argv...)
+	return out, err == nil
 }
 
 func kpRun(t *testing.T, argv ...string) string {
 	t.Helper()
-	out, ok := kpRunOut(t, argv...)
-	if !ok {
-		t.Fatalf("%s: %s", strings.Join(argv, " "), out)
+	out, err := runBounded(kernelpkgCommandLimit, argv...)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return out
+}
+
+// installKernelPackages fetches the packages and then installs them, as two
+// commands each within kernelpkgCommandLimit, and logs how long each took.
+// Two so that a failure says which half it was in: issue 852's alarms
+// were all in the download, on a mirror serving 10 to 100 kB/s, and it took
+// reading 38 runs' logs to show it (DIVERGENCE 5.729); 5.688's slow pass was
+// a slow mirror too. A pass leaves both timings in the log.
+func installKernelPackages(t *testing.T, pkgs []string) {
+	t.Helper()
+	for _, step := range []struct {
+		what  string
+		extra []string
+	}{
+		{"downloaded", []string{"--download-only"}},
+		{"installed", nil},
+	} {
+		start := time.Now()
+		argv := append([]string{"apt-get", "install", "-y", "-q"}, step.extra...)
+		kpRun(t, append(argv, pkgs...)...)
+		t.Logf("%s %v in %s", step.what, pkgs, time.Since(start).Round(time.Second))
+	}
 }
 
 // bootReleases are the kernels /boot holds of one flavour.
@@ -299,14 +328,10 @@ type debianKernelSnapshot struct {
 	auto     map[string]bool
 }
 
+// runEnv runs a package command within kernelpkgCommandLimit; see
+// runBounded. It takes no *testing.T for the reason the snapshot does not.
 func runEnv(argv ...string) (string, error) {
-	cmd := osexec.Command(argv[0], argv[1:]...)
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("%s: %v: %s", strings.Join(argv, " "), err, out)
-	}
-	return string(out), nil
+	return runBounded(kernelpkgCommandLimit, argv...)
 }
 
 func readDebianKernelSnapshot() (debianKernelSnapshot, error) {
@@ -519,7 +544,7 @@ func TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest(t *testing.T) {
 	}
 	t.Logf("installing %v for the test", pkgs)
 	install := func() {
-		kpRun(t, append([]string{"apt-get", "install", "-y", "-q"}, pkgs...)...)
+		installKernelPackages(t, pkgs)
 		if _, err := os.Stat("/boot/vmlinuz-" + old); err != nil {
 			t.Fatalf("the setup installed %s and /boot has no kernel for it: %v", old, err)
 		}
