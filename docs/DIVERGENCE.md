@@ -1556,6 +1556,7 @@ a batched job's delivery accounting, for instance.
 What found it was CI running the suite on four platforms on every
 change. It had been in the tree since the queue policy was built and no
 local run had ever failed on it.
+
 ### 4.12 A reader that fell behind the event bus was not told
 
 Found on 2026-09-06 by the chaos suite, on its first run, which is what
@@ -26456,6 +26457,7 @@ SPEC 23.5, not for this change.
   platforms.
 - The second-tier list above came from reading parameter names in the
   registry. It is not complete.
+
 #### Since: issue 619
 
 The second tier above is decided. Eleven execution functions and the
@@ -27659,6 +27661,7 @@ other function failed the static check. So no other function had passed
   the dynamic audit catches that, and only on functions it reaches.
 - **State functions are not in the new static check.** 5.135's state
   differential is unchanged.
+
 #### 5.308, `mount.set_fstab` fell out of the dynamic audit
 
 `auditMustReach` names 24 functions now, not 23: `mount.set_fstab`
@@ -47320,6 +47323,7 @@ of them; the log could say which. Left for its own change.
 **Not covered:** TOTP as root under the rc.d script; Linux; a code from an
 authenticator app; the clock skew of a real phone; LDAP, OIDC and a directory
 group's role map, the rest of item 5.
+
 ### 5.681 An idle connection ended in an RST, and making the timeouts differ would not have stopped it
 
 Issue 757 (`internal/transport/client.go`, `internal/transport/closedrain.go`).
@@ -47591,6 +47595,7 @@ spools until `url` is corrected; and the other clients built with the
 default policy (`awskms`, `s3fs`, `awsauth`, the Secrets Manager extension),
 whose peers are AWS endpoints, some carrying secrets in the body, and which
 were not looked at.
+
 ### 5.687 A failed `pro.attach` put the contract token in its error
 
 Reported privately as GHSA-cgg8-h9pj-fq34 (2026-11-20), from a reading of
@@ -48060,6 +48065,7 @@ value that applies.
   same warnings. Only the node binary was run.
 - Settings given another way, such as a command-line flag, are not
   checked here.
+
 ### 5.696 `migrate` said nothing about a blackout set where Salt reads it (2026-11-21)
 
 **The defect.** Salt reads `minion_blackout` and <!-- lexicon:allow -->
@@ -48128,6 +48134,7 @@ key, so this changes nothing for its migration.
 - **A blackout key built by a template**, for example from a Jinja
   variable, is not found. The audit reads the text.
 - **No real Salt estate that uses blackout has been migrated.**
+
 ### 5.697 A scheduled job ran alongside a dispatched one (2026-11-21)
 
 Issue 781, which 5.694 found by reading the code. SPEC 9.6 and the
@@ -48166,6 +48173,7 @@ Breaking it to drop the tail of the queue fails the first.
 `TestAScheduledHighstateSurvivesAHubOutage` runs real binaries with a
 one-second schedule, and it passes with the schedule going through the
 queue. The node package passes under `-race`.
+
 ### 5.698 `parallel_jobs` was accepted and did nothing, and `--parallel` did not exist (2026-11-21)
 
 The rest of issue 763. SPEC 9.6 promised a named lock per module family
@@ -48379,6 +48387,7 @@ Each of these was broken on purpose, and a test failed each time:
   signed job is not reached from here.
 - **`salt.function` steps in `--test` mode** dispatch nothing, so the flag
   goes nowhere then, as every other option does.
+
 ### 5.699 A node took a `quiesce` from the hub as an unknown message (2026-11-21)
 
 Issue 782, found while building quiesce for issue 763 (5.694).
@@ -48408,6 +48417,7 @@ quiesce silently. Issue 782 stays open for those.
 
 **Not verified.** No hub or relay sent either message to a running node; the
 test calls the node's handler directly.
+
 ### 5.700 A rolling upgrade, run with the release binaries (2026-11-21)
 
 Issue 766. Every upgrade test so far (`internal/hub/upgrade_test.go`) built
@@ -48829,6 +48839,7 @@ which is the node-side check the row needs and does not have yet.
 The same table's state-tree row still lists *"optional signed state trees"*,
 which describes issue 764 as a design and is not built; it is left as SPEC's
 statement of intent.
+
 ### 5.705 A node verifies signed state content before it applies it (2026-11-22)
 
 Issue 764, built from the reviewed proposal in
@@ -49078,6 +49089,7 @@ narrow.
 **Not verified:** this change's own CI run is a workflow change, so it runs
 every leg; the first documentation-only PR after it is the check that it
 skips them.
+
 ### 5.707 A resume after a hub crash ran the steps that had already run (2026-11-22)
 
 Found by reading while writing the proposal for issue 765 (PR 801), filed
@@ -49392,6 +49404,7 @@ app. OIDC through a browser, and from any provider but dex. LDAP with
 `starttls` or with `memberOf`. A FreeBSD node enrolled by
 `--token-file` on the command line, rather than through rc. `make install`
 on any Linux but Rocky 9. arm64.
+
 ### 5.709 The node's unit gave it a private /tmp, and a managed file there vanished at each restart (2026-11-23)
 
 Found by 5.708's drift report. `halite-node.service` and
@@ -49437,6 +49450,7 @@ From the next tick, the mailed report no longer listed either node.
 FIPS drop-in was not run with the new unit. A node already installed keeps the
 old unit until it is reinstalled: an upgrade that replaces the binary alone,
 as chapter 36's state does, leaves `PrivateTmp=yes` in place.
+
 ### 5.710 An orchestration runs on nodes that require signed jobs, from a plan signed off the hub (2026-11-22)
 
 Issue 765, built from the reviewed proposal in
@@ -49796,6 +49810,7 @@ admission check (`TestAStateJobWithAnUnusablePillarOverrideIsRefused`).
 - Run on the dev host only (FreeBSD, through its Linux compatibility
   layer), on a hub and a node over loopback. No lab machine, no relay, no
   API-submitted job (`/v1/run` sends the same keyword).
+
 ### 5.713 `orch run` gave up on a run after thirty seconds while the run went on (2026-11-23)
 
 Issue 815, seen once in the first attempt at 5.707's reproduction.
@@ -49904,6 +49919,7 @@ read the record. The old read path failed all ten reads with a sharing
 violation. The new read path passed all ten reads. Each job used its own
 Windows Server 2022 runner and ran the test under the standard CI account.
 [File-sharing runs](https://github.com/edlitmus/halite/actions/runs/45227629654)
+
 ### 5.715 A job settled partial at its expiry became complete when its node answered late (2026-11-23)
 
 Issue 810, suspected while revising the issue 765 proposal and filed as
@@ -49964,6 +49980,7 @@ its job's 15-minute default TTL still succeeds on a late return, while
 the job it sent reads `partial`. Whether a step's `timeout` should set its
 job's TTL, which SPEC 6.3 allows ("orchestration steps may extend it"),
 is the second question issue 810 asks and is not answered here.
+
 ### 5.716 A state job's `pillarenv` was carried to the node and ignored (2026-11-23)
 
 Issue 826, the sibling of 5.712, which recorded it as not fixed there. A
@@ -50075,6 +50092,7 @@ compile left on the node's own environment (both no-hub-pillar tests).
 - `halite-node state apply pillarenv=...` on the command line is unchanged;
   `--pillarenv` is the flag there.
 - `pillarenv_from_saltenv` is not read, here or anywhere.
+
 ### 5.717 `runner state.orchestrate` and the API still gave up on a run after thirty seconds (2026-11-23)
 
 Issue 822, the rest of 5.713. Two more callers made the call `orch run`
@@ -50164,6 +50182,7 @@ against an old hub. The added `async` is not seen by the API's own policy
 check, which is made before it is added, so a role with `deny_kwargs:
 ['async']` is not refused by the API for it; whether the hub's delegated
 check refuses it was not tried.
+
 ### 5.718 atomicfile replaced a file with MoveFileEx, which no reader can share (2026-11-23)
 
 Issue 799, `internal/atomicfile`, Windows. 5.619 records two rounds of
@@ -51575,6 +51594,7 @@ half). That was not part of this decision and is left as it stands;
 see the next subsection.
 `internal/transport/tls.go` cited "SPEC 26.1" for the suites; 26.1 is
 logging, and the citation now says 25.3.
+
 #### 6.4, the cipher suites: SPEC now lists ChaCha20 outside FIPS mode
 
 The owner then chose the same for the cipher suite. SPEC 25.3's
