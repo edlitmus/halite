@@ -335,7 +335,7 @@ func nodeKey(files pki.Files, args *cli.Args, force bool) (crypto.Signer, bool, 
 		key, err := files.ReadKey(pki.NodeKeyFile)
 		return key, false, err
 	}
-	alg, err := pki.ParseKeyAlgorithm(args.Flag("key-algorithm", string(pki.ECDSAP256)))
+	alg, err := pki.ParseKeyAlgorithm(args.Flag("key-algorithm", string(pki.ECDSAP384)))
 	if err != nil {
 		return nil, false, err
 	}

@@ -320,11 +320,11 @@ manual or token. `attested` is named and refused; it is not built. There is no a
 
 ### `key_algorithm`
 
-*`halite-hub` · `ecdsa-p256` · SPEC section 7.1*
+*`halite-hub` · `ecdsa-p384` · SPEC section 7.1*
 
-ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or ed25519 in non-FIPS builds.
+ecdsa-p384 or ecdsa-p256.
 
-ECDSA P-256 is the default because one certificate profile then works everywhere, FIPS hosts included. `ed25519` is the better algorithm and is not FIPS-approved, so a FIPS build refuses it by name.
+The algorithm of the keys the hub generates for its enrollment CA, its own certificate and operators. These are the only two: the hub's PKI issues ECDSA and nothing else, and any other value is refused at start. ECDSA P-384 is the default: it works everywhere P-256 does, FIPS hosts included, at the 192-bit security level. `ecdsa-p256` is still accepted. The setting chooses new keys only; a key that exists keeps its algorithm, renewal included.
 
 ## The tree: states and pillar
 
@@ -2233,7 +2233,7 @@ Every setting, and which programs read it.
 | `job_queue_depth` | `halite-node` | `16` | Node execution controls |
 | `job_signature_max_ttl` | `halite-node` | `1h` | Node execution controls |
 | `job_signer_keys` | `halite-node` | — | Node execution controls |
-| `key_algorithm` | `halite-hub` | `ecdsa-p256` | Enrollment and certificates |
+| `key_algorithm` | `halite-hub` | `ecdsa-p384` | Enrollment and certificates |
 | `ldap_address` | `halite-api` | — | LDAP and Active Directory |
 | `ldap_bind_dn` | `halite-api` | — | LDAP and Active Directory |
 | `ldap_bind_password` | `halite-api` | — | LDAP and Active Directory |

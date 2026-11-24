@@ -50743,6 +50743,257 @@ windows-2022 legs run the audit, which is platform-independent, and
 `TestAReplaceLandsWhileAStreamingReaderHoldsTheFile`, which is the only
 test that tells `Open` from `os.Open`, and only on Windows. No stress run
 measured the 7 and 18 in 4,000 going to zero.
+### 5.722 The hub's key algorithms: SPEC and the configuration reference offered three that were never built
+
+SPEC 7.1 had a table of four rows, and two of them did not exist. The
+"Legacy interoperability" row offered RSA-3072 and RSA-4096. The paragraph
+under the table said Ed25519 "is permitted in non-FIPS builds by
+configuration, and the protocol negotiates it". The configuration reference
+(`docs/configuration.md`, generated from `internal/config/keys.go`) said the
+same: `key_algorithm` took "ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or
+ed25519 in non-FIPS builds".
+
+`pki.ParseKeyAlgorithm` has only ever accepted `ecdsa-p256` and `ecdsa-p384`,
+with the aliases `p256`, `ecdsa` and `p384`. `pki.GenerateKey` makes nothing
+but ECDSA. Any other value stops the hub at start with `key_algorithm
+"rsa-4096" is not one this build issues; try ecdsa-p256 or ecdsa-p384`. So an
+operator who chose from the documentation got a hub that would not start. Two
+paths that must agree did not: the documentation of a setting and the parser
+of that setting.
+
+This was found while correcting SPEC 27.4's claim about Ed25519 and FIPS
+(issue 840). That paragraph was where the Ed25519 half of this was written, and
+reading it beside `pki.go` showed that the option it described did not exist.
+
+**Fix.** SPEC 7.1's table now names the two values of `key_algorithm`, says
+they are the only two in every build, and says what the earlier table
+claimed. The key table's text is "ecdsa-p256 or ecdsa-p384.". Its longer
+description no longer offers Ed25519, and the reference is regenerated. The
+comment on `pki.KeyAlgorithm` says the same. No code changed. Adding RSA or
+Ed25519 to the hub's PKI would be a feature, and nobody has asked for it.
+
+**Test.** `TestKeyAlgorithmDocumentationNamesOnlyWhatParses`
+(`internal/pki/keyalgorithm_doc_test.go`) takes every algorithm name in the
+key table's text for `key_algorithm`, and the documented default. Each must
+parse, and each must parse to a different algorithm. It was broken on
+purpose twice, by putting the old text back. With the full old text it
+failed on `rsa-3072` and `rsa-4096` and **passed `ed25519`**: the first
+pattern required a hyphen, so it never saw the name the test exists for. The
+pattern now takes any lowercase word with a digit in it. With only
+`ed25519` added back, it failed on `ed25519`.
+
+**Not covered.** SPEC 7.1's prose is not held to the parser by the test.
+Only the key table, and the reference generated from it, are.
+### 5.723 Ed25519 is approved under FIPS 140-3, and the x509 module refused it as if it were not
+
+SPEC 27.4 said that in FIPS mode "Ed25519 is unavailable". SPEC 7.1 said it
+"is not approved under FIPS 140-3". `fips.Restricted` was documented as "no
+Ed25519, no SHA-1, and so no TOTP". `x509.create_private_key` with `algo:
+ed25519` refused under `fips140=on` with `ed25519 is not approved under FIPS
+140-3 and this process is in FIPS mode`. README, handbook 28 and
+`docs/operations.md` repeated it.
+
+**That was true until February 2023, and has not been since.** Four sources
+were checked on 2026-11-23:
+
+- FIPS 186-5 (final, 3 February 2023, superseding 186-4) approves EdDSA,
+  Ed25519 included, for digital signatures, citing RFC 8032.
+- NIST's certificate page for the Go Cryptographic Module (CMVP #5247,
+  FIPS 140-3, Active; the Go documentation ties v1.0.0 to it and to CAVP
+  A6650) lists `EDDSA KeyGen`, `KeyVer`, `SigGen` and `SigVer` as approved
+  algorithms under A6650.
+- The certified snapshot that `GOFIPS140=v1.0.0` selects
+  (`lib/fips140/certified.txt`: `v1.0.0-c2097c7c`) holds `fips140/ed25519`
+  with its own self-tests: the CAST `Ed25519 sign and verify` and a
+  pairwise-consistency test.
+- Go's EdDSA is Ed25519 only, so the certificate's EdDSA entries are this
+  algorithm. Go's TLS stack lists Ed25519 among the signature algorithms it
+  allows in FIPS mode, which is why the hub offered `ed25519` in its
+  CertificateRequest (5.282, "An observation on Ed25519").
+
+The module's security policy (the PDF for #5247) was fetched but could not
+be rendered here, so its table rows were not read. The certificate page and
+the module source are the evidence. **X25519 is a different question.** No
+source read here approves it for key agreement, and halite still refuses it
+for TLS key exchange in FIPS mode (SPEC 25.3). This change does not touch
+that.
+
+The SPEC had the claim and the code obeyed it. The two agreed with each
+other, and both disagreed with the standard. Every check looked at whether
+the code followed the SPEC, and none looked at whether the SPEC was right.
+
+**Fix.**
+- `x509.create_private_key` generates Ed25519 in FIPS mode as in any other
+  mode. Its comment gives the standard and the certificate.
+- `fips.Restricted` now documents only what it restricts: TLS key exchange
+  and SHA-1, so TOTP. `transport` and `account` were already its only other
+  callers.
+- SPEC 27.4 says Ed25519 is available, gives both sources, and says X25519
+  is not approved for key exchange. README, handbook 28 and the FIPS table
+  in `docs/operations.md` drop the refusal. That table now has two rows.
+
+An older OpenSSL FIPS provider may still refuse an Ed25519 key. RHEL 9's
+and Ubuntu's `openssl-fips-module-3` 3.0.5 are examples: Rocky's sshd
+refused an Ed25519 login key after the FIPS reboot, and Ubuntu's FIPS
+OpenSSL did not share `ed25519` in a handshake (5.282). That is a limit
+of the peer, so the SPEC states it and does not enforce it.
+
+**Test.** `TestEveryAlgorithmRoundTrips` asserted the refusal under FIPS,
+and it now generates Ed25519 in every mode. A new test,
+`TestEd25519SignsAndVerifiesInEveryMode`, has an Ed25519 CA sign an
+Ed25519 leaf and checks that the leaf verifies against its CA and not
+against itself. It logs which FIPS mode it ran in. With `GOFIPS140=v1.0.0`
+(the environment `make fips-test` uses) it logged `FIPS mode: true` and
+passed. It was broken on purpose by putting a refusal back under
+`fips140.Enabled()`: both tests failed in the FIPS build with `ed25519 is
+not approved under FIPS 140-3`.
+
+**Not run.** An Ed25519 certificate from this module, presented to a FIPS
+peer built on OpenSSL. The hub's own PKI still issues only ECDSA (5.722).
+Whether it should offer Ed25519 is a separate decision. Issue 840's first
+question is answered here.
+### 5.724 P-384 is the default key algorithm
+
+The owner chose this on 2026-11-23, alongside allowing Ed25519 in FIPS mode
+(5.723). halite's own keys had defaulted to ECDSA P-256. They now default to
+P-384. P-256 is still accepted everywhere it was.
+
+**What changed.**
+- `pki.ParseKeyAlgorithm` reads an empty value, or `ecdsa` alone, as
+  `ecdsa-p384`. `pki.GenerateKey` makes P-384 for anything but
+  `ecdsa-p256`.
+- The hub's `key_algorithm` default is `ecdsa-p384`. That setting chooses
+  the enrollment CA, the hub's serving certificate and operator
+  certificates.
+- `halite-node enroll`'s `--key-algorithm` defaults to `ecdsa-p384`.
+- `halite-hub keys signer create` makes a P-384 job-signing key unless
+  told otherwise, and `jobsign.GenerateKey("")` is P-384.
+- SPEC 7.1's table, the key table and its description, both commands'
+  usage text and the generated references all say P-384 is the default.
+
+**What did not change, and why.**
+- **Existing keys.** The setting chooses new keys only. An enrollment CA
+  that exists keeps its key. A node's renewal keeps the algorithm of the
+  key the node holds (`renewal.Identity` with `alg ""` reads it with
+  `pki.AlgorithmOf`), so an estate enrolled on P-256 stays on P-256 until a
+  node is re-enrolled. A P-384 node under a P-256 CA, or the other way
+  round, is an ordinary pair. `ecdsa-p384` was already an accepted value,
+  and the renewal path was written for nodes enrolled on it.
+- **The x509 execution module.** `x509.create_private_key` with `algo: ec`
+  and no `keysize` still makes P-256. That module follows Salt's
+  `x509_v2`, and a tree written for Salt that leaves out `keysize` means
+  256. This change is about halite's own keys, not about what a state
+  asks for.
+- **The AWS KMS signer** (`internal/awskms`) still takes P-256 only,
+  because it signs SHA-256 digests and KMS pairs those with P-256.
+- **TLS key exchange.** It is still offered as P-256 then P-384. That is
+  the curve for the handshake's ephemeral key, which is separate from the
+  key a certificate holds.
+
+**Test.** `TestKeyAlgorithmNames` now expects `""` and `ecdsa` to parse to
+P-384. `TestTheDefaultKeyIsP384` (`internal/pki`) generates from the
+parsed default, from both named curves, and from an unset algorithm, and
+reads each key back with `AlgorithmOf`.
+`TestTheDefaultSigningKeyIsP384AndVerifies` (`internal/jobsign`) checks
+the curve of the default signing key. Each was broken on purpose:
+
+- The parser's default put back to P-256 failed both pki tests.
+- The signing default put back to P-256 failed the jobsign test.
+- `GenerateKey`'s branches swapped back to fall through to P-256 **passed
+  at first**. Both named algorithms still had their own case, so only an
+  unset `KeyAlgorithm` reached the fall-through, and no test passed one. No
+  production caller does either, because each one parses first. The test
+  now generates from `""` too, and the same break fails it with
+  `GenerateKey("") made a ecdsa-p256 key; want ecdsa-p384`.
+
+**Run.** A hub built from this change, started unprivileged on macOS on
+loopback with a fresh `pki_dir`, logged `created a new enrollment CA
+algorithm=ecdsa-p384`. Its `ca.crt` and `hub.crt` were on `secp384r1` and
+signed `ecdsa-with-SHA384`. Handbook 30 keeps its captured P-256 line and
+now says what a hub prints today.
+
+**Not run.** A node enrolling with the new default against a hub, on a real
+host. A P-384 job-signing key verified by a node over the wire; the
+verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
+build making the P-384 CA; `make fips-test` runs the unit tests above as a
+FIPS build.
+### 5.725 The operator command line dialled localhost when the hub listened on one address
+
+`operatorClient` (`cmd/halite-hub/run.go`) chose the hub's address in this
+order: `--hub`, then `hub` in `hub.yaml`, and then `localhost`. It took the
+port from `listen`. With `listen: 10.0.0.5:4510`, the hub listens on that
+address alone. So on the hub itself, `halite-hub run …`, `runner`, `jobs`,
+`orch`, `metrics` and `event` without `--hub` dialled `localhost:4510`, where
+nothing answers. They failed with `dial tcp 127.0.0.1:4510: connect:
+connection refused`. That was seen in the issue 306 runs of 2026-11-05 and
+2026-11-06 (5.282, "Seen again, not fixed"). On 2026-11-23 every command on
+a hub with a specific `listen` passed `--hub` by hand. Issue 840 recorded it
+as a decision for the owner, and the owner chose to dial the `listen`
+address.
+
+**Fix.** `defaultHubAddress(listen)` is the host that `listen` names. For a
+wildcard (`:4510`, `0.0.0.0`, `::`) or no host, it is `localhost`, because
+the hub then answers on loopback too. `--hub` and `hub` still come first. A
+specific `listen` host is also one of the names the hub puts in its own
+certificate. `serverNames` adds it by the same wildcard test, unless
+`--names` replaces the list. So the name dialled is one that verifies.
+
+**Test.** `TestTheDefaultHubAddressFollowsListen`
+(`cmd/halite-hub/huburl_test.go`) checks the URL an operator command dials
+for ten `listen` values. They cover an IPv4 and a host name with ports,
+IPv6 with and without a port, an address with no port, three wildcards and
+an empty value. It was broken on purpose by returning `localhost` always,
+and it failed on every specific address (`dials "https://localhost:4510",
+want "https://10.0.0.5:4510"`).
+
+**Run end to end on Linux.** On 2026-11-23, on an arm64 Ubuntu 22.04 host
+(`host-d` of 5.282), two `halite-hub` binaries were built with Go 1.27.4:
+`main` at `2db3fd7c` and this branch. A hub was started unprivileged with
+`listen: <private-ip>:47511`, and `ss` showed it listening on that address
+alone. An admin operator was made, and then `runner manage.status` was run
+with the hub's own `--config` and no `--hub`:
+
+- `main`: `Post "https://localhost:47511/v1/runners": dial tcp
+  127.0.0.1:47511: connect: connection refused`. This is the defect.
+- this branch: it answered `up: []` and `down: []`.
+- this branch with `--hub localhost`: it was refused as `main` was, so an
+  explicit `--hub` still wins.
+
+The build tree, the hub's directories and the toolchain were removed from
+the host afterwards.
+
+The same run on this Mac said nothing either way. No client could reach a
+hub on the LAN address, with `--hub` given or without it: the handshake
+ended in `EOF`, and the hub logged `socket is not connected`. That is the
+Mac's network path.
+### 5.726 SPEC said `fips_mode` read Ubuntu Pro's state; the kernel is the authority
+
+SPEC 14.1 said `fips_mode` "reads `/proc/sys/crypto/fips_enabled` and, on
+Ubuntu, the Ubuntu Pro FIPS package state". SPEC 27.4 said the grain
+"reports both the host's kernel FIPS state and the binary's own mode". No
+build has done either. On Linux the grain is `/proc/sys/crypto/fips_enabled`
+alone (`internal/grains/platform_linux.go`). On Windows it is the
+`FipsAlgorithmPolicy` setting. On the BSDs and macOS it is `false`. The
+binary's own state has always been three separate grains, `fips_build`,
+`fips_enabled` and `fips_module` (DIVERGENCE 1.11). Issue 840 asked which
+should give way, and the owner decided that the kernel is the authority,
+so SPEC changes.
+
+The evidence for that choice is from 5.282's last run. An arm64 host on
+Pro `fips-updates` was booted with `fips=0`, with the FIPS kernel and
+packages still installed. `fips_enabled` read 0, `fips_mode` read False, and
+`pro status` reported `fips-updates` as **disabled**. So Pro's own report
+follows the kernel, and reading it as well would have added nothing on
+that host. It would have added a second source that could disagree.
+
+**Fix.** SPEC 14.1 says what each platform reads and that the kernel is the
+authority. It says that Pro is not read and why, and what the earlier text
+claimed. SPEC 27.4 says `fips_mode` is the host's state and that the other
+three grains are the binary's. The comment on `collectFIPSBuild` says the
+same. No code changed.
+
+**Not covered.** No test holds SPEC 14.1's prose to the grain collectors.
+
 ### 5.722 A job the tracer sampled lost the hub's tree for another environment (2026-11-23)
 
 Issue 803, filed as a suspicion from reading and not reproduced. It was
@@ -50829,8 +51080,6 @@ was refused again and the test failed.
 sync that ran fetched nothing: what was shown is that a sampled sync
 reaches the hub's tree, not that it delivers a bundle. Run on the
 development host's Linux compatibility layer only.
-
-
 
 
 ## 6. Everything else not started
