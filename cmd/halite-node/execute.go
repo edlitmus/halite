@@ -57,7 +57,10 @@ func (n *node) executeJob(j *job.Job) (result *job.Return) {
 	// and they find it through the context rather than through a
 	// parameter on every seam between here and a module.
 	n.jobCtx = tracing.ContextWithSpan(context.Background(), span)
-	n.files = n.traceFiles(span)
+	// The tree is wrapped for tracing below, after adoptJobEnvironment
+	// and not here: the wrapper is what a traced job's n.files is, and
+	// adoptJobEnvironment tells the hub's tree from the node's own by
+	// its type.
 
 	started := time.Now()
 	ret := &job.Return{
@@ -92,6 +95,18 @@ func (n *node) executeJob(j *job.Job) (result *job.Return) {
 	if err := n.adoptJobEnvironment(j); err != nil {
 		return fail(ret, err)
 	}
+	// After the environment, and never before it. It was before it, and
+	// a job the tracer sampled reached adoptJobEnvironment with n.files
+	// a tracedFiles, which is not a *fileserver.Remote: so a sampled job
+	// naming another environment was sent to this node's own roots for
+	// it, applied whatever they held (or the packaged defaults, where
+	// none are configured), and reported success -- for only the jobs
+	// the sample rate picked, which is what would make it look like
+	// chance. The same job unsampled fetched from the hub. Wrapping the
+	// tree the environment settled on also traces a job's fetches from
+	// the node's own roots for another environment, which the old order
+	// replaced with an unwrapped tree. Issue 803, DIVERGENCE 5.727.
+	n.files = n.traceFiles(span)
 	// `test` on the job overrides the node's default in one direction
 	// only: a hub asking for a dry run gets one, and a node configured
 	// with `test: true` is not talked out of it.

@@ -73,19 +73,9 @@ func TestEveryAlgorithmRoundTrips(t *testing.T) {
 		value.MapOf("algo", "ec", "keysize", int64(384)),
 		value.MapOf("algo", "ed25519"),
 	} {
-		algo, _ := args.Get("algo")
-		if algo == "ed25519" && fips.Restricted() {
-			// SPEC 27.4: not approved, and refused by name rather than
-			// left to fail inside the module. The refusal is the
-			// assertion, and it has to name the setting to change.
-			_, err := r.Exec.Call(newCtx(false), "x509.create_private_key", args)
-			if err == nil {
-				t.Error("ed25519 was generated in FIPS mode")
-			} else if !strings.Contains(err.Error(), "not approved under FIPS 140-3") {
-				t.Errorf("ed25519 was refused for the wrong reason: %v", err)
-			}
-			continue
-		}
+		// Every algorithm, in FIPS mode too: Ed25519 is approved under
+		// FIPS 186-5 and generated there (5.723). `make fips-test` runs
+		// this as a FIPS build, which is the run that matters.
 		out := x509Call(t, r, "x509.create_private_key", args)
 		pemText, ok := out.(string)
 		if !ok || !strings.Contains(pemText, "BEGIN PRIVATE KEY") {
@@ -94,6 +84,43 @@ func TestEveryAlgorithmRoundTrips(t *testing.T) {
 		if _, err := loadPrivateKey(pemText); err != nil {
 			t.Errorf("%v: the key it wrote does not load back: %v", args.StringKeys(), err)
 		}
+	}
+}
+
+// An Ed25519 CA signs an Ed25519 leaf, and the leaf verifies, in whatever
+// FIPS mode the test runs in.
+//
+// This module refused Ed25519 in FIPS mode on SPEC 27.4's word that it was
+// not approved (5.723). FIPS 186-5 approves it and the Go Cryptographic
+// Module certifies it, so key generation alone would not show that the
+// module also signs and verifies with it under fips140=on: this does. It
+// is the `make fips-test` run that exercises that, and the log line says
+// which mode this run was in, so a pass is not read as more than it was.
+func TestEd25519SignsAndVerifiesInEveryMode(t *testing.T) {
+	t.Logf("FIPS mode: %v", fips.Enabled())
+	r := New()
+	dir := t.TempDir()
+
+	caKey := filepath.Join(dir, "ca.key")
+	caCert := filepath.Join(dir, "ca.pem")
+	x509Call(t, r, "x509.create_private_key", value.MapOf("path", caKey, "algo", "ed25519"))
+	x509Call(t, r, "x509.create_certificate", value.MapOf(
+		"path", caCert, "private_key", caKey, "CN", "Ed25519 CA", "ca", true, "days_valid", int64(30)))
+
+	leafKey := filepath.Join(dir, "leaf.key")
+	leafCert := filepath.Join(dir, "leaf.pem")
+	x509Call(t, r, "x509.create_private_key", value.MapOf("path", leafKey, "algo", "ed25519"))
+	x509Call(t, r, "x509.create_certificate", value.MapOf(
+		"path", leafCert, "private_key", leafKey,
+		"signing_cert", caCert, "signing_private_key", caKey, "CN", "ed.example.com"))
+
+	if got := x509Call(t, r, "x509.verify_signature",
+		value.MapOf("certificate", leafCert, "signing_cert", caCert)); got != true {
+		t.Error("an Ed25519 leaf should verify against its Ed25519 CA")
+	}
+	if got := x509Call(t, r, "x509.verify_signature",
+		value.MapOf("certificate", leafCert, "signing_cert", leafCert)); got != false {
+		t.Error("the leaf should not verify against itself")
 	}
 }
 

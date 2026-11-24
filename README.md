@@ -301,8 +301,8 @@ Then the FIPS artifact set. `make fips` builds against the certified Go
 Cryptographic Module and refuses to ship a binary whose own `version`
 output does not name the module — `GOFIPS140` is an environment
 variable, and a build that loses it produces a working binary with the
-right filename and the wrong cryptography. In FIPS mode Ed25519 is
-refused by name, key exchange is P-256 or P-384, and TOTP is refused
+right filename and the wrong cryptography. In FIPS mode key exchange is
+P-256 or P-384, and TOTP is refused
 because RFC 6238 is HMAC-SHA-1; that last one fails closed, so a
 password alone is never enough on an account that asked for two factors.
 

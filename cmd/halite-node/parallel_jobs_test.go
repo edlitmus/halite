@@ -1,6 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"runtime"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -159,6 +164,16 @@ func TestJobsRunOneAtATimeByDefault(t *testing.T) {
 // The whole path, from the stream to the return: with parallel_jobs, two
 // one-second jobs of different families finish in about one second; with
 // it off, the same two take about two.
+//
+// Once in CI (issue 808) the parallel case took 2.001s, and the failure
+// said only that. It could not tell a job that waited for the other from
+// two jobs that reached the queue a second apart, or from an executor
+// that started late. So each run keeps a timeline -- when each accept
+// returned, when each job's function was entered and left, when each
+// return arrived -- and, if both jobs have not started by the time they
+// should have, a snapshot of the queue and of every goroutine taken at
+// that moment, while the waiting is still happening rather than after it.
+// A failure prints all of it. A pass prints nothing.
 func TestParallelJobsOverlapOnTheNodeAndSerialJobsDoNot(t *testing.T) {
 	for _, tc := range []struct {
 		config      string
@@ -169,11 +184,19 @@ func TestParallelJobsOverlapOnTheNodeAndSerialJobsDoNot(t *testing.T) {
 	} {
 		n := nodeForEvidence(t, tc.config)
 		n.refusals = make(chan *job.Return, 4)
+		timeline := &jobTimeline{}
+		bothStarted := make(chan struct{})
+		var startedCount atomic.Int32
 		for _, module := range []string{"napa", "napb"} {
 			n.registry.Exec.Add(exec.Module{
 				Sig: signature.Signature{Module: module, Function: "nap", Doc: "sleeps for a second"},
 				Fn: func(*exec.Context, *value.Map) (any, error) {
+					timeline.note(module + ".nap entered")
+					if startedCount.Add(1) == 2 {
+						close(bothStarted)
+					}
 					time.Sleep(time.Second)
+					timeline.note(module + ".nap left")
 					return true, nil
 				},
 			})
@@ -181,30 +204,122 @@ func TestParallelJobsOverlapOnTheNodeAndSerialJobsDoNot(t *testing.T) {
 		returns := make(chan *job.Return, 2)
 		n.executor = newExecutor(n, 4, func(r *job.Return) { returns <- r })
 		stop := make(chan struct{})
-		go n.executor.Run(stop)
 
-		start := time.Now()
+		go n.executor.Run(stop)
+		timeline.begin()
+		// On its own goroutine, because what it is looking for may be the
+		// test goroutine itself, stuck in acceptJob. Only where the jobs
+		// are meant to overlap: in the serial case the second job waiting
+		// is the point.
+		snapshot := make(chan string, 1)
+		go func() {
+			if !tc.wantOverlap {
+				snapshot <- ""
+				return
+			}
+			select {
+			case <-bothStarted:
+				snapshot <- ""
+			case <-time.After(700 * time.Millisecond):
+				snapshot <- stalledSnapshot(n.executor, timeline)
+			}
+		}()
 		for i, fun := range []string{"napa.nap", "napb.nap"} {
 			msg := jobMessage(t, "20261121T13000000010"+string(rune('0'+i)))
 			msg.Fun = fun
 			n.acceptJob(msg)
+			timeline.note("accepted " + fun)
 		}
+		var got []*job.Return
 		for range 2 {
 			select {
 			case r := <-returns:
+				timeline.note("return for " + r.Fun)
+				got = append(got, r)
 				if !r.Success {
 					t.Fatalf("%q: a job failed: %s", tc.config, r.Return)
 				}
 			case <-time.After(10 * time.Second):
-				t.Fatalf("%q: a job never returned", tc.config)
+				t.Fatalf("%q: a job never returned\n%s", tc.config, timeline)
 			}
 		}
-		elapsed := time.Since(start)
+		elapsed := timeline.since()
 		close(stop)
 
 		overlapped := elapsed < 1800*time.Millisecond
 		if overlapped != tc.wantOverlap {
-			t.Errorf("config %q: two one-second jobs took %v; want overlap=%v", tc.config, elapsed, tc.wantOverlap)
+			t.Errorf("config %q: two one-second jobs took %v; want overlap=%v\n%s%s%s",
+				tc.config, elapsed, tc.wantOverlap, timeline, returnTimes(got), <-snapshot)
 		}
 	}
+}
+
+// jobTimeline is what happened in one run of the overlap test, with each
+// event's offset from the start.
+type jobTimeline struct {
+	mu     sync.Mutex
+	start  time.Time
+	events []string
+}
+
+func (l *jobTimeline) begin() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.start = time.Now()
+}
+
+func (l *jobTimeline) since() time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return time.Since(l.start)
+}
+
+func (l *jobTimeline) note(event string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.events = append(l.events, fmt.Sprintf("  +%-8s %s", time.Since(l.start).Round(time.Millisecond), event))
+}
+
+func (l *jobTimeline) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return "timeline:\n" + strings.Join(l.events, "\n") + "\n"
+}
+
+// returnTimes is the node's own account of each job: the start it
+// stamped and the duration it measured, which do not depend on the
+// test's clock reads.
+func returnTimes(returns []*job.Return) string {
+	var b strings.Builder
+	b.WriteString("returns:\n")
+	for _, r := range returns {
+		fmt.Fprintf(&b, "  %s start=%s duration_ms=%d\n", r.Fun, r.StartTime, r.DurationMS)
+	}
+	return b.String()
+}
+
+// stalledSnapshot is the queue and every goroutine at the moment both jobs
+// should have been running and were not.
+//
+// TryLock rather than Lock: if the executor's mutex is what is held, that
+// is the finding, and waiting for it would hide it.
+func stalledSnapshot(e *executor, timeline *jobTimeline) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "at +700ms both jobs had not started.\n%s", timeline)
+	if e.mu.TryLock() {
+		var waiting []string
+		for _, p := range e.waiting {
+			waiting = append(waiting, fmt.Sprintf("%s(exclusive=%v family=%s)", p.job.Fun, p.exclusive, p.family))
+		}
+		fmt.Fprintf(&b, "executor: running=%d exclusive=%v families=%v waiting=%v\n",
+			e.running, e.exclusive, e.families, waiting)
+		e.mu.Unlock()
+	} else {
+		b.WriteString("executor: its mutex was held\n")
+	}
+	stacks := make([]byte, 1<<20)
+	stacks = stacks[:runtime.Stack(stacks, true)]
+	b.WriteString("goroutines:\n")
+	b.Write(stacks)
+	return b.String()
 }

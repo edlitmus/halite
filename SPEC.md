@@ -478,16 +478,18 @@ A node's identity is an X.509 certificate issued by the hub's enrollment CA, wit
 the subject common name and in a URI SAN of the form `halite://node/<node_id>`. The URI SAN is
 authoritative; the CN is for human readability.
 
-| Build | Key algorithm | Signature |
+| `key_algorithm` | Key algorithm | Signature |
 |---|---|---|
-| Default | ECDSA P-256 | ECDSA with SHA-256 |
-| High assurance | ECDSA P-384 | ECDSA with SHA-384 |
-| FIPS 140-3 | ECDSA P-256 or P-384 | As above |
-| Legacy interoperability | RSA-3072 or RSA-4096 | RSA-PSS with SHA-256 |
+| `ecdsa-p384` (default) | ECDSA P-384 | ECDSA with SHA-384 |
+| `ecdsa-p256` | ECDSA P-256 | ECDSA with SHA-256 |
 
-Ed25519 is not the default. It is the better algorithm and it is not approved under FIPS 140-3, and
-this estate has FIPS hosts. Ed25519 is permitted in non-FIPS builds by configuration, and the
-protocol negotiates it, but the default is ECDSA so that one certificate profile works everywhere.
+These are the only two, in every build, FIPS included. The hub's PKI does not issue RSA or Ed25519
+keys. An earlier version of this table listed RSA-3072 and RSA-4096, and said that Ed25519 was
+permitted by configuration, and none of those was ever built (DIVERGENCE 5.722). The default is
+ECDSA so that one certificate profile works everywhere, and P-384 since DIVERGENCE 5.724; it was
+P-256. The default chooses new keys only. A node's key keeps its algorithm across renewal, and an
+existing enrollment CA keeps its own. A node enrols with P-384 unless `--key-algorithm` says
+otherwise, and job-signing keys from `keys signer create` default to P-384 too.
 
 The node's private key is generated on the node, never leaves it, and is stored at
 `/etc/halite/pki/node.key` with mode `0600`, or in the Windows certificate store for the machine,
@@ -1499,8 +1501,14 @@ Cloud grains are opt-in with `cloud_grains: true`, because collecting them costs
 trip on every refresh and because Salt's habit of probing every cloud's metadata endpoint on every
 platform is both slow and noisy. When enabled, EC2 uses IMDSv2 exclusively.
 
-`fips_mode` reads `/proc/sys/crypto/fips_enabled` and, on Ubuntu, the Ubuntu Pro FIPS package state,
-and reports whether the node's own build is a FIPS build. This estate needs that distinction.
+`fips_mode` is the operating system's FIPS state and nothing else: on Linux
+`/proc/sys/crypto/fips_enabled`, on Windows the `FipsAlgorithmPolicy` setting, and `false` on the
+BSDs and macOS. The kernel is the authority. Ubuntu Pro's package state is not read, because the
+kernel is what enforces FIPS mode, and Pro follows the kernel too: on a host booted with `fips=0`
+and the FIPS packages still installed, `pro status` reported `fips-updates` as disabled
+(DIVERGENCE 5.282). An earlier version of this section said `fips_mode` also read Pro's state, and
+no build ever did. Whether the node's own build is a FIPS build is separate grains, `fips_build`,
+`fips_enabled` and `fips_module`, and this estate needs that distinction (SPEC 27.4).
 
 ### 14.2 Custom grains
 
@@ -2875,10 +2883,14 @@ estate.
 A parallel artifact set, suffixed `-fips`, built with `GOFIPS140=v1.0.0` so that all cryptography
 routes through the Go Cryptographic Module, and running with `GODEBUG=fips140=on` enforced by the
 service unit. In FIPS mode: TLS is restricted to approved cipher suites and P-256 or P-384 key
-exchange, Ed25519 is unavailable, SHA-1 is unavailable except in the TOTP path which is therefore
-disabled, and `halite-*-fips version` reports the module version and self-test status. The
-`fips_mode` grain reports both the host's kernel FIPS state and the binary's own mode, and a
-mismatch is a `doctor` warning.
+exchange (X25519 is not approved for key exchange), SHA-1 is unavailable except in the TOTP path
+which is therefore disabled, and `halite-*-fips version` reports the module version and self-test
+status. Ed25519 *is* available: FIPS 186-5 (2023) approves it for signatures, and the Go
+Cryptographic Module v1.0.0 (CMVP #5247) certifies EdDSA. An earlier version of this section said
+Ed25519 was unavailable, and the x509 module refused it on that word (DIVERGENCE 5.723). A FIPS peer
+built on an older OpenSSL FIPS provider may still not accept an Ed25519 key. The
+`fips_mode` grain reports the host's FIPS state, `fips_build`, `fips_enabled` and `fips_module`
+report the binary's own, and a mismatch is a `doctor` warning.
 
 **The `-fips` set is Linux only, for now: `linux/amd64` and `linux/arm64`.** Linux is where a
 kernel FIPS mode exists for the `fips_mode` grain to report and compare against the binary's own

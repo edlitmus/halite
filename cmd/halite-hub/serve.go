@@ -124,7 +124,7 @@ func openHub(args *cli.Args, create bool) *hubContext {
 	}
 
 	files := pki.Files{Dir: args.Flag("pki-dir", cfg.PathUnderRoot("pki_dir", "pki"))}
-	alg, err := pki.ParseKeyAlgorithm(cfg.String("key_algorithm", string(pki.ECDSAP256)))
+	alg, err := pki.ParseKeyAlgorithm(cfg.String("key_algorithm", string(pki.ECDSAP384)))
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -924,7 +924,7 @@ func servingCertificate(h *hubContext, names []string, now time.Time) (tls.Certi
 func issueServingCertificate(h *hubContext, names []string) (tls.Certificate, error) {
 	key, err := h.files.ReadKey(pki.HubKeyFile)
 	if err != nil {
-		alg, _ := pki.ParseKeyAlgorithm(h.cfg.String("key_algorithm", string(pki.ECDSAP256)))
+		alg, _ := pki.ParseKeyAlgorithm(h.cfg.String("key_algorithm", string(pki.ECDSAP384)))
 		key, err = pki.GenerateKey(alg)
 		if err != nil {
 			return tls.Certificate{}, err
