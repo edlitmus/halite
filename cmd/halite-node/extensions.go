@@ -292,7 +292,7 @@ func (n *node) syncExtensions(kinds []string) (any, error) {
 // Asked through hubTreeOf, not of n.files's type: a job the tracer
 // samples has n.files wrapped in tracedFiles for its length, and a
 // traced saltutil.sync_* was refused as if the node had no hub, while
-// the same job unsampled synced. Issue 803, DIVERGENCE 5.722.1.
+// the same job unsampled synced. Issue 803, DIVERGENCE 5.727.1.
 func (n *node) extensionSource() (extension.Source, error) {
 	remote, ok := hubTreeOf(n.files)
 	if !ok {

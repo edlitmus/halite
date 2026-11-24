@@ -105,7 +105,7 @@ func (n *node) executeJob(j *job.Job) (result *job.Return) {
 	// chance. The same job unsampled fetched from the hub. Wrapping the
 	// tree the environment settled on also traces a job's fetches from
 	// the node's own roots for another environment, which the old order
-	// replaced with an unwrapped tree. Issue 803, DIVERGENCE 5.722.
+	// replaced with an unwrapped tree. Issue 803, DIVERGENCE 5.727.
 	n.files = n.traceFiles(span)
 	// `test` on the job overrides the node's default in one direction
 	// only: a hub asking for a dry run gets one, and a node configured
