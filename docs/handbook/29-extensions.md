@@ -151,7 +151,7 @@ replace one) and prints the `extension_trust_keys` line.
 
 ```sh
 halite-hub extensions sign ./build --name aws_secrets_manager \
-  --ext-version 1.2.0 --kind pillar --exe aws-secrets --declares network \
+  --ext-version 1.2.1 --kind pillar --exe aws-secrets --declares network \
   --key release --publish /srv/halite/states
 ```
 

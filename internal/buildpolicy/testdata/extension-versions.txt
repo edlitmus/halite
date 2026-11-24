@@ -6,6 +6,6 @@
 # behaviour is the same.
 #
 # name version digest
-halite-ext-aws-secrets 1.2.0 sha256:462095c94adb4637806543d4db4af545faadc7f3957a9a1da57c3514f891a492
-halite-ext-signer-kms 1.0.1 sha256:cb33a07fa2acb261f4f288031624238ad0f487f78c3f78ca2a2b161f02ac55a8
+halite-ext-aws-secrets 1.2.1 sha256:01fa104aff9fb89b04e3e2f5da151ec37f1b532240cabda4470bdd2704281f6b
+halite-ext-signer-kms 1.0.2 sha256:dab13f45e758ff5897f202ac1fde0770c319160193e27e1522100f412f8043bf
 halite-ext-signer-local 1.0.3 sha256:ed569ac50cf2b0258b1f36282f1f0c268e989fd5bd43a475e5cff7cd2a20ac61

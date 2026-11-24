@@ -121,27 +121,61 @@ func (m *IMDS) Get(ctx context.Context, path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	endpoint := m.address() + "/" + strings.TrimPrefix(path, "/")
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	body, status, err := m.get(ctx, path, token)
+	// A 401 is the service not knowing the token: it restarted, or it
+	// forgot it before its time. The token is dropped and the read made
+	// once more with a new one. It was an error, and the cached token was
+	// kept until its local life ran out (up to five minutes), so every read
+	// in that time failed the same way (issue 613, DIVERGENCE 5.737). Once
+	// more and no further: a service that refuses a token it has just
+	// issued is not one a loop would fix.
+	if err == nil && status == http.StatusUnauthorized {
+		m.forget(token)
+		if token, err = m.Token(ctx); err != nil {
+			return nil, err
+		}
+		body, status, err = m.get(ctx, path, token)
+	}
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("X-aws-ec2-metadata-token", token)
-	res, err := m.client().Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, MaxMetadataBody))
-	if err != nil {
-		return nil, err
-	}
-	switch res.StatusCode {
+	switch status {
 	case http.StatusOK:
 		return body, nil
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("%s: %w", path, ErrNotFound)
 	default:
-		return nil, fmt.Errorf("%s answered %d", endpoint, res.StatusCode)
+		return nil, fmt.Errorf("%s/%s answered %d", m.address(), strings.TrimPrefix(path, "/"), status)
+	}
+}
+
+// get is one read with one token.
+func (m *IMDS) get(ctx context.Context, path, token string) ([]byte, int, error) {
+	endpoint := m.address() + "/" + strings.TrimPrefix(path, "/")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("X-aws-ec2-metadata-token", token)
+	res, err := m.client().Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, MaxMetadataBody))
+	if err != nil {
+		return nil, 0, err
+	}
+	return body, res.StatusCode, nil
+}
+
+// forget drops the cached token if it is still the one given, so that a
+// reader that has already replaced it does not lose the new one.
+func (m *IMDS) forget(token string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.token == token {
+		m.token = ""
+		m.expires = time.Time{}
 	}
 }
