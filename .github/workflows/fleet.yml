@@ -610,7 +610,7 @@ jobs:
       # of saying so: it printed `go test -v` straight to the log and
       # nothing read it, which is how two snap tests sat unrun on a green
       # leg. The freebsd leg has had this step for a while; the leg that
-      # selects the most tests did not. DIVERGENCE 5.148.
+      # selects the most tests did not. DIVERGENCE 5.151.
       - name: what ran, and what skipped and why
         if: always()
         run: |

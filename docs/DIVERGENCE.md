@@ -13797,6 +13797,20 @@ reader does not *introduce* truncation rather than that it handles it. A
 machine with a long-tracked snap is still the only thing that would show the
 original defect, and none is scheduled.
 
+### 5.151.1 The skip-report step cited 5.148 for this section (2026-11-24)
+
+The comment on the linux leg's step "what ran, and what skipped and why"
+in `fleet.yml` said *"DIVERGENCE 5.148"*. 5.148 is "A Mac group create
+that failed left a group behind". The step came with this section, in
+the commit that added it (`93aeaf7a`), so this section was renumbered at
+merge and the comment's citation was not. Found while fixing that step
+(5.730), by reading `ledger cites` beside the section it named. The
+comment now says 5.151.
+
+**Not covered.** Nothing checks a citation in a workflow comment against
+what the section says, which is the gap `ledger cites` was written for
+and which it only covers on lines a branch adds.
+
 ### 5.152 `group.present` members: refused on FreeBSD, ignored on macOS, stuck on Linux
 
 `group.present`'s `members` is the group's whole member list: anyone
