@@ -13804,7 +13804,7 @@ in `fleet.yml` said *"DIVERGENCE 5.148"*. 5.148 is "A Mac group create
 that failed left a group behind". The step came with this section, in
 the commit that added it (`93aeaf7a`), so this section was renumbered at
 merge and the comment's citation was not. Found while fixing that step
-(5.730), by reading `ledger cites` beside the section it named. The
+(5.732), by reading `ledger cites` beside the section it named. The
 comment now says 5.151.
 
 **Not covered.** Nothing checks a citation in a workflow comment against
@@ -51473,7 +51473,7 @@ lines before it. A section lifted out of the middle of a chapter was already
 handled correctly and is held only by the "nothing else changed" half of these
 tests.
 
-### 5.730 The live legs' skip report printed the wrong reason for 7 of 23 skips (2026-11-24)
+### 5.732 The live legs' skip report printed the wrong reason for 7 of 23 skips (2026-11-24)
 
 Issue 857. The linux and freebsd legs end with a step that prints every
 skipped test and why, which is the one place a person reads why a live
