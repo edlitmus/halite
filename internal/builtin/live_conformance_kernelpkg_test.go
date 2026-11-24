@@ -104,7 +104,21 @@ func kernelpkgConformanceCases() []liveCase {
 						return err
 					}
 					fmt.Fprintf(os.Stderr, "kernelpkg.latest_installed conformance setup: %s\n", note)
-					return takeAwayDebianKernel(release)
+					if err := takeAwayDebianKernel(release); err != nil {
+						return err
+					}
+					// The state installs this kernel through the module,
+					// whose apt runBounded does not run, so it is fetched
+					// here first, under the limit, and the state installs
+					// from apt's cache. The archive check above is one
+					// measurement; a mirror that slowed after it would
+					// otherwise hold the module's download with no limit,
+					// and on issue 852's night this case alone took 1,285 s
+					// of the leg's forty minutes (5.729.1). After the
+					// take-away, because a kernel still installed is not
+					// fetched, and Cleanup runs whether or not Setup did.
+					_, err = runEnv("apt-get", "install", "-y", "-q", "--download-only", "linux-image-"+release)
+					return err
 				},
 				Probe: probe,
 				Cleanup: func() {

@@ -280,7 +280,7 @@ func kpStep(t *testing.T, step string, limit time.Duration, fn func(context.Cont
 	fired := make(chan struct{})
 	timer := time.AfterFunc(limit, func() {
 		defer close(fired)
-		t.Logf("%s has run for %s; what is running and what dnf last logged, before it is killed:\n%s", step, limit, kpWhatIsRunning())
+		t.Logf("%s has run for %s; what is running and what the package manager last logged, before it is killed:\n%s", step, limit, kpWhatIsRunning())
 		cancel()
 	})
 	start := time.Now()
@@ -288,8 +288,8 @@ func kpStep(t *testing.T, step string, limit time.Duration, fn func(context.Cont
 	if !timer.Stop() {
 		<-fired
 		return fmt.Errorf("%s did not finish in %s and was killed with its process group. "+
-			"A healthy run does this in well under a minute; the log above says whether dnf was still "+
-			"downloading or was in a scriptlet (DIVERGENCE 5.319): %v", step, limit, err)
+			"A healthy run does this in well under a minute; the log above says whether the package manager "+
+			"was still downloading or was in a scriptlet or hook (DIVERGENCE 5.319): %v", step, limit, err)
 	}
 	if err != nil {
 		return fmt.Errorf("%s, after %s: %w", step, time.Since(start).Round(time.Second), err)
@@ -356,7 +356,10 @@ func kpBoundedCall(t *testing.T, step string, limit time.Duration, fn string, ar
 
 // kpWhatIsRunning is every process in the container with its parent and
 // the kernel function it is waiting in, read from /proc because the
-// image need not have ps, and the last lines of dnf's three logs.
+// image need not have ps, and the last lines of dnf's three logs and of
+// apt's and dpkg's. The Debian tests bound the module's calls with
+// kpBoundedCall too (5.729.1), and each host has only its own logs, so
+// the others print as missing.
 func kpWhatIsRunning() string {
 	var b strings.Builder
 	b.WriteString("--- processes (pid ppid wchan cmdline)\n")
@@ -383,7 +386,8 @@ func kpWhatIsRunning() string {
 		cmdline, _ := os.ReadFile(d + "/cmdline")
 		fmt.Fprintf(&b, "%s %s %s %s\n", filepath.Base(d), ppid, wchan, strings.ReplaceAll(strings.TrimRight(string(cmdline), "\x00"), "\x00", " "))
 	}
-	for _, log := range []string{"/var/log/dnf.librepo.log", "/var/log/dnf.log", "/var/log/dnf.rpm.log"} {
+	for _, log := range []string{"/var/log/dnf.librepo.log", "/var/log/dnf.log", "/var/log/dnf.rpm.log",
+		"/var/log/apt/term.log", "/var/log/dpkg.log"} {
 		data, err := os.ReadFile(log)
 		if err != nil {
 			fmt.Fprintf(&b, "--- %s: %v\n", log, err)

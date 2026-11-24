@@ -605,7 +605,11 @@ func TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest(t *testing.T) {
 		t.Fatal("remove in test mode removed the kernel")
 	}
 
-	got = kpMust(t, c, "remove", value.MapOf("release", old))
+	// The module's own apt, which runBounded does not run, bounded
+	// through c.Ctx (kpBoundedCall). Without it a mirror that slowed
+	// after the archive check would hold the module's apt with no limit,
+	// which is the one gap 5.729 left; see 5.729.1.
+	got = kpBoundedCall(t, "kernelpkg.remove", kernelpkgCommandLimit, "remove", value.MapOf("release", old), false)
 	t.Logf("remove: %v", removedOf(got))
 	gone()
 	if dpkgVersion(t, meta) == "" && snap.versions[meta] != "" {
@@ -614,7 +618,7 @@ func TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest(t *testing.T) {
 
 	// cleanup with the newest kept removes the older kernel and nothing else.
 	install()
-	got = kpMust(t, c, "cleanup", nil)
+	got = kpBoundedCall(t, "kernelpkg.cleanup", kernelpkgCommandLimit, "cleanup", nil, false)
 	removed := anyStrings(removedOf(got))
 	t.Logf("cleanup: %v", removed)
 	if !onlyKernel(removed, old) {
@@ -659,7 +663,7 @@ func TestLiveKernelpkgUpgradeInstallsTheNewest(t *testing.T) {
 		t.Fatal("upgrade in test mode installed the kernel")
 	}
 
-	got = kpMust(t, c, "upgrade", nil)
+	got = kpBoundedCall(t, "kernelpkg.upgrade", kernelpkgCommandLimit, "upgrade", nil, false)
 	if b, err := value.EncodeJSON(got, 0); err == nil {
 		t.Logf("upgrade: %s", b)
 	}
@@ -675,7 +679,7 @@ func TestLiveKernelpkgUpgradeInstallsTheNewest(t *testing.T) {
 	if kpMust(t, c, "needs_reboot", nil) != true {
 		t.Errorf("needs_reboot is false with %s installed and %s running", avail, running)
 	}
-	got = kpMust(t, c, "upgrade", nil)
+	got = kpBoundedCall(t, "kernelpkg.upgrade, again", kpQuickLimit, "upgrade", nil, false)
 	ups, _ = got.(*value.Map).Get("upgrades")
 	if ups.(*value.Map).Len() != 0 {
 		t.Errorf("a second upgrade installed %s", value.KeyString(ups))

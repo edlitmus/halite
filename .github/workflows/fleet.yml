@@ -654,6 +654,63 @@ jobs:
             exit 1
           fi
 
+      # The kernelpkg tests that install kernels, and the conformance case
+      # that does, held to running (DIVERGENCE 5.729.1).
+      #
+      # They skip by name on a machine that cannot run them -- no older
+      # kernel in the archive, a running kernel that is not a package --
+      # and on a green leg a skip reads as coverage, which is what the snap
+      # step above was written against. A slow archive is not a skip: it
+      # fails them, naming the rate (5.729). So all three must pass here,
+      # and the one skip accepted is the newest kernel offered being the
+      # running one, which is the runner image catching up with the
+      # archive and leaves the upgrade and the conformance case nothing
+      # they may take away.
+      #
+      # The reason is read from the test's whole block, from its `=== RUN`
+      # to its `--- SKIP`, not from the line before the SKIP: the put-back
+      # runs in a Cleanup, after the skip, and logs the kernel set, so the
+      # line before is a package name. Issue 857 is the older step above
+      # that still reads it that way.
+      - name: the kernelpkg install tests ran rather than skipping
+        if: always()
+        run: |
+          test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
+          echo "runner kernel: $(uname -r)"
+          failed=0
+          for t in TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest TestLiveKernelpkgUpgradeInstallsTheNewest; do
+            if grep -q "^--- PASS: $t " /tmp/live.txt; then
+              echo "$t passed"
+              continue
+            fi
+            block=$(awk -v t="$t" '$0 == "=== RUN   "t { block=""; on=1 } on { block=block"\n"$0 } on && index($0, "--- SKIP: "t" ") == 1 { print block; on=0 } on && index($0, "--- ") == 1 { on=0 }' /tmp/live.txt)
+            if [ -z "$block" ]; then
+              grep -- "--- FAIL: $t " /tmp/live.txt || true
+              echo "::error::$t neither passed nor skipped: it failed or stopped existing."
+              failed=1
+              continue
+            fi
+            if [ "$t" = TestLiveKernelpkgUpgradeInstallsTheNewest ] && echo "$block" | grep -q 'is the running one'; then
+              echo "$t skipped, the newest kernel offered being the running one:"
+              echo "$block" | grep 'is the running one'
+              continue
+            fi
+            echo "$block" | tail -8
+            echo "::error::$t skipped, and here it is required to run."
+            failed=1
+          done
+          conf=kernelpkg.latest_installed
+          if grep -q "^    --- PASS: TestLiveConformanceOnThisMachine/$conf " /tmp/live.txt; then
+            echo "conformance $conf passed"
+          elif grep -q "skipped $conf: .*is the running one" /tmp/live.txt; then
+            grep "skipped $conf: " /tmp/live.txt
+          else
+            grep "skipped $conf: \|TestLiveConformanceOnThisMachine/$conf " /tmp/live.txt || true
+            echo "::error::conformance $conf did not pass here, and is required to run."
+            failed=1
+          fi
+          exit "$failed"
+
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
       # nothing depends on it is one that stops working unnoticed.
