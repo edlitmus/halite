@@ -522,7 +522,7 @@ func (r *Remote) savedManifest(env, prefix string, cause error) (*Manifest, erro
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if err != nil {
 		return nil, cause
 	}

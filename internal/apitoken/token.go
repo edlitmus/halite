@@ -310,7 +310,7 @@ func (s *Store) lookup(digest string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", ErrNotFound
 	}
@@ -338,7 +338,7 @@ func (s *Store) Get(id string) (*Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("%s: %w", id, ErrNotFound)
 	}

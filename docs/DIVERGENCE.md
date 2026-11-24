@@ -50673,6 +50673,77 @@ subsection k, still moves with the branch's section. The text cannot say which
 was meant. A subsection that is already apart from its parent, as case (a)
 left one, is not found and moved back; the ordering audit still reports it.
 
+### 5.721 Sixty-eight reads of files that atomicfile replaces did not share delete (2026-11-23)
+
+Issue 838, Windows. 5.718 left one class of reader in a replace's way: one
+that opens without `FILE_SHARE_DELETE`, which is every `os.ReadFile` and
+`os.Open`. windows-2022 refused 7 of 4,000 such reads during a replace on
+the plain leg and 18 under `-race`. 5.714 had moved one of them,
+`OrchStore.Get`, by hand. 5.718 named a second, `MineStore.Get`, and said
+no sweep of the other `os.ReadFile` calls had been done.
+
+**The audit first.** `TestNothingReadsAReplacedFileWithoutSharingDelete`
+(`internal/atomicfile/sharedreaders_test.go`) parses every non-test Go
+file and traces the path given to each read and each atomicfile write
+back to how it was built: a path helper by callee and fixed arguments
+(`<hub.MineStore>.path(*)`), a struct field, a join or concatenation with
+a literal or constant in it, or a package-level name. A function whose
+parameter reaches a write or a read is itself one, to a fixed point, so
+`writeAtomic`, `dataReadStore` and `fileperm.OpenFile` are seen through.
+Keys are compared across the tree. A state's arguments
+(`states.Str(args, "name", "")`) are not an origin, because two states
+that spell them are not naming one file.
+
+On main it reported 68 reads, `MineStore.Get` among them, and matched 4
+reads that already went through `Read` to their writes. Two early versions
+were wrong in the noisy direction, and each was read before it was
+believed: a helper's non-constant arguments were part of the key, so
+`m.path(nodeID)` and `m.path(data.NodeID)` were different files and
+`MineStore.Get` was missed; and a field of a value of unknown type
+matched any field of that name, so four archive reads were reported
+against logrotate's `lrFile.Path`.
+
+**The change.** Of the 68, three are exempted (below), and the other 65
+are fixed by 45 edits, because several findings are calls to one wrapper:
+43 reads move to `atomicfile.Read`, and two opens that stream
+(`fileserver.hashOf`, the archive source-hash check) move to a new
+`atomicfile.Open`, which is `os.Open` on unix and the same
+share-everything open as `Read` on Windows. Most findings in
+internal/builtin were calls to a wrapper, so the read moved inside it:
+`readLines`, `pemSource`, `dataReadStore`, `tlsReadIndex`,
+`pamReadFile`, `pamLoadForEdit`, `sudoReadDropIn`, `mergeWithFile`,
+`mdadmDropConfEntry`. The rest are the hub and node stores: API tokens,
+the keystore and its CRL number and enrollment tokens, pillarstore,
+`pki.Files`, treesign's accepted manifests, the fileserver's saved
+manifest, the node's runtime configuration, the hub's operator key pair,
+and `tree sign`'s manifest. On unix `Read` is `os.ReadFile` and `Open` is
+`os.Open`, so nothing changes on any platform but Windows.
+
+Three stay, and are exempted with their reasons: `keystore.pendingMarkers`
+lists a directory, which neither `Read` nor `Open` opens; `SignedReplay.append`
+is an append under the same lock as the rewrite that replaces the file;
+and `pki.Files.WriteKey` is an exclusive create of a key, matched only
+because every file in a `pki.Files` is one origin to the audit.
+
+**Shown.** With `MineStore.Get` put back to `os.ReadFile`, the audit
+fails naming `internal/hub/mine.go:107` and the write at line 154. It
+passes with the change, and requires at least 60 matched shared reads
+so that an audit that had stopped matching fails rather than passes.
+
+**What it cannot see**, as its comment says: a path with no origin, such
+as a parameter whose caller is out of the tree or a value from a map or
+a range; two spellings of one file, such as the old and sharded returns
+layouts; types only `go/types` would know; writes inside an `os.Root`;
+shadowed names; and opens inside the standard library. The two
+`zip.OpenReader` calls in internal/builtin open an archive that
+`archive.extracted` may have renamed into place, and are not covered.
+
+**Not verified.** Nothing here was run on Windows by hand. The CI
+windows-2022 legs run the audit, which is platform-independent, and
+`TestAReplaceLandsWhileAStreamingReaderHoldsTheFile`, which is the only
+test that tells `Open` from `os.Open`, and only on Windows. No stress run
+measured the 7 and 18 in 4,000 going to zero.
+
 
 ## 6. Everything else not started
 

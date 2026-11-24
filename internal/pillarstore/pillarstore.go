@@ -121,7 +121,7 @@ func (s *Store) Save(env string, all bool, rec Record) error {
 // an error rather than an empty pillar: a state rendered against nothing
 // would report a convergence that never happened.
 func (s *Store) Load(env string, all bool) (*Record, error) {
-	raw, err := os.ReadFile(s.path(env, all))
+	raw, err := atomicfile.Read(s.path(env, all))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, ErrNone
 	}

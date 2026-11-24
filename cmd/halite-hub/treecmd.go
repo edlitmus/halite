@@ -152,7 +152,7 @@ func treeSign(args *cli.Args, dir string) int {
 		cli.Usagef("tree sign takes one of --sign-key or --sign-extension")
 	}
 	manifestPath := filepath.Join(dir, filepath.FromSlash(treesign.ManifestPath))
-	raw, err := os.ReadFile(manifestPath)
+	raw, err := atomicfile.Read(manifestPath)
 	if err != nil {
 		cli.Fatalf("%v; run `halite-hub tree manifest` first", err)
 	}

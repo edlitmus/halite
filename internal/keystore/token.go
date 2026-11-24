@@ -17,6 +17,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/target"
 )
@@ -212,7 +213,7 @@ func (s *Store) getToken(id string) (*Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("token %s: %w", id, ErrNoToken)
 	}

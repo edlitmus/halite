@@ -265,6 +265,7 @@ which are the two sides of one race. MoveFileEx has to open the destination for 
 **Exports.**
 
 - `Bounded` (func): Bounded runs fn holding one of the MaxConcurrentWrites slots, for a caller outside this package that makes a write with an fsync and has nothing else bounding how many of them run at once.
+- `Open` (func): Open is os.Open, for the same reason: a rename onto path after the open leaves the descriptor on the file that was there when it was opened.
 - `Read` (func): Read is os.ReadFile.
 - `Rename` (func): Rename is rename(2), which is atomic and does not care who has the destination open.
 - `Write` (func): Write replaces path with data, atomically as far as any reader is concerned: a reader sees either the old contents or the new, never a partial write and never an empty file.

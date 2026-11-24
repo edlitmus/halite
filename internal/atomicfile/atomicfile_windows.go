@@ -324,25 +324,10 @@ func posixRenameRefused(err error) bool {
 func Read(path string) ([]byte, error) {
 	var out []byte
 	err := retry(func() error {
-		name, err := windows.UTF16PtrFromString(path)
+		f, err := openShared(path)
 		if err != nil {
 			return err
 		}
-		h, err := windows.CreateFile(
-			name,
-			windows.GENERIC_READ,
-			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
-			nil,
-			windows.OPEN_EXISTING,
-			windows.FILE_ATTRIBUTE_NORMAL,
-			0,
-		)
-		if err != nil {
-			// Reported as though os.Open had failed, so that a caller
-			// testing for fs.ErrNotExist still recognises it.
-			return &os.PathError{Op: "open", Path: path, Err: err}
-		}
-		f := os.NewFile(uintptr(h), path)
 		defer f.Close()
 		b, err := io.ReadAll(f)
 		if err != nil {
@@ -355,6 +340,51 @@ func Read(path string) ([]byte, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// Open is Read for a caller that streams the file rather than holding it
+// whole -- a hash of a cached object, an archive. The handle shares delete
+// for as long as the caller holds it, so a replace that arrives meanwhile
+// proceeds (DIVERGENCE 5.718) and the caller goes on reading the file it
+// opened. Only the open is retried; a read that fails later is the
+// caller's to report.
+func Open(path string) (*os.File, error) {
+	var out *os.File
+	err := retry(func() error {
+		f, err := openShared(path)
+		if err != nil {
+			return err
+		}
+		out = f
+		return nil
+	}, path)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// openShared opens path for reading with all three sharing flags.
+func openShared(path string) (*os.File, error) {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	h, err := windows.CreateFile(
+		name,
+		windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_ATTRIBUTE_NORMAL,
+		0,
+	)
+	if err != nil {
+		// Reported as though os.Open had failed, so that a caller
+		// testing for fs.ErrNotExist still recognises it.
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(h), path), nil
 }
 
 // renameIn is Rename inside a root, with the same wait for a reader that

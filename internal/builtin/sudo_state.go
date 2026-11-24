@@ -355,7 +355,7 @@ func sudoReadDropIn(path string) (data []byte, mode string, existed bool, err er
 	if !info.Mode().IsRegular() {
 		return nil, "", false, fmt.Errorf("The sudoers drop-in %s is not a regular file; this state will not replace it.", path)
 	}
-	data, err = os.ReadFile(path)
+	data, err = atomicfile.Read(path)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("The sudoers drop-in %s could not be read: %v", path, err)
 	}

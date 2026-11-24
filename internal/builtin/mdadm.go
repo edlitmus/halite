@@ -933,7 +933,7 @@ func mdadmDropConfEntry(path, device, uuid string, test bool) (bool, error) {
 	if path == "" {
 		return false, nil
 	}
-	existing, err := os.ReadFile(path)
+	existing, err := atomicfile.Read(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -1411,7 +1411,7 @@ func mdadmSaveConfigFn(c *exec.Context, args *value.Map) (any, error) {
 		}
 	}
 
-	existing, _ := os.ReadFile(path)
+	existing, _ := atomicfile.Read(path)
 	var kept []string
 	oldArrays := 0
 	for _, line := range strings.Split(string(existing), "\n") {

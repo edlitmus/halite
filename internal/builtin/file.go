@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/signature"
@@ -424,7 +425,7 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	var current []byte
 	if exists && info.Mode().IsRegular() {
 		var err error
-		current, err = os.ReadFile(path)
+		current, err = atomicfile.Read(path)
 		if err != nil {
 			return states.False(fmt.Sprintf(
 				"%s exists and could not be read, so this state cannot tell whether it has converged: %v",
