@@ -51589,6 +51589,61 @@ one-true-awk (20200816); CI's ubuntu runners add mawk.
 change's own Fleet run will exercise. Subtests that skip are still not
 reported, as before: the step counts top-level skips only.
 
+### 5.733 The orchestration-record tests could not say why a record did not come (2026-11-24)
+
+Issue 799, read to see whether it could be closed. Its two failures look
+fixed. Since 5.718 merged, none of the 78 windows-2022 jobs that passed
+(38 race, 40 test) failed `TestAReplaceAndAReadDoNotBlockEachOther`.
+Its second sighting, a signed-checkpoint test that discarded the store's
+read errors, is the line 5.714 changed. Of the three Windows jobs that
+failed in that time, two were the 839 branch's own test. The third was on
+`main` (run 45449999937, test leg), after 5.714, 5.718 and 5.721:
+`TestTheRecordNamesFinishedAndWaitingStepsWhileAStepIsOut` said only *"the
+run is failed"* and three pointers.
+
+That test's node reads the record through `recordNaming`, which polls
+`newestRun` for up to five seconds before the node answers, while the
+step it is answering has a one-second `timeout`. `newestRun` returned nil
+for a listing error, for unreadable records and for no record at all, and
+`recordNaming` polled again. So a read that kept losing to a replace
+(issue 799's race) and a slow runner both failed the run the same way,
+and nothing in the output told them apart. It is the shape 5.714 fixed in
+the signed-checkpoint test.
+
+**Fix, tests only.**
+- `newestRun` returns what stood in the way: the listing's error, each
+  unreadable record by jid with its error, or no record yet.
+- `recordNaming` keeps an account: how many reads, over how long, when the
+  step first appeared with its jid, and each problem with when it was
+  first met and how often. The four tests that use it keep it, and the
+  test above logs it on every run (two reads over 24–29 ms on macOS).
+  CI's legs run `go test` without `-v`, so there it is seen only when the
+  test fails; a passing Windows run leaves no timings.
+- On failure that test waits for the node's goroutine to finish (the run
+  can return while it is still polling), and prints each step's result,
+  job, duration and comment, and the account.
+
+**Demonstrated.** `TestTheRecordTestsSayWhatStoodInTheWayOfARecord` plants
+an unreadable record in a real store and requires `newestRun` and
+`recordNaming` to name it; with `newestRun` swallowing it again, it fails.
+And with an unreadable record planted as the newest from inside the
+node's handler while `migrate` is out, the record test fails as `main` did:
+`migrate` never answered at 1,006 ms, and the message now says that all
+392 reads over five seconds found *"record 29991231T000000000000
+unreadable"*. So an unreadable record alone produces this failure. An
+unreadable file stands in for one a replace is holding on Windows; both
+come back from `List` as unreadable. Run on macOS; `internal/hub` passes,
+the record tests under `-race` too, and the package vets for Windows,
+Linux and FreeBSD.
+
+**Not covered, and issue 799 stays open.** Nothing here changes the
+store, so if the race survives it survives. Whether run 45449999937 was the
+race or a slow runner is not known, and the next Windows failure of this
+test is what will say. The test still answers its node only after reading
+the record, against a step timeout of a second, which is fragile in its
+own right; that is left as it was, because changing it now would hide
+the evidence this is meant to collect.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
