@@ -591,7 +591,7 @@ func runConnect(args *cli.Args) int {
 			// Go's HTTP/2 client sometimes loses the alert and says only
 			// that the connection could not be established; that attempt
 			// is retried like an outage, and the next one reads the alert
-			// (DIVERGENCE 5.720).
+			// (DIVERGENCE 5.729).
 			n.log.Error("the hub refused this node's certificate, so this node will not retry: "+
 				"its enrollment was revoked, or the hub will not accept this certificate",
 				"hub", client.HubURL, "error", err.Error(),
