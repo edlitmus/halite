@@ -51644,6 +51644,46 @@ the record, against a step timeout of a second, which is fragile in its
 own right; that is left as it was, because changing it now would hide
 the evidence this is meant to collect.
 
+### 5.734 A step waited out its timeout for nodes its stopped batch never reached (2026-11-24)
+
+Found while answering issue 810's open question. A step waits for
+its job in `awaitReturns`, until every node has answered or its own
+`timeout` passes. A batched job can stop short of its nodes in two ways:
+its `batch_safe_limit` aborts it, or its expiry passes and the hub stops
+sending waves a node would refuse. The nodes it never reached stay missing
+for ever, so the step sat out the rest of its timeout on a job the hub had
+already closed. Seen in the hub lab before any change: two nodes,
+`batch: 1`, `timeout: 3600`, the hub's clock moved past the job's
+expiry, and the first wave's answer. The hub logged *"batch stopped: the
+job expired before every node was reached"*, the job read `aborted`, and
+eight seconds later the orchestration was still waiting, as it would have
+for the hour.
+
+**Fix.** `awaitReturns` stops once every node still missing was never sent
+the job and none ever will be: the job is not batching and was aborted or
+has expired (`noneCanStillAnswer`). A node that was sent the job is still
+waited for, because it may be running it and its late return is filed
+and counts (5.715). The step's comment names the nodes never sent the job
+and why. The expiry is asked first, because an expired batch is closed as
+`aborted` too (`settleExpired`), and blaming the safe limit for an expiry
+would send someone to the wrong setting. A step whose missing nodes were
+all sent the job reads exactly as before.
+
+**Demonstrated.** `TestAStepWhoseBatchIsAbortedStopsWaitingForTheNodesItNeverReached`
+(a safe-limit abort through a real orchestration) finishes in under a
+second, and `TestAWaitEndsWhenAnExpiredBatchStopsShortOfItsNodes` (the
+expiry, asked of `awaitReturns` directly) ends after about 300 ms. With
+`noneCanStillAnswer` taken out of the wait, both were still waiting at
+their 15-second guards. `TestAStepSaysWhyANodeWasNeverSentItsJob` pins the
+comment's wording, the old one included, and fails with the expiry and
+abort questions in the other order. In the hub lab on macOS, with the
+hub's clock moved, not with real binaries.
+
+**Not covered.** The safe-limit route needs no clock and is the more
+likely one in practice, but no real fleet has met it. A `salt.runner`
+step or the API waiting on a job is not changed here; this is the
+orchestration step's wait.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

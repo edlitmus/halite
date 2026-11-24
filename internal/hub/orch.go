@@ -707,7 +707,8 @@ func (s *Server) awaitReturns(ctx context.Context, id job.ID, timeout time.Durat
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		if (len(missing) == 0 && j.State != job.Batching) || s.now().After(deadline) {
+		if (len(missing) == 0 && j.State != job.Batching) || s.now().After(deadline) ||
+			noneCanStillAnswer(j, missing, s.now()) {
 			return j, returns, missing, nil
 		}
 		select {
@@ -723,6 +724,109 @@ func (s *Server) awaitReturns(ctx context.Context, id job.ID, timeout time.Durat
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
+}
+
+// noneCanStillAnswer reports whether every node still missing from j was
+// never sent it and never will be: the job is not batching any more, and it
+// was aborted (a safe limit stopped the batch) or has expired (the batch
+// stopped at the expiry, because a node refuses a job past it).
+//
+// awaitReturns waited for missing to empty or for the step's own timeout.
+// A node the batch never reached can never answer, so a step whose batch
+// stopped sat out the rest of its timeout -- an hour for `timeout: 3600` --
+// on a job the hub had already closed (DIVERGENCE 5.734). A node that was
+// sent the job is still waited for: it may be running it, and a late
+// return is filed and counts (5.715).
+func noneCanStillAnswer(j *job.Job, missing []string, now time.Time) bool {
+	if len(missing) == 0 || j.State == job.Batching {
+		return false
+	}
+	if j.State != job.Aborted && !j.Expired(now) {
+		return false
+	}
+	sent := make(map[string]bool, len(j.Delivered))
+	for _, id := range j.Delivered {
+		sent[id] = true
+	}
+	for _, id := range missing {
+		if sent[id] {
+			return false
+		}
+	}
+	return true
+}
+
+// unansweredText says which of a step's missing nodes never answered and
+// which were never sent the job. They call for different responses: the
+// first may still be running it; the second was never touched.
+func unansweredText(j *job.Job, unanswered []string, now time.Time) string {
+	sent := make(map[string]bool, len(j.Delivered))
+	for _, id := range j.Delivered {
+		sent[id] = true
+	}
+	var silent, unsent []string
+	for _, id := range unanswered {
+		if sent[id] || !j.Batched() {
+			silent = append(silent, id)
+		} else {
+			unsent = append(unsent, id)
+		}
+	}
+	var parts []string
+	if len(silent) > 0 {
+		parts = append(parts, fmt.Sprintf("%d never answered (%s)", len(silent), strings.Join(silent, ", ")))
+	}
+	if len(unsent) > 0 {
+		// An expired batch is closed as aborted too (settleExpired), so
+		// the expiry is asked first: it is the reason when it applies.
+		why := "the batch stopped"
+		switch {
+		case j.Expired(now):
+			why = "the job expired before the batch reached them"
+		case j.State == job.Aborted:
+			why = "the batch was aborted by its safe limit"
+		}
+		parts = append(parts, fmt.Sprintf("%d were never sent the job, because %s (%s)",
+			len(unsent), why, strings.Join(unsent, ", ")))
+	}
+	return strings.Join(parts, " and ")
+}
+
+// failedAndUnanswered and onlyUnanswered are a failed step's comment. When
+// every missing node was sent the job they read as they always have; only
+// when some were never sent it do they say so.
+func failedAndUnanswered(j *job.Job, blocking, unanswered []string, now time.Time) string {
+	if !anyUnsent(j, unanswered) {
+		return fmt.Sprintf("%s: %d of %d node(s) failed (%s) and %d never answered (%s).",
+			j.Fun, len(blocking), len(j.Nodes), strings.Join(blocking, ", "),
+			len(unanswered), strings.Join(unanswered, ", "))
+	}
+	return fmt.Sprintf("%s: %d of %d node(s) failed (%s), and %s.",
+		j.Fun, len(blocking), len(j.Nodes), strings.Join(blocking, ", "), unansweredText(j, unanswered, now))
+}
+
+func onlyUnanswered(j *job.Job, unanswered []string, now time.Time) string {
+	if !anyUnsent(j, unanswered) {
+		return fmt.Sprintf("%s: %d of %d node(s) never answered: %s.",
+			j.Fun, len(unanswered), len(j.Nodes), strings.Join(unanswered, ", "))
+	}
+	return fmt.Sprintf("%s: of %d node(s), %s.", j.Fun, len(j.Nodes), unansweredText(j, unanswered, now))
+}
+
+func anyUnsent(j *job.Job, nodes []string) bool {
+	if !j.Batched() {
+		return false
+	}
+	sent := make(map[string]bool, len(j.Delivered))
+	for _, id := range j.Delivered {
+		sent[id] = true
+	}
+	for _, id := range nodes {
+		if !sent[id] {
+			return true
+		}
+	}
+	return false
 }
 
 // stepOutcome turns a dispatched job's returns into a step result.
@@ -757,9 +861,7 @@ func stepOutcome(o *orchRunner, id string, j *job.Job, returns []*job.Return, mi
 	case len(blocking) > 0 && len(unanswered) > 0:
 		return states.Result{
 			Result: boolPtr(false), Changes: changed,
-			Comment: fmt.Sprintf("%s: %d of %d node(s) failed (%s) and %d never answered (%s).",
-				j.Fun, len(blocking), len(j.Nodes), strings.Join(blocking, ", "),
-				len(unanswered), strings.Join(unanswered, ", ")),
+			Comment: failedAndUnanswered(j, blocking, unanswered, o.server.now()),
 		}
 	case len(blocking) > 0:
 		return states.Result{
@@ -772,8 +874,7 @@ func stepOutcome(o *orchRunner, id string, j *job.Job, returns []*job.Return, mi
 		// no, and something did not say anything.
 		return states.Result{
 			Result: boolPtr(false), Changes: changed,
-			Comment: fmt.Sprintf("%s: %d of %d node(s) never answered: %s.",
-				j.Fun, len(unanswered), len(j.Nodes), strings.Join(unanswered, ", ")),
+			Comment: onlyUnanswered(j, unanswered, o.server.now()),
 		}
 	}
 	return states.Result{
