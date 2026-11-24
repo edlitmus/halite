@@ -654,6 +654,55 @@ jobs:
             exit 1
           fi
 
+      # The two kernelpkg tests that install kernels, held to running.
+      #
+      # They skip by name when the runner's mirror cannot deliver a kernel
+      # in the eight minutes they give it (the reason begins "slow
+      # mirror:"), which is issue 852: three runs on -aws runners fetched
+      # from their region's EC2 archive mirror at 8.6-556 kB/s and spent
+      # the leg's forty minutes on one 184 MB download. That skip is
+      # accepted on a runner whose kernel is not -azure, and nowhere else:
+      # an -azure runner fetches from Azure's mirror, which has delivered
+      # every time, so on one of those the tests must pass, and a skip
+      # there is the mirror skip hiding the coverage it was meant to
+      # excuse. The upgrade test may also skip when the newest kernel
+      # offered is the one running, which is the image catching up and
+      # says nothing about the mirror.
+      - name: the kernelpkg install tests ran rather than skipping
+        if: always()
+        run: |
+          test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
+          kernel=$(uname -r)
+          echo "runner kernel: $kernel"
+          failed=0
+          for t in TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest TestLiveKernelpkgUpgradeInstallsTheNewest; do
+            if grep -q "^--- PASS: $t " /tmp/live.txt; then
+              echo "$t passed"
+              continue
+            fi
+            reason=$(awk -v t="$t" '$0 ~ "^--- SKIP: "t" " { print prev } { prev=$0 }' /tmp/live.txt)
+            if [ -z "$reason" ]; then
+              echo "::error::$t neither passed nor skipped: it failed or stopped existing."
+              failed=1
+              continue
+            fi
+            echo "$t skipped: $reason"
+            case "$reason" in
+              *"slow mirror:"*)
+                case "$kernel" in
+                  *-azure)
+                    echo "::error::$t skipped for a slow mirror on an -azure runner, where it is required to run (issue 852)."
+                    failed=1 ;;
+                esac ;;
+              *"is the running one"*)
+                [ "$t" = TestLiveKernelpkgUpgradeInstallsTheNewest ] || failed=1 ;;
+              *)
+                echo "::error::$t skipped for a reason this leg does not accept."
+                failed=1 ;;
+            esac
+          done
+          exit "$failed"
+
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
       # nothing depends on it is one that stops working unnoticed.

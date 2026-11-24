@@ -360,27 +360,12 @@ func kpAptOptions(sub string) []string {
 }
 
 // kpAptInstall installs the test's packages in two bounded steps, the
-// download and then the install, so that a slow mirror and a slow
-// post-install hook (initramfs, the boot loader, dkms) are told apart by
-// which step names itself. What apt means to fetch, with and without
-// Recommends, is logged first, because the size of the download is the
-// first question about a slow one.
+// download (kpAptDownload) and then the install from apt's cache, so that
+// a slow mirror and a slow post-install hook (initramfs, the boot loader,
+// dkms) are told apart by which step names itself.
 func kpAptInstall(t *testing.T, pkgs []string) {
 	t.Helper()
-	for _, recommends := range []bool{true, false} {
-		argv := append(kpAptOptions("install"), "--print-uris")
-		if !recommends {
-			argv = append(argv, "--no-install-recommends")
-		}
-		out, _, err := runBounded(kpQuickLimit, append(argv, pkgs...))
-		files, bytes := aptURIsSize(out)
-		t.Logf("apt would fetch %d files, %d bytes (Recommends %v) for %v; err=%v", files, bytes, recommends, pkgs, err)
-	}
-	if err := kpStep(t, fmt.Sprintf("apt-get download of %v", pkgs), kpDownloadLimit, func(ctx context.Context) error {
-		return kpApt(ctx, append(kpAptOptions("install"), append([]string{"--download-only"}, pkgs...)...))
-	}); err != nil {
-		t.Fatal(err)
-	}
+	kpAptDownload(t, pkgs)
 	if err := kpStep(t, fmt.Sprintf("apt-get install of %v from the cache", pkgs), kpInstallLimit, func(ctx context.Context) error {
 		return kpApt(ctx, append(kpAptOptions("install"), pkgs...))
 	}); err != nil {
@@ -388,19 +373,86 @@ func kpAptInstall(t *testing.T, pkgs []string) {
 	}
 }
 
-// kpApt is kpDNF's twin: one of the test's own apt-gets, killed with its
-// process group when ctx ends, its output in the error when it fails.
-func kpApt(ctx context.Context, argv []string) error {
-	res, err := (&hexec.OSRunner{}).Run(ctx, hexec.Command{Argv: argv, Env: kpAptEnv()})
+// kpSlowMirror begins the skip kpAptDownload gives, so that the linux
+// leg's assertion can tell it from every other skip by its text.
+const kpSlowMirror = "slow mirror:"
+
+// kpAptDownload fetches pkgs and what they need into apt's cache, in two
+// attempts of kpDownloadLimit, and skips the test by name when the mirror
+// could not deliver them in that time. It is what issue 852 came to.
+//
+// Three runs of the linux leg on GitHub runners with an -aws kernel
+// timed out in this test's install of the older kernel, and the cause was
+// the mirror, measured by the workflow's own `apt-get update` in the same
+// jobs: 556 kB/s, 498 kB/s and 152 kB/s for the 13.4 MB index, and as low
+// as 8.6 kB/s for the smaller files, where a healthy runner on either
+// cloud fetches the same index at about 9.8 MB/s. The download is about
+// 184 MB (the image, its modules and the headers), so at 152 kB/s it
+// takes twenty minutes, and apt with -q prints nothing while it does.
+// An -aws runner reaches its region's EC2 archive mirror and an -azure
+// one Azure's, so the slowness arrived with one flavour of runner and
+// looked like a property of the kernel.
+//
+// A mirror that cannot deliver a kernel in eight minutes is not a defect
+// of kernelpkg, and nothing the test does makes it faster, so the test
+// skips, saying how many bytes arrived and naming the mirror and the
+// runner's flavour. The leg does not take that skip on trust: its
+// assertion requires these tests to pass on an -azure runner, and accepts
+// this skip, and only this one, on any other.
+//
+// The second attempt resumes rather than restarts, because apt keeps a
+// partial download in archives/partial and continues it, so the two
+// attempts are one budget with a fresh connection in the middle.
+func kpAptDownload(t *testing.T, pkgs []string) {
+	t.Helper()
+	uris, _, err := runBounded(kpQuickLimit, append(append(kpAptOptions("install"), "--print-uris"), pkgs...))
 	if err != nil {
-		return fmt.Errorf("%w\n--- stdout\n%s\n--- stderr\n%s\n--- end", err, res.Stdout, res.Stderr)
+		t.Fatal(err)
 	}
-	return nil
+	files := aptURIs(uris)
+	var total int64
+	for _, f := range files {
+		total += f.size
+	}
+	if len(files) == 0 {
+		t.Logf("apt has everything %v needs in its cache", pkgs)
+		return
+	}
+	t.Logf("apt will fetch %d files, %d bytes, for %v from %s", len(files), total, pkgs, files[0].host)
+	start := time.Now()
+	for attempt := 1; attempt <= 2; attempt++ {
+		var stalled bool
+		err := kpStep(t, fmt.Sprintf("apt-get download of %v, attempt %d", pkgs, attempt), kpDownloadLimit, func(ctx context.Context) error {
+			err := kpApt(ctx, append(kpAptOptions("install"), append([]string{"--download-only"}, pkgs...)...))
+			stalled = ctx.Err() != nil
+			return err
+		})
+		if err == nil {
+			took := time.Since(start)
+			t.Logf("downloaded %d bytes in %s, %.0f kB/s", total, took.Round(100*time.Millisecond), float64(total)/1000/took.Seconds())
+			return
+		}
+		if !stalled {
+			t.Fatal(err)
+		}
+		t.Log(err)
+	}
+	took := time.Since(start)
+	got := aptCachedBytes(files)
+	flavour, _ := debianFlavour(procRelease(t))
+	t.Skipf("%s %s delivered %d of the %d bytes of %v in %s (%.0f kB/s) on a runner whose kernel flavour is %s; "+
+		"a kernel this test can install is not fetchable here in the time it is given (issue 852)",
+		kpSlowMirror, files[0].host, got, total, pkgs, took.Round(time.Second), float64(got)/1000/took.Seconds(), flavour)
 }
 
-// aptURIsSize counts the files `apt-get --print-uris` lists and adds up
-// their sizes, the third field of each 'URI' filename size hash line.
-func aptURIsSize(out string) (files int, bytes int64) {
+// aptURI is one line of `apt-get --print-uris`: 'URI' filename size hash.
+type aptURI struct {
+	host, file string
+	size       int64
+}
+
+func aptURIs(out string) []aptURI {
+	var files []aptURI
 	for _, line := range strings.Split(out, "\n") {
 		if !strings.HasPrefix(line, "'") {
 			continue
@@ -413,10 +465,38 @@ func aptURIsSize(out string) (files int, bytes int64) {
 		if err != nil {
 			continue
 		}
-		files++
-		bytes += n
+		host := strings.Trim(fields[0], "'")
+		if _, after, ok := strings.Cut(host, "://"); ok {
+			host, _, _ = strings.Cut(after, "/")
+		}
+		files = append(files, aptURI{host: host, file: fields[1], size: n})
 	}
-	return files, bytes
+	return files
+}
+
+// aptCachedBytes is how much of files apt has so far: the finished ones
+// in its archive and the partial ones it is still writing.
+func aptCachedBytes(files []aptURI) int64 {
+	var got int64
+	for _, f := range files {
+		for _, dir := range []string{"/var/cache/apt/archives/", "/var/cache/apt/archives/partial/"} {
+			if fi, err := os.Stat(dir + f.file); err == nil {
+				got += fi.Size()
+				break
+			}
+		}
+	}
+	return got
+}
+
+// kpApt is kpDNF's twin: one of the test's own apt-gets, killed with its
+// process group when ctx ends, its output in the error when it fails.
+func kpApt(ctx context.Context, argv []string) error {
+	res, err := (&hexec.OSRunner{}).Run(ctx, hexec.Command{Argv: argv, Env: kpAptEnv()})
+	if err != nil {
+		return fmt.Errorf("%w\n--- stdout\n%s\n--- stderr\n%s\n--- end", err, res.Stdout, res.Stderr)
+	}
+	return nil
 }
 
 func readDebianKernelSnapshot() (debianKernelSnapshot, error) {
@@ -727,6 +807,10 @@ func TestLiveKernelpkgUpgradeInstallsTheNewest(t *testing.T) {
 		t.Skipf("the newest kernel offered, %s, is the running one, so there is nothing this test may "+
 			"take away to put back", avail)
 	}
+	// Fetched first, so that a mirror too slow to deliver it skips the
+	// test before the kernel set is touched, and the module's upgrade
+	// below installs from apt's cache.
+	kpAptDownload(t, []string{"linux-image-" + avail})
 	snap := takeDebianKernelSnapshot(t)
 	t.Cleanup(func() { snap.restore(t) })
 	debianTakeAway(t, avail)
@@ -745,7 +829,7 @@ func TestLiveKernelpkgUpgradeInstallsTheNewest(t *testing.T) {
 		t.Fatal("upgrade in test mode installed the kernel")
 	}
 
-	got = kpMust(t, c, "upgrade", nil)
+	got = kpBoundedCall(t, "kernelpkg.upgrade", kpInstallLimit, "upgrade", nil, false)
 	if b, err := value.EncodeJSON(got, 0); err == nil {
 		t.Logf("upgrade: %s", b)
 	}
@@ -761,7 +845,7 @@ func TestLiveKernelpkgUpgradeInstallsTheNewest(t *testing.T) {
 	if kpMust(t, c, "needs_reboot", nil) != true {
 		t.Errorf("needs_reboot is false with %s installed and %s running", avail, running)
 	}
-	got = kpMust(t, c, "upgrade", nil)
+	got = kpBoundedCall(t, "kernelpkg.upgrade, again", kpQuickLimit, "upgrade", nil, false)
 	ups, _ = got.(*value.Map).Get("upgrades")
 	if ups.(*value.Map).Len() != 0 {
 		t.Errorf("a second upgrade installed %s", value.KeyString(ups))
