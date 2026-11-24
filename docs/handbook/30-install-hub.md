@@ -316,6 +316,12 @@ info: hub listening address=:4510 ca_fingerprint=3e:3e:f8:89:… enrollment_mode
 
 The warning about no policy is correct and expected: the next step fixes it.
 
+That output is from a hub built before DIVERGENCE 5.724. A hub now makes a
+P-384 CA unless `key_algorithm` says otherwise. A fresh hub built from the
+change (on macOS, unprivileged, on loopback) logged `created a new enrollment
+CA algorithm=ecdsa-p384`, and its `ca.crt` and `hub.crt` were both on
+`secp384r1`, signed `ecdsa-with-SHA384`.
+
 **Open the port in the host's own firewall** if it runs one. Nodes connect to
 TCP 4510, and a firewall in front of the host does not cover a firewall on it.
 In the lab (DIVERGENCE 5.708) the Ubuntu 26.04 hub had `ufw` active with only

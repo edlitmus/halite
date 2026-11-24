@@ -34,7 +34,7 @@ var keysUsage = `halite-hub keys — enrollment and the key lifecycle (SPEC sect
 signer create flags:
   --out <path>         where to write the key, default
                        <pki_dir>/signer-<name>.key and .pub
-  --key-algorithm <a>  ecdsa-p256 (default) or ecdsa-p384
+  --key-algorithm <a>  ecdsa-p384 (default) or ecdsa-p256
 
 operator create flags:
   --out <path>         where to write the certificate and key, default
@@ -531,7 +531,7 @@ func runKeysOperator(args *cli.Args) int {
 			"an operator certificate cannot outlive what signed it",
 			args.Flag("lifetime", ""), caEnd.UTC().Format(time.RFC3339))
 	}
-	alg, err := pki.ParseKeyAlgorithm(h.cfg.String("key_algorithm", string(pki.ECDSAP256)))
+	alg, err := pki.ParseKeyAlgorithm(h.cfg.String("key_algorithm", string(pki.ECDSAP384)))
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -625,7 +625,7 @@ func runKeysSigner(args *cli.Args) int {
 		cli.Fatalf("a signer name may not contain spaces: %q", name)
 	}
 
-	key, err := jobsign.GenerateKey(args.Flag("key-algorithm", "ecdsa-p256"))
+	key, err := jobsign.GenerateKey(args.Flag("key-algorithm", "ecdsa-p384"))
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}

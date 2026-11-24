@@ -478,16 +478,18 @@ A node's identity is an X.509 certificate issued by the hub's enrollment CA, wit
 the subject common name and in a URI SAN of the form `halite://node/<node_id>`. The URI SAN is
 authoritative; the CN is for human readability.
 
-| Build | Key algorithm | Signature |
+| `key_algorithm` | Key algorithm | Signature |
 |---|---|---|
-| Default | ECDSA P-256 | ECDSA with SHA-256 |
-| High assurance | ECDSA P-384 | ECDSA with SHA-384 |
-| FIPS 140-3 | ECDSA P-256 or P-384 | As above |
-| Legacy interoperability | RSA-3072 or RSA-4096 | RSA-PSS with SHA-256 |
+| `ecdsa-p384` (default) | ECDSA P-384 | ECDSA with SHA-384 |
+| `ecdsa-p256` | ECDSA P-256 | ECDSA with SHA-256 |
 
-Ed25519 is not the default. It is the better algorithm and it is not approved under FIPS 140-3, and
-this estate has FIPS hosts. Ed25519 is permitted in non-FIPS builds by configuration, and the
-protocol negotiates it, but the default is ECDSA so that one certificate profile works everywhere.
+These are the only two, in every build, FIPS included. The hub's PKI does not issue RSA or Ed25519
+keys. An earlier version of this table listed RSA-3072 and RSA-4096, and said that Ed25519 was
+permitted by configuration, and none of those was ever built (DIVERGENCE 5.722). The default is
+ECDSA so that one certificate profile works everywhere, and P-384 since DIVERGENCE 5.724; it was
+P-256. The default chooses new keys only. A node's key keeps its algorithm across renewal, and an
+existing enrollment CA keeps its own. A node enrols with P-384 unless `--key-algorithm` says
+otherwise, and job-signing keys from `keys signer create` default to P-384 too.
 
 The node's private key is generated on the node, never leaves it, and is stored at
 `/etc/halite/pki/node.key` with mode `0600`, or in the Windows certificate store for the machine,
@@ -2875,8 +2877,12 @@ estate.
 A parallel artifact set, suffixed `-fips`, built with `GOFIPS140=v1.0.0` so that all cryptography
 routes through the Go Cryptographic Module, and running with `GODEBUG=fips140=on` enforced by the
 service unit. In FIPS mode: TLS is restricted to approved cipher suites and P-256 or P-384 key
-exchange, Ed25519 is unavailable, SHA-1 is unavailable except in the TOTP path which is therefore
-disabled, and `halite-*-fips version` reports the module version and self-test status. The
+exchange (X25519 is not approved for key exchange), SHA-1 is unavailable except in the TOTP path
+which is therefore disabled, and `halite-*-fips version` reports the module version and self-test
+status. Ed25519 *is* available: FIPS 186-5 (2023) approves it for signatures, and the Go
+Cryptographic Module v1.0.0 (CMVP #5247) certifies EdDSA. An earlier version of this section said
+Ed25519 was unavailable, and the x509 module refused it on that word (DIVERGENCE 5.723). A FIPS peer
+built on an older OpenSSL FIPS provider may still not accept an Ed25519 key. The
 `fips_mode` grain reports both the host's kernel FIPS state and the binary's own mode, and a
 mismatch is a `doctor` warning.
 

@@ -60,9 +60,10 @@ func NodeIDFromCert(cert *x509.Certificate) (string, error) {
 	return "", fmt.Errorf("the certificate carries no %s://node/<id> URI, which is where the identity lives", URIScheme)
 }
 
-// KeyAlgorithm selects the key to generate. SPEC 7.1 makes ECDSA P-256
-// the default rather than Ed25519, which is the better algorithm and is
-// not approved under FIPS 140-3.
+// KeyAlgorithm selects the key to generate. SPEC 7.1: the hub's PKI
+// issues ECDSA on P-384 (the default) or P-256, and nothing else. SPEC once listed RSA
+// and Ed25519 here too, and the configuration reference repeated it,
+// while this type has only ever had the two constants below (5.722).
 type KeyAlgorithm string
 
 const (
@@ -73,10 +74,12 @@ const (
 // ParseKeyAlgorithm reads the configured algorithm.
 func ParseKeyAlgorithm(s string) (KeyAlgorithm, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", string(ECDSAP256), "p256", "ecdsa":
-		return ECDSAP256, nil
-	case string(ECDSAP384), "p384":
+	case "", string(ECDSAP384), "p384", "ecdsa":
+		// P-384 is the default (5.724). "ecdsa" alone means the
+		// default, as it always has; the default is what moved.
 		return ECDSAP384, nil
+	case string(ECDSAP256), "p256":
+		return ECDSAP256, nil
 	}
 	return "", fmt.Errorf("key_algorithm %q is not one this build issues; try %s or %s",
 		s, ECDSAP256, ECDSAP384)
@@ -101,10 +104,10 @@ func AlgorithmOf(key crypto.Signer) (KeyAlgorithm, error) {
 // GenerateKey makes a private key of the named algorithm.
 func GenerateKey(alg KeyAlgorithm) (crypto.Signer, error) {
 	switch alg {
-	case ECDSAP384:
-		return ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	default:
+	case ECDSAP256:
 		return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	default:
+		return ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	}
 }
 
