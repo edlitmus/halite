@@ -51081,9 +51081,7 @@ sync that ran fetched nothing: what was shown is that a sampled sync
 reaches the hub's tree, not that it delivers a bundle. Run on the
 development host's Linux compatibility layer only.
 
-
-
-### 5.722 `Remote.ForEnv` appended into an array its copies shared (2026-11-23)
+### 5.728 `Remote.ForEnv` appended into an array its copies shared (2026-11-23)
 
 Issue 849, found by reading while fixing issue 803. Each job runs on a
 shallow copy of the agent's `fileserver.Remote` (`ForRun`, and
@@ -51126,6 +51124,8 @@ jobs name no environment, so it does not reach `ForEnv` at all.
 **Not verified.** No agent was run with a Remote that had spare
 capacity, because none can be built through the agent's own
 configuration; the test drives `fileserver` directly.
+
+
 
 
 ## 6. Everything else not started

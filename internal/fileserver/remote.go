@@ -601,7 +601,7 @@ func (r *Remote) ForEnv(env string) *Remote {
 	// (ForRun, WithContext), and the copy shares the agent's array: an
 	// append into spare capacity would write the one slot every other copy
 	// writes too, and a job would read another job's environment (issue
-	// 849, DIVERGENCE 5.722). The agent's Remote is built today with a
+	// 849, DIVERGENCE 5.728). The agent's Remote is built today with a
 	// one-element literal, so the capacity is never spare in practice --
 	// but that is a property of a line in another package, and this one
 	// must not depend on it.
