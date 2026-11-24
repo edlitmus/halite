@@ -51459,7 +51459,56 @@ lines before it. A section lifted out of the middle of a chapter was already
 handled correctly and is held only by the "nothing else changed" half of these
 tests.
 
+### 5.730 The live legs' skip report printed the wrong reason for 7 of 23 skips (2026-11-24)
 
+Issue 857. The linux and freebsd legs end with a step that prints every
+skipped test and why, which is the one place a person reads why a live
+test did not run (the step came with 5.151). It printed the line just
+before each `--- SKIP`. That is the reason only when nothing is logged
+after it. In
+Fleet job 138603165785 (linux leg, PR 856's branch) it was wrong for 7 of
+23 top-level skips, in two shapes:
+
+| Shape | Tests | What the report printed |
+|---|---|---|
+| A Cleanup logs after `t.Skip` | the kernelpkg removal test | the last package of the kernel set its Cleanup put back |
+| A skip message of several lines | the three iptables and three nftables tests, which skip with a network-namespace child's output | `PASS`, the child's last line |
+
+The issue named the first shape; reading the whole report turned up the
+second, which is six of the seven. The snap step had the same reading in
+another form (`grep -B 1`).
+
+**Fix.** `.github/skip-reasons.awk`, used by all three steps, reads each
+test's own block, from its `=== RUN` to its `--- SKIP`, and prints the
+first line of every entry the test logged. Every entry, because the text
+cannot tell `t.Skip` from `t.Log` and a Cleanup's entries come after the
+skip message; first lines only, because the further lines (a namespace
+child's output, a package list) are what misled the old reading. The
+script is in the fleet workflow's trigger paths.
+
+**A wrong assumption, caught by capturing rather than writing the input.**
+The first version took a subtest's log lines to be at eight spaces and
+credited everything under a subtest to its parent. `go test -v`'s real
+output (Go 1.27.4, captured from a throwaway package of parallel tests,
+subtests, a logging Cleanup, a multi-line skip and a silent one) puts a
+subtest's lines at four spaces under its own `=== RUN Parent/sub`, and
+returns with `=== NAME Parent`. So blocks follow the full test name.
+
+**Demonstrated.** `TestFleetSkipReportsReadEachTestsOwnBlock`
+(`internal/buildpolicy`) runs the script under every awk on the host on
+both captures, `testdata/fleet-linux-live-138603165785.txt` (that job's
+suite output, timestamps removed) and `testdata/gotest-v-skip-shapes.txt`
+(with its source beside it). It requires all 23 skips reported, no
+`PASS` and no Cleanup line as a reason, the real messages for the
+namespace and kernelpkg tests, and the shapes line for line; and it
+requires all three workflow steps to use the script and the old readings
+to be gone. Each of three breaks failed it: the old rule in the script,
+the first version's subtest rule, and one step reverted. Run under macOS's
+one-true-awk (20200816); CI's ubuntu runners add mawk.
+
+**Not covered.** The freebsd leg runs FreeBSD's own awk, which only this
+change's own Fleet run will exercise. Subtests that skip are still not
+reported, as before: the step counts top-level skips only.
 
 ## 6. Everything else not started
 

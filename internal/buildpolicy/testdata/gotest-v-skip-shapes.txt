@@ -1,0 +1,46 @@
+=== RUN   TestPlainSkip
+    shapes_test.go:10: the plain reason
+--- SKIP: TestPlainSkip (0.00s)
+=== RUN   TestSkipThenCleanupLogs
+    shapes_test.go:14: before the skip
+    shapes_test.go:15: the reason, with the cleanup after it
+    shapes_test.go:13: cleanup put things back:
+        line two of the cleanup
+--- SKIP: TestSkipThenCleanupLogs (0.00s)
+=== RUN   TestMultiLineSkip
+    shapes_test.go:19: ran inside a child:
+        === RUN   Child
+        --- PASS: Child (0.00s)
+        PASS
+--- SKIP: TestMultiLineSkip (0.00s)
+=== RUN   TestSkipWithSubtests
+=== RUN   TestSkipWithSubtests/sub-passes
+    shapes_test.go:23: a subtest's own log
+=== RUN   TestSkipWithSubtests/sub-skips
+    shapes_test.go:24: a subtest's skip
+=== NAME  TestSkipWithSubtests
+    shapes_test.go:25: the parent's reason, after its subtests
+--- SKIP: TestSkipWithSubtests (0.00s)
+    --- PASS: TestSkipWithSubtests/sub-passes (0.00s)
+    --- SKIP: TestSkipWithSubtests/sub-skips (0.00s)
+=== RUN   TestSilentSkip
+--- SKIP: TestSilentSkip (0.00s)
+=== RUN   TestPasses
+    shapes_test.go:30: a passing test's log
+--- PASS: TestPasses (0.00s)
+=== RUN   TestParallelA
+=== PAUSE TestParallelA
+=== RUN   TestParallelB
+=== PAUSE TestParallelB
+=== CONT  TestParallelA
+    shapes_test.go:34: A before
+=== CONT  TestParallelB
+    shapes_test.go:42: B logs while A waits
+=== NAME  TestParallelA
+    shapes_test.go:36: A's reason
+--- SKIP: TestParallelA (0.05s)
+=== NAME  TestParallelB
+    shapes_test.go:44: B's reason
+--- SKIP: TestParallelB (0.08s)
+PASS
+ok  	skipshapes	0.599s
