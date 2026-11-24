@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -358,14 +359,159 @@ func kpAptOptions(sub string) []string {
 	return []string{"apt-get", sub, "-y", "-q", "-o", "DPkg::Lock::Timeout=60"}
 }
 
-// kpAptInstall installs the test's packages as one bounded step.
+// kpAptInstall installs the test's packages in two bounded steps, the
+// download (kpAptDownload) and then the install from apt's cache, so that
+// a slow mirror and a slow post-install hook (initramfs, the boot loader,
+// dkms) are told apart by which step names itself.
 func kpAptInstall(t *testing.T, pkgs []string) {
 	t.Helper()
-	if err := kpStep(t, fmt.Sprintf("apt-get install of %v", pkgs), kpInstallLimit, func(ctx context.Context) error {
+	kpAptDownload(t, pkgs)
+	if err := kpStep(t, fmt.Sprintf("apt-get install of %v from the cache", pkgs), kpInstallLimit, func(ctx context.Context) error {
 		return kpApt(ctx, append(kpAptOptions("install"), pkgs...))
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// kpSlowMirror begins the skip kpAptDownload gives, so that the linux
+// leg's assertion can tell it from every other skip by its text.
+const kpSlowMirror = "slow mirror:"
+
+// kpAptDownload fetches pkgs and what they need into apt's cache, in two
+// attempts of kpDownloadLimit, and skips the test by name when the mirror
+// could not deliver them in that time. It is what issue 852 came to.
+//
+// Three runs of the linux leg on GitHub runners with an -aws kernel
+// timed out in this test's install of the older kernel, and the cause was
+// the mirror, measured by the workflow's own `apt-get update` in the same
+// jobs: 556 kB/s, 498 kB/s and 152 kB/s for the 13.4 MB index, and as low
+// as 8.6 kB/s for the smaller files, where a healthy runner on either
+// cloud fetches the same index at about 9.8 MB/s. The download is about
+// 184 MB (the image, its modules and the headers), so at 152 kB/s it
+// takes twenty minutes, and apt with -q prints nothing while it does.
+// An -aws runner reaches its region's EC2 archive mirror and an -azure
+// one Azure's, so the slowness arrived with one flavour of runner and
+// looked like a property of the kernel.
+//
+// A mirror that cannot deliver a kernel in eight minutes is not a defect
+// of kernelpkg, and nothing the test does makes it faster, so the test
+// skips, saying how many bytes arrived and naming the mirror and the
+// runner's flavour. The leg does not take that skip on trust: its
+// assertion requires these tests to pass on an -azure runner, and accepts
+// this skip, and only this one, on any other.
+//
+// The second attempt resumes rather than restarts, because apt keeps a
+// partial download in archives/partial and continues it, so the two
+// attempts are one budget with a fresh connection in the middle.
+func kpAptDownload(t *testing.T, pkgs []string) {
+	t.Helper()
+	uris, _, err := runBounded(kpQuickLimit, append(append(kpAptOptions("install"), "--print-uris"), pkgs...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := aptURIs(uris)
+	var total int64
+	for _, f := range files {
+		total += f.size
+	}
+	if len(files) == 0 {
+		// Said with apt's own words, because "nothing to fetch" is a
+		// claim this test then builds on: the install after it is
+		// bounded as an install, not as a download.
+		t.Logf("apt lists nothing to fetch for %v; it printed:\n%s", pkgs, uris)
+		return
+	}
+	t.Logf("apt will fetch %d files, %d bytes, for %v from %s", len(files), total, pkgs, files[0].host)
+	start := time.Now()
+	for attempt := 1; attempt <= 2; attempt++ {
+		var stalled bool
+		err := kpStep(t, fmt.Sprintf("apt-get download of %v, attempt %d", pkgs, attempt), kpDownloadLimit, func(ctx context.Context) error {
+			err := kpApt(ctx, append(kpAptOptions("install"), append([]string{"--download-only"}, pkgs...)...))
+			stalled = ctx.Err() != nil
+			return err
+		})
+		if err == nil {
+			took := time.Since(start)
+			t.Logf("downloaded %d bytes in %s, %.0f kB/s", total, took.Round(100*time.Millisecond), float64(total)/1000/took.Seconds())
+			return
+		}
+		if !stalled {
+			t.Fatal(err)
+		}
+		t.Log(err)
+	}
+	took := time.Since(start)
+	got := aptCachedBytes(files)
+	flavour, _ := debianFlavour(procRelease(t))
+	t.Skipf("%s %s delivered %d of the %d bytes of %v in %s (%.0f kB/s) on a runner whose kernel flavour is %s; "+
+		"a kernel this test can install is not fetchable here in the time it is given (issue 852)",
+		kpSlowMirror, files[0].host, got, total, pkgs, took.Round(time.Second), float64(got)/1000/took.Seconds(), flavour)
+}
+
+// aptURI is one line of `apt-get --print-uris`: 'URI' filename size hash.
+type aptURI struct {
+	host, file string
+	size       int64
+}
+
+func aptURIs(out string) []aptURI {
+	var files []aptURI
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, "'") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		n, err := strconv.ParseInt(fields[2], 10, 64)
+		if err != nil {
+			continue
+		}
+		files = append(files, aptURI{host: aptMirrorOf(strings.Trim(fields[0], "'")), file: fields[1], size: n})
+	}
+	return files
+}
+
+// aptMirrorOf names the server a URI is fetched from. A GitHub runner's
+// sources are `mirror+file:/etc/apt/apt-mirrors.txt`, a list apt walks
+// in order, so the name is the list's first entry: the one apt tries
+// first, and on the runners of issue 852 the only one its update used.
+func aptMirrorOf(uri string) string {
+	if rest, ok := strings.CutPrefix(uri, "mirror+file:"); ok {
+		list, _, _ := strings.Cut(rest, ".txt")
+		list += ".txt"
+		first := ""
+		if data, err := os.ReadFile(list); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if f := strings.Fields(line); len(f) > 0 && !strings.HasPrefix(f[0], "#") {
+					first = f[0]
+					break
+				}
+			}
+		}
+		return fmt.Sprintf("%s (the first of the mirrors in %s)", first, list)
+	}
+	if _, after, ok := strings.Cut(uri, "://"); ok {
+		host, _, _ := strings.Cut(after, "/")
+		return host
+	}
+	return uri
+}
+
+// aptCachedBytes is how much of files apt has so far: the finished ones
+// in its archive and the partial ones it is still writing.
+func aptCachedBytes(files []aptURI) int64 {
+	var got int64
+	for _, f := range files {
+		for _, dir := range []string{"/var/cache/apt/archives/", "/var/cache/apt/archives/partial/"} {
+			if fi, err := os.Stat(dir + f.file); err == nil {
+				got += fi.Size()
+				break
+			}
+		}
+	}
+	return got
 }
 
 // kpApt is kpDNF's twin: one of the test's own apt-gets, killed with its
@@ -686,6 +832,10 @@ func TestLiveKernelpkgUpgradeInstallsTheNewest(t *testing.T) {
 		t.Skipf("the newest kernel offered, %s, is the running one, so there is nothing this test may "+
 			"take away to put back", avail)
 	}
+	// Fetched first, so that a mirror too slow to deliver it skips the
+	// test before the kernel set is touched, and the module's upgrade
+	// below installs from apt's cache.
+	kpAptDownload(t, []string{"linux-image-" + avail})
 	snap := takeDebianKernelSnapshot(t)
 	t.Cleanup(func() { snap.restore(t) })
 	debianTakeAway(t, avail)
