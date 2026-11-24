@@ -680,13 +680,19 @@ jobs:
               echo "$t passed"
               continue
             fi
-            reason=$(awk -v t="$t" '$0 ~ "^--- SKIP: "t" " { print prev } { prev=$0 }' /tmp/live.txt)
+            # The whole of the test's output, not the line before its SKIP:
+            # the put-back runs in a Cleanup, after the skip, and logs the
+            # kernel set, so the line before is the set's last package.
+            # The first version of this step read that and refused a
+            # correct skip.
+            reason=$(awk -v t="$t" '$0 == "=== RUN   "t { block=""; on=1 } on { block=block"\n"$0 } on && index($0, "--- SKIP: "t" ") == 1 { print block; on=0 } on && index($0, "--- ") == 1 { on=0 }' /tmp/live.txt)
             if [ -z "$reason" ]; then
               echo "::error::$t neither passed nor skipped: it failed or stopped existing."
               failed=1
               continue
             fi
-            echo "$t skipped: $reason"
+            echo "$t skipped:"
+            echo "$reason" | grep -E 'slow mirror:|is the running one' || echo "$reason" | tail -5
             case "$reason" in
               *"slow mirror:"*)
                 case "$kernel" in
