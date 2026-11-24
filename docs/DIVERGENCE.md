@@ -50745,6 +50745,64 @@ test that tells `Open` from `os.Open`, and only on Windows. No stress run
 measured the 7 and 18 in 4,000 going to zero.
 
 
+### 5.721 A job the tracer sampled lost the hub's tree for another environment (2026-11-23)
+
+Issue 803, filed as a suspicion from reading and not reproduced. It was
+real. `executeJob` wrapped the job's tree for tracing (`traceFiles`, which
+returns a `tracedFiles` around the tree for a sampled job and the tree
+unchanged otherwise) before `adoptJobEnvironment` ran, and
+`adoptJobEnvironment` told the hub's tree from the node's own by asserting
+`n.files.(*fileserver.Remote)`. For a sampled job that assertion failed on
+the wrapper, so a job naming an environment other than the node's own was
+given `localTree(env)`: the node's own `file_roots` for that environment,
+or, where none are configured, the packaged defaults (`<root>/state`,
+`/srv/halite/states`, `/srv/salt`, whichever exist). It applied whatever
+those held and reported success. The same job unsampled fetched from the
+hub. Only the jobs the sample rate picked were affected, so at a rate below
+1 it would look like chance.
+
+**Seen.** `TestATracedJobForAnotherEnvironmentFetchesFromTheHubsTree`, real
+binaries: a hub serving `base` and `dev`, and two nodes whose own
+environment is `base`: `traced1`, with `tracing: otlp` and
+`tracing_sample_rate: 1`, exporting to a collector the test runs, and
+`plain1`, with tracing off. Each node also has its own `dev` roots holding a
+decoy state and payload that say `from-node-local`, so losing the hub's
+tree shows as a wrong file rather than a failure, which is the shape the
+issue suspected. `halite-hub run <node> state.apply app --env dev`, whose
+state manages a file from `salt://payload.txt`, on main's code:
+
+```
+plain1:  from-hub-dev      (exit 0)
+traced1: from-node-local   (exit 0, the job reported success)
+```
+
+**The change.** `executeJob` wraps the tree after `adoptJobEnvironment`,
+so the environment is settled on the hub's tree, or on the node's own,
+before anything hides which it is. This also traces a sampled job's
+fetches from the node's own roots for another environment: the old order
+replaced the wrapper with an unwrapped local tree there.
+
+The test asserts that the traced path ran: the collector must receive a
+`file fetch` span for `payload.txt` naming `dev`. Without that, a tracer
+that sampled nothing would make the file assertion pass for the wrong
+reason.
+
+**Broken on purpose**, with the fix otherwise in place:
+
+| Break | Result |
+|---|---|
+| `traceFiles` before `adoptJobEnvironment` again | `traced1` wrote `from-node-local`; the test failed |
+| `traceFiles` never wraps | the file was right and the collector check failed: "the traced path did not run" |
+
+**Not verified.** Run only on the development host's Linux compatibility
+layer, not on a native FreeBSD or Linux machine. Only a node-side sample
+rate of 1 was run. A job sampled because the hub's `traceparent` said so,
+on a node whose own rate would not have picked it, takes the same branch
+by reading (`traceFiles` checks the job span's sampled flag), and was not
+run. A job naming another environment on a node with no `file_roots` for
+it, which would have read the packaged defaults, was not run: the test
+gives each node its own roots so as not to read a real tree.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
