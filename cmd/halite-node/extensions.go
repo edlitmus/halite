@@ -288,8 +288,13 @@ func (n *node) syncExtensions(kinds []string) (any, error) {
 
 // extensionSource is the hub's file server, which is the only place
 // SPEC 24.4 delivers bundles from.
+//
+// Asked through hubTreeOf, not of n.files's type: a job the tracer
+// samples has n.files wrapped in tracedFiles for its length, and a
+// traced saltutil.sync_* was refused as if the node had no hub, while
+// the same job unsampled synced. Issue 803, DIVERGENCE 5.721.1.
 func (n *node) extensionSource() (extension.Source, error) {
-	remote, ok := n.files.(*fileserver.Remote)
+	remote, ok := hubTreeOf(n.files)
 	if !ok {
 		return nil, errNoExtensionSource
 	}
