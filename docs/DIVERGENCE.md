@@ -50692,6 +50692,66 @@ subsection k, still moves with the branch's section. The text cannot say which
 was meant. A subsection that is already apart from its parent, as case (a)
 left one, is not found and moved back; the ordering audit still reports it.
 
+### 5.721 `renumber` pasted a moved section with no blank line before it (2026-11-23)
+
+Issue 844, `tools/ledger`. When `renumber` moved a section to the end of its
+chapter, it put the heading directly after the last line of the chapter, with
+no blank line. It also put two blank lines after the block, on top of the gap
+that was already there, so the next `## ` heading had three blank lines before
+it. This was put right by hand on three branches on 2026-11-23, and it had
+happened before that without anybody noticing: of the twenty headings on main
+that had no blank line before them, sixteen were sections from 5.681 on, which
+is the tool's shape.
+
+**What the file uses.** Measured on main, outside fenced blocks: 696 `###`
+headings have one blank line before them, about fifty have two or more, and 17
+have none. Seven of the eight `## ` chapter headings have one blank line
+before them. The one with two is `## 6.`, which is where `renumber` inserts
+for chapter 5. So the convention is one blank line before every heading. No
+audit held any of this, and the 5.720 tests could not see it either: they
+compare the list of headings and skip every blank line.
+
+**Demonstrated before it was fixed.** `tools/ledger/separators_test.go` runs
+the built tool in a throwaway repository, as the 5.720 tests do, and compares
+the whole ledger after `renumber` byte for byte against the base with the
+renumbered block written in by hand. So it holds the separators around the
+moved block and also that nothing else in the file changed. On main's code:
+
+| Case | Result on main's code |
+|---|---|
+| a colliding section, no subsections | no blank line before `### 9.3`, three before `## 10.` |
+| the same, with a `###` and a `####` subsection | the same |
+| a colliding section in the last chapter | passed, by accident: the block landed after the file's final empty line |
+
+**The change.** `chapterEnd` now gives the index just past the chapter's last
+non-blank line, for the last chapter as well as for the others. The block goes
+there with one blank line in front of it. The blank lines that were already
+there stay after the block, because they are the chapter's gap before the next
+`## ` (or the end of the file).
+
+**Broken on purpose.** Without the blank line in front, all three cases fail.
+Without the back-up over blank lines at the end of the file, the last-chapter
+case fails.
+
+**An audit of the file, too.** `TestLedgerHeadingsHaveABlankLineBeforeThem`
+in `internal/specaudit` holds that every heading outside a fence has a blank
+line before it, so a hand edit cannot drift either. It failed on the twenty
+headings before they were given one; that edit adds twenty blank lines and
+changes nothing else. Deleting the blank line before 4.12 fails it again, and
+an unclosed fence fails it on the fence count rather than skipping the rest of
+the file. It holds "at least one", not "exactly one". Making it exactly one
+means deleting a blank line at about fifty older headings, one of them the gap
+before `## 6.`, where every branch in flight appends, so each of those branches
+would get a merge conflict for a blank line. A missing blank line joins two
+entries; an extra one does not.
+
+**Not verified.** `renumber` was not run against a real branch: every run was
+in a throwaway repository. A ledger whose chapter gap is already wrong keeps
+it, because the tool now leaves that gap alone; `## 6.` still has two blank
+lines before it. A section lifted out of the middle of a chapter was already
+handled correctly and is held only by the "nothing else changed" half of these
+tests.
+
 
 ## 6. Everything else not started
 
