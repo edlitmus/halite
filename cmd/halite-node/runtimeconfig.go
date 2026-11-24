@@ -115,7 +115,7 @@ func (n *node) loadRuntimeConfig(kind string) (*value.Map, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, runtimeFile))
+	raw, err := atomicfile.Read(filepath.Join(dir, runtimeFile))
 	if os.IsNotExist(err) {
 		return value.NewMap(0), nil
 	}

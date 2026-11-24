@@ -3,6 +3,7 @@ package atomicfile
 import (
 	"bytes"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -68,6 +69,40 @@ func TestAReplaceAndAReadDoNotBlockEachOther(t *testing.T) {
 	}
 	for err := range readErr {
 		t.Errorf("a read failed while the file was being replaced: %v", err)
+	}
+}
+
+// Open is Read for a caller that streams. Holding it open must not stop a
+// replace, and the holder goes on reading the file it opened. On unix that
+// is what a descriptor does anyway; on Windows os.Open does not share
+// delete, and a replace under it is refused until the retry window closes,
+// so this fails there if Open is ever os.Open. Issue 838.
+func TestAReplaceLandsWhileAStreamingReaderHoldsTheFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	if err := Write(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	held, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+
+	if err := Write(path, []byte("new"), 0o600); err != nil {
+		t.Fatalf("a replace failed while a streaming reader held the file: %v", err)
+	}
+	body, err := io.ReadAll(held)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "old" {
+		t.Errorf("the held file reads %q after the replace, want the one it opened", body)
+	}
+	if now, err := Read(path); err != nil || string(now) != "new" {
+		t.Errorf("after the replace the path reads %q, %v", now, err)
+	}
+	if _, err := Open(filepath.Join(t.TempDir(), "absent")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("opening a missing file gave %v, want a not-exist error", err)
 	}
 }
 

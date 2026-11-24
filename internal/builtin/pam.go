@@ -327,7 +327,7 @@ func pamServices() ([]string, error) {
 
 // pamReadFile parses one file.
 func pamReadFile(path string) ([]pamRule, error) {
-	data, err := os.ReadFile(path)
+	data, err := atomicfile.Read(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("this node has no PAM configuration at %s", path)
@@ -878,7 +878,7 @@ func pamCheckEdit(service, chain, module string) error {
 // pamLoadForEdit reads the file and parses it, returning both, because
 // an edit rewrites the text and reasons about the rules.
 func pamLoadForEdit(path string) (string, []pamRule, error) {
-	data, err := os.ReadFile(path)
+	data, err := atomicfile.Read(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", nil, fmt.Errorf("this node has no PAM configuration at %s; "+

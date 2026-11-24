@@ -161,7 +161,7 @@ func (f Files) WriteKey(name string, key crypto.Signer) error {
 
 // ReadKey loads a private key.
 func (f Files) ReadKey(name string) (crypto.Signer, error) {
-	raw, err := os.ReadFile(f.Path(name))
+	raw, err := atomicfile.Read(f.Path(name))
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", f.Path(name), err)
 	}
@@ -193,7 +193,7 @@ func (f Files) WriteCertPEM(name string, pemBytes []byte) error {
 
 // ReadCert loads a certificate.
 func (f Files) ReadCert(name string) (*x509.Certificate, error) {
-	raw, err := os.ReadFile(f.Path(name))
+	raw, err := atomicfile.Read(f.Path(name))
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", f.Path(name), err)
 	}
@@ -203,11 +203,11 @@ func (f Files) ReadCert(name string) (*x509.Certificate, error) {
 // KeyPair loads a certificate and its key as a TLS pair, checking that
 // they belong together rather than failing later in a handshake.
 func (f Files) KeyPair(certName, keyName string) (tls.Certificate, error) {
-	certPEM, err := os.ReadFile(f.Path(certName))
+	certPEM, err := atomicfile.Read(f.Path(certName))
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("reading %s: %w", f.Path(certName), err)
 	}
-	keyPEM, err := os.ReadFile(f.Path(keyName))
+	keyPEM, err := atomicfile.Read(f.Path(keyName))
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("reading %s: %w", f.Path(keyName), err)
 	}

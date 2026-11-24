@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
@@ -104,7 +105,7 @@ func fileSerialize(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("%s could not be written as %s: %v", path, format, err)), nil
 	}
 
-	have, readErr := os.ReadFile(path)
+	have, readErr := atomicfile.Read(path)
 	if readErr == nil && string(have) == string(want) {
 		return states.True(fmt.Sprintf("%s already holds this data.", path)), nil
 	}
@@ -218,7 +219,7 @@ func encodeDataset(dataset any, format string) ([]byte, error) {
 // overwrite: merging asks to keep what is there, and the one case where
 // that cannot be honoured is the one where discarding it would be worst.
 func mergeWithFile(path, format string, dataset any) (any, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if err != nil {
 		return nil, fmt.Errorf("%s could not be read to merge into: %w", path, err)
 	}
