@@ -50673,7 +50673,7 @@ subsection k, still moves with the branch's section. The text cannot say which
 was meant. A subsection that is already apart from its parent, as case (a)
 left one, is not found and moved back; the ordering audit still reports it.
 
-### 5.720 Sixty-eight reads of files that atomicfile replaces did not share delete (2026-11-23)
+### 5.721 Sixty-eight reads of files that atomicfile replaces did not share delete (2026-11-23)
 
 Issue 838, Windows. 5.718 left one class of reader in a replace's way: one
 that opens without `FILE_SHARE_DELETE`, which is every `os.ReadFile` and

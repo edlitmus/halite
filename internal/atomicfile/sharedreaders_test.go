@@ -95,7 +95,7 @@ import (
 // The positive half is the log line, and the floor on it: the reads that
 // already go through `Read` are found by the same matching, so an audit that
 // had stopped matching would fail rather than pass quietly. Issue 838,
-// DIVERGENCE 5.720.
+// DIVERGENCE 5.721.
 
 // sharedReadExemptions are plain reads of a replaced file that stay, with the
 // reason for each. Keyed by file and function.
