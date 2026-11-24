@@ -51124,6 +51124,124 @@ jobs name no environment, so it does not reach `ForEnv` at all.
 **Not verified.** No agent was run with a Remote that had spare
 capacity, because none can be built through the agent's own
 configuration; the test drives `fileserver` directly.
+### 5.729 A slow Ubuntu mirror took the linux leg, and nothing in the kernelpkg tests could say so (2026-11-24)
+
+**What happened.** The linux fleet leg hit `go test`'s 40-minute alarm four
+times between 00:35 and about 04:30 UTC on 2026-11-24 (issue 852): three
+runs on two branches that do not touch kernelpkg, and `main`'s scheduled run
+at 04:01. The goroutine dumps found the kernelpkg tests waiting on apt, twice
+in the removal test's install of an older kernel and once in the upgrade
+test's cleanup. The issue then read the cause as the runner's kernel flavour,
+because each failing runner had a `-aws` kernel and `main`'s passing run had
+an `-azure` one.
+
+**What it was.** A slow archive mirror. Every linux-leg log since the
+40-minute limit went in (38 runs from 11-20 to 11-24) was read for the
+runner's region, its archive host, apt's own `Fetched ... (rate)` lines from
+the job's setup, and the kernelpkg tests' times:
+
+| | Runs | Setup's fetch rates | Conformance `kernelpkg.latest_installed` | Removal test |
+|---|---|---|---|---|
+| AWS runner, normal | 15 | 375–985 kB/s on the archive, 7.8–11 MB/s on the first fetch | 21–29 s where read | 35–52 s |
+| AWS runner, 00:35–04:30 on 11-24 | 4 | **8.5–107 kB/s**, first fetch 152–830 kB/s | **928–1,483 s** | alarm at 10, 14 and 19 min; one pass in 1,208 s |
+| Azure runner | 19 | mostly 0.2–6 MB/s | | 41–136 s, and two slow passes (770 s, 1,320 s) on westus2, both with slow fetches (80 and 643 kB/s) |
+
+Every AWS runner, in us-east-1 and us-west-2 alike, fetched from
+`us-east-2.ec2.archive.ubuntu.com`. The same `-aws` kernel on the same
+mirror passed in under a minute thirteen times before the window and twice
+after it (14:25 and 15:14). So the flavour was a coincidence of which runners
+GitHub handed out that night, and the slowness was there from the job's
+first `apt-get`, before any test ran.
+
+The sizes, from that mirror's `noble-updates` index: the removal test
+installs `linux-image-7.0.0-1013-aws` (16.7 MB), `linux-modules-...`
+(148.2 MB), `linux-headers-...` (3.9 MB) and `linux-aws-7.0-headers-...`
+(14.9 MB), about 184 MB; the conformance case fetches the newest kernel's
+set, about the same again. At 10–100 kB/s 184 MB is half an hour to five
+hours. The apt the alarm found was downloading, not wedged. Read on
+2026-11-24 from ref-salt1 (us-west-2), which fetched the index from that
+mirror at 2.6 MB/s.
+
+**Where the alarm lands is incidental.** In the run where it found a purge
+(45302982685, attempt 1), the conformance case had taken 928 s and the
+removal test 1,208 s, which is 35.6 of the 40 minutes before anything else;
+the purge was simply what was running at minute 40. The issue's quoted
+stack, through `putBack` and `runEnv`, was the one run of four where that
+happened.
+
+**Fixed here.** Every package command these tests run goes through
+`runBounded` (`internal/builtin/live_kernelpkg_cmd_test.go`):
+
+- Each command has ten minutes (`kernelpkgCommandLimit`). On the limit it
+  is stopped with everything it started, and the test fails with the
+  command line, how long it ran, and the last 40 lines it printed.
+- The command runs in a process group of its own and the whole group is
+  killed, since killing apt alone leaves dpkg and the maintainer scripts
+  holding the output pipe and the dpkg lock. `WaitDelay` covers anything
+  that escapes the group.
+- `apt-get` is given a two-minute dpkg lock timeout and
+  `--force-confdef --force-confold`, which cover what `DEBIAN_FRONTEND`
+  does not.
+- The removal test's install is `--download-only` and then the install,
+  each timed and logged.
+
+`TestKernelpkgLiveCommandsStopAtTheirLimitWithEverythingTheyStarted` runs a
+shell that prints and then starts a child that holds the pipe for five
+minutes, with a one-second limit: it returns in about a second, names the
+command and what it printed, and the child is gone. With the process-group
+kill taken out it returned after 11 s, which is WaitDelay, and the child was
+still alive. Run on macOS (darwin arm64).
+
+**The ten minutes alone would not have held the leg.** The conformance case
+installs through the module (`kernelpkg.latest_installed`, `c.Run` with no
+`Timeout`), which `runBounded` does not cover, and it alone took up to 25
+minutes on that night. So the archive is now measured once, before the
+first kernel is fetched or taken away, and on a slow one every kernel test
+refuses at once:
+
+- `kernelArchiveCheck` has apt itself fetch the running kernel's image
+  (`apt-get download`, into a temporary directory; nothing is installed)
+  and times it. apt does the fetching because the fleet's runners name
+  their mirrors through `mirror+file:` lists, which only apt reads.
+- Under 1 MB/s it refuses, naming the package, the rate, and how long the
+  tests' 370 MB would take at it; a fetch still running at three minutes is
+  refused as such. 1 MB/s sits well clear of both sides of the table: a
+  normal removal test fetched 184 MB and installed it in under 35 s, so
+  faster than 5 MB/s, and the night's one finished test averaged about
+  0.17 MB/s.
+- It runs in `kernelpkgMutateGate` for apt hosts and in the conformance
+  case's Setup, before the kernel is taken away. A fetch that cannot be
+  made (the running image no longer in the archive) is logged and not
+  refused, and the ten-minute limit is still behind it.
+
+**Demonstrated on ref-salt1** (Ubuntu 22.04, arm64, kernel
+`5.15.0-1121-aws-fips`, whose image comes from Pro's authenticated FIPS
+pocket), 2026-11-24, built from this change in a scratch directory under
+`/root` and removed after:
+
+| apt's `Dl-Limit` | `TestLiveKernelpkgArchiveIsMeasuredWithoutInstallingAnything` |
+|---|---|
+| none | passed on two runs: 15.2 MB at 6,042 and 4,740 kB/s, in about three seconds |
+| 100 | refused after 105 s: 145 kB/s, "which at that rate is 42m0s" |
+| 50 | refused at the three-minute limit, with apt's command line |
+
+The limit was set through `APT_CONFIG` pointing at a scratch file, so the
+host's own apt configuration was not touched, and a listing of `/boot` was
+the same before and after. The four `runBounded` tests passed there too,
+the process-group one included. `TestTheKernelArchiveCheckRefusesTheMirrorOfIssue852`
+holds the decision to the numbers above; with the rate comparison turned
+off it fails on the three slow cases, and `TestKernelpkgLiveCommandsMarkAStopAsOne`
+fails when the stop is not wrapped as `errStoppedAtLimit`.
+
+**Not covered.** No fleet run has met a slow mirror with this change in
+place, and the measurement has not run on a GitHub runner, whose
+`mirror+file:` list is the reason apt does the fetching: the first linux
+leg after this change is the check that it measures there. Nor on Debian,
+where the running image may have left the archive and the check would
+then only log. The conformance case and the upgrade test still install
+through the module with no time limit; on an archive that passes the check
+and then slows, they are not bounded. The rpm legs' commands go through
+the same runner and have not been run since.
 
 ### 5.729 A revoked node started again retried the hub's refusal for ever (2026-11-23)
 
@@ -51251,8 +51369,6 @@ would send the alert, and was not measured. Windows was not run (the
 binary test skips there). The `403` that a revoked node gets on a reused
 connection is still retried, as before; no run showed a node reaching it
 after the revoke message failed to arrive.
-
-
 
 
 ## 6. Everything else not started
