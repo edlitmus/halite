@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
@@ -219,7 +220,7 @@ func tlsCAFilesExist(dir string) bool {
 var tlsNow = time.Now
 
 func tlsReadIndex(path string) ([]*value.Map, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -363,7 +364,7 @@ func tlsGetCAFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 	dir := tlsCADir(certBasePath, caName)
 	certPath := tlsCACertPath(dir)
-	pemBytes, err := os.ReadFile(certPath)
+	pemBytes, err := atomicfile.Read(certPath)
 	if err != nil {
 		return nil, fmt.Errorf("the %s CA does not exist at %s: %w", caName, dir, err)
 	}
@@ -406,11 +407,11 @@ func tlsCreateCASignedCertFn(c *exec.Context, args *value.Map) (any, error) {
 		return tlsMutateResult(c, true, fmt.Sprintf("A certificate for %s would be issued by %s.", cn, caName), nil, nil), nil
 	}
 
-	caCertPEM, err := os.ReadFile(tlsCACertPath(dir))
+	caCertPEM, err := atomicfile.Read(tlsCACertPath(dir))
 	if err != nil {
 		return nil, fmt.Errorf("%s could not be read: %w", tlsCACertPath(dir), err)
 	}
-	caKeyPEM, err := os.ReadFile(tlsCAKeyPath(dir))
+	caKeyPEM, err := atomicfile.Read(tlsCAKeyPath(dir))
 	if err != nil {
 		return nil, fmt.Errorf("%s could not be read: %w", tlsCAKeyPath(dir), err)
 	}
@@ -512,7 +513,7 @@ func tlsRevokeCertFn(c *exec.Context, args *value.Map) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the CA certificate: %w", err)
 	}
-	caKeyPEM, err := os.ReadFile(tlsCAKeyPath(dir))
+	caKeyPEM, err := atomicfile.Read(tlsCAKeyPath(dir))
 	if err != nil {
 		return nil, fmt.Errorf("%s could not be read: %w", tlsCAKeyPath(dir), err)
 	}

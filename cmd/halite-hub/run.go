@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/ext"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/bridge"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
@@ -439,11 +440,11 @@ func decodeReturn(r *job.Return) any {
 
 // loadPair reads an operator's certificate and key.
 func loadPair(certPath, keyPath string) (tls.Certificate, error) {
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := atomicfile.Read(certPath)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("reading %s: %w", certPath, err)
 	}
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := atomicfile.Read(keyPath)
 	if err != nil {
 		return tls.Certificate{}, fmt.Errorf("reading %s: %w", keyPath, err)
 	}

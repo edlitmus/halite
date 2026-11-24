@@ -342,7 +342,7 @@ func (s *Store) get(nodeID string) (*Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("%s: %w", nodeID, ErrNotFound)
 	}

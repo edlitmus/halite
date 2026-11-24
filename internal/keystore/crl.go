@@ -4,13 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/pki"
 )
 
@@ -130,7 +130,7 @@ func (a *Authority) CRL(lifetime time.Duration) ([]byte, int, int64, error) {
 
 func (s *Store) crlNumber() (int64, error) {
 	path := filepath.Join(s.dir, crlNumberName)
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.Read(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, nil
 	}

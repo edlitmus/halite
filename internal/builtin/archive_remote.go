@@ -255,7 +255,7 @@ func verifySourceHashFile(c *exec.Context, path, expected string) error {
 		return err
 	}
 	if algorithm == "md5" || algorithm == "sha1" {
-		data, err := os.ReadFile(path)
+		data, err := atomicfile.Read(path)
 		if err != nil {
 			return err
 		}
@@ -266,7 +266,7 @@ func verifySourceHashFile(c *exec.Context, path, expected string) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if err != nil {
 		return err
 	}

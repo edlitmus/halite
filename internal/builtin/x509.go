@@ -15,9 +15,9 @@ import (
 	"math/big"
 	"net"
 	"net/url"
-	"os"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/fips"
 	"time"
 
@@ -215,7 +215,7 @@ func pemSource(source string) ([]byte, error) {
 	if source == "" {
 		return nil, fmt.Errorf("no path or PEM text was given")
 	}
-	return os.ReadFile(source)
+	return atomicfile.Read(source)
 }
 
 // loadCertificate reads a certificate from a path or from PEM text.
