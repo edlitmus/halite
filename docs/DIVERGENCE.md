@@ -51243,7 +51243,7 @@ through the module with no time limit; on an archive that passes the check
 and then slows, they are not bounded. The rpm legs' commands go through
 the same runner and have not been run since.
 
-### 5.729 A revoked node started again retried the hub's refusal for ever (2026-11-23)
+### 5.730 A revoked node started again retried the hub's refusal for ever (2026-11-23)
 
 Issue 839, `cmd/halite-node` and `internal/transport`. Found in the lab
 run for issue 812 on Alpine under OpenRC. `keys revoke` on a running node
@@ -51369,6 +51369,7 @@ would send the alert, and was not measured. Windows was not run (the
 binary test skips there). The `403` that a revoked node gets on a reused
 connection is still retried, as before; no run showed a node reaching it
 after the revoke message failed to arrive.
+
 
 
 ## 6. Everything else not started

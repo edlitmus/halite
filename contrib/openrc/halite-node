@@ -83,7 +83,7 @@ error_log="/var/log/halite/node.log"
 # A revoked node is one of those. It exits 1 when the hub tells it, and
 # again at every start after that: the hub refuses its certificate at the
 # TLS handshake, and `connect` exits 1 on that refusal rather than
-# retrying it. Until DIVERGENCE 5.729 it retried for ever, and the cap
+# retrying it. Until DIVERGENCE 5.730 it retried for ever, and the cap
 # never fired (5.719.3). Not run under supervise-daemon since that change:
 # the expected result is the hub_tries: 1 run's, six exits and a stop.
 # The service still starts at boot until you `rc-update del` it.

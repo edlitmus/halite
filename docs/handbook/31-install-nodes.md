@@ -186,7 +186,7 @@ six deaths in a minute. A node whose enrollment was revoked exits `1` at
 every start, because the hub refuses its certificate, so the cap should stop
 it as it stopped a node exiting `1` at every start in the lab: six exits in
 27 seconds. The revoked node itself has not been run under the cap since
-that change (DIVERGENCE 5.729). It still starts at every boot until you
+that change (DIVERGENCE 5.730). It still starts at every boot until you
 remove it with `rc-update del halite-node`.
 The sysvinit script has no supervisor: a node that crashes stays down until
 it is started again. Both log to `/var/log/halite/node.log`, and neither
