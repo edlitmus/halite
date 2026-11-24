@@ -1,14 +1,16 @@
 package builtin
 
 import (
+	"context"
 	"fmt"
 	"os"
-	osexec "os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	hexec "github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
@@ -91,12 +93,18 @@ func kpMust(t *testing.T, c *hexec.Context, fn string, args *value.Map) any {
 	return v
 }
 
+// kpRunOut runs one of the test's own reads -- dpkg-query, apt-cache,
+// `dpkg --compare-versions` -- under kpQuickLimit, and reports whether it
+// exited 0. A read that runs out its time fails the test rather than
+// answering false, because a false here means "not installed" or "not
+// greater" to every caller, and a hang is neither.
 func kpRunOut(t *testing.T, argv ...string) (string, bool) {
 	t.Helper()
-	cmd := osexec.Command(argv[0], argv[1:]...)
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	out, err := cmd.CombinedOutput()
-	return string(out), err == nil
+	out, timedOut, err := runBounded(kpQuickLimit, argv)
+	if timedOut {
+		t.Fatal(err)
+	}
+	return out, err == nil
 }
 
 func kpRun(t *testing.T, argv ...string) string {
@@ -299,14 +307,116 @@ type debianKernelSnapshot struct {
 	auto     map[string]bool
 }
 
+// runEnv runs a command of the put-back's, or one of the rpm test's
+// reads, under kpPutBackLimit.
 func runEnv(argv ...string) (string, error) {
-	cmd := osexec.Command(argv[0], argv[1:]...)
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("%s: %v: %s", strings.Join(argv, " "), err, out)
+	out, _, err := runBounded(kpPutBackLimit, argv)
+	return out, err
+}
+
+// runBounded runs argv under a limit, through the OSRunner the module
+// runs apt with: the child is in its own process group, the whole group
+// is killed when the limit passes, and Stdin is empty, which os/exec
+// opens as /dev/null, so nothing can wait at a prompt for a terminal that
+// is not there. On a timeout the error carries the command and
+// everything it had printed by then, which is the one record of where it
+// stopped.
+//
+// Both of the Debian half's runners were CombinedOutput with no limit
+// until issue 852: on a runner with an -aws kernel the install of the
+// older kernel printed nothing for fourteen minutes and took the leg's
+// forty with it, and because the output was collected rather than
+// streamed, nothing said what apt had been doing. The rpm half of this
+// package learnt the same lesson in 5.319.
+func runBounded(limit time.Duration, argv []string) (out string, timedOut bool, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	res, err := (&hexec.OSRunner{}).Run(ctx, hexec.Command{Argv: argv, Env: kpAptEnv()})
+	out = res.Stdout + res.Stderr
+	if err == nil {
+		return out, false, nil
 	}
-	return string(out), nil
+	if ctx.Err() != nil {
+		return out, true, fmt.Errorf("%s did not finish in %s and was killed with its process group; it had printed:\n"+
+			"--- stdout\n%s\n--- stderr\n%s\n--- end", strings.Join(argv, " "), limit, res.Stdout, res.Stderr)
+	}
+	return out, false, fmt.Errorf("%s: %v: %s", strings.Join(argv, " "), err, out)
+}
+
+// kpAptEnv is the environment of every command the Debian tests run
+// themselves. DEBIAN_FRONTEND is debconf's half of running unattended;
+// apt's half is kpAptOptions.
+func kpAptEnv() []string {
+	return append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+}
+
+// kpAptOptions begins every apt-get the Debian tests run themselves; the
+// module's own apt runs with the host's configuration, as it does on a
+// node. The lock timeout turns a dpkg lock held by something else on the
+// runner -- unattended-upgrades, the image's apt-daily -- into a minute's
+// wait and then a failure that names the lock.
+func kpAptOptions(sub string) []string {
+	return []string{"apt-get", sub, "-y", "-q", "-o", "DPkg::Lock::Timeout=60"}
+}
+
+// kpAptInstall installs the test's packages in two bounded steps, the
+// download and then the install, so that a slow mirror and a slow
+// post-install hook (initramfs, the boot loader, dkms) are told apart by
+// which step names itself. What apt means to fetch, with and without
+// Recommends, is logged first, because the size of the download is the
+// first question about a slow one.
+func kpAptInstall(t *testing.T, pkgs []string) {
+	t.Helper()
+	for _, recommends := range []bool{true, false} {
+		argv := append(kpAptOptions("install"), "--print-uris")
+		if !recommends {
+			argv = append(argv, "--no-install-recommends")
+		}
+		out, _, err := runBounded(kpQuickLimit, append(argv, pkgs...))
+		files, bytes := aptURIsSize(out)
+		t.Logf("apt would fetch %d files, %d bytes (Recommends %v) for %v; err=%v", files, bytes, recommends, pkgs, err)
+	}
+	if err := kpStep(t, fmt.Sprintf("apt-get download of %v", pkgs), kpDownloadLimit, func(ctx context.Context) error {
+		return kpApt(ctx, append(kpAptOptions("install"), append([]string{"--download-only"}, pkgs...)...))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := kpStep(t, fmt.Sprintf("apt-get install of %v from the cache", pkgs), kpInstallLimit, func(ctx context.Context) error {
+		return kpApt(ctx, append(kpAptOptions("install"), pkgs...))
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// kpApt is kpDNF's twin: one of the test's own apt-gets, killed with its
+// process group when ctx ends, its output in the error when it fails.
+func kpApt(ctx context.Context, argv []string) error {
+	res, err := (&hexec.OSRunner{}).Run(ctx, hexec.Command{Argv: argv, Env: kpAptEnv()})
+	if err != nil {
+		return fmt.Errorf("%w\n--- stdout\n%s\n--- stderr\n%s\n--- end", err, res.Stdout, res.Stderr)
+	}
+	return nil
+}
+
+// aptURIsSize counts the files `apt-get --print-uris` lists and adds up
+// their sizes, the third field of each 'URI' filename size hash line.
+func aptURIsSize(out string) (files int, bytes int64) {
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, "'") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		n, err := strconv.ParseInt(fields[2], 10, 64)
+		if err != nil {
+			continue
+		}
+		files++
+		bytes += n
+	}
+	return files, bytes
 }
 
 func readDebianKernelSnapshot() (debianKernelSnapshot, error) {
@@ -384,13 +494,13 @@ func (s debianKernelSnapshot) putBack() (string, error) {
 	sort.Strings(extra)
 	var did []string
 	if len(extra) > 0 {
-		if _, err := runEnv(append([]string{"apt-get", "purge", "-y", "-q"}, extra...)...); err != nil {
+		if _, err := runEnv(append(kpAptOptions("purge"), extra...)...); err != nil {
 			return "", err
 		}
 		did = append(did, fmt.Sprintf("purged %v", extra))
 	}
 	if len(missing) > 0 {
-		if _, err := runEnv(append([]string{"apt-get", "install", "-y", "-q", "--allow-downgrades"}, missing...)...); err != nil {
+		if _, err := runEnv(append(kpAptOptions("install"), append([]string{"--allow-downgrades"}, missing...)...)...); err != nil {
 			return "", err
 		}
 		did = append(did, fmt.Sprintf("reinstalled %v", missing))
@@ -519,7 +629,8 @@ func TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest(t *testing.T) {
 	}
 	t.Logf("installing %v for the test", pkgs)
 	install := func() {
-		kpRun(t, append([]string{"apt-get", "install", "-y", "-q"}, pkgs...)...)
+		t.Helper()
+		kpAptInstall(t, pkgs)
 		if _, err := os.Stat("/boot/vmlinuz-" + old); err != nil {
 			t.Fatalf("the setup installed %s and /boot has no kernel for it: %v", old, err)
 		}
@@ -580,7 +691,7 @@ func TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest(t *testing.T) {
 		t.Fatal("remove in test mode removed the kernel")
 	}
 
-	got = kpMust(t, c, "remove", value.MapOf("release", old))
+	got = kpBoundedCall(t, "kernelpkg.remove", kpInstallLimit, "remove", value.MapOf("release", old), false)
 	t.Logf("remove: %v", removedOf(got))
 	gone()
 	if dpkgVersion(t, meta) == "" && snap.versions[meta] != "" {
@@ -589,7 +700,7 @@ func TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest(t *testing.T) {
 
 	// cleanup with the newest kept removes the older kernel and nothing else.
 	install()
-	got = kpMust(t, c, "cleanup", nil)
+	got = kpBoundedCall(t, "kernelpkg.cleanup", kpInstallLimit, "cleanup", nil, false)
 	removed := anyStrings(removedOf(got))
 	t.Logf("cleanup: %v", removed)
 	if !onlyKernel(removed, old) {
@@ -678,7 +789,7 @@ func takeAwayDebianKernel(release string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := runEnv(append([]string{"apt-get", "purge", "-y", "-q"}, targets...)...); err != nil {
+	if _, err := runEnv(append(kpAptOptions("purge"), targets...)...); err != nil {
 		return err
 	}
 	if _, err := os.Stat("/boot/vmlinuz-" + release); err == nil {
