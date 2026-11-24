@@ -172,6 +172,8 @@ on:
       - "contrib/docker/fleet/**"
       - "contrib/docker/fleet-rpm/**"
       - ".github/workflows/fleet.yml"
+      # What the live legs read their skip reasons with (issue 857).
+      - ".github/skip-reasons.awk"
 
 permissions:
   contents: read
@@ -608,15 +610,15 @@ jobs:
       # of saying so: it printed `go test -v` straight to the log and
       # nothing read it, which is how two snap tests sat unrun on a green
       # leg. The freebsd leg has had this step for a while; the leg that
-      # selects the most tests did not. DIVERGENCE 5.148.
+      # selects the most tests did not. DIVERGENCE 5.151.
       - name: what ran, and what skipped and why
         if: always()
         run: |
           test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
           printf 'tests that ran:     %s\n' "$(grep -c '^--- PASS' /tmp/live.txt || true)"
           printf 'tests that skipped: %s\n' "$(grep -c '^--- SKIP' /tmp/live.txt || true)"
-          echo "--- skipped, with the reason each gave:"
-          awk '/^--- SKIP/ { print $3": "prev } { prev=$0 }' /tmp/live.txt || true
+          echo "--- skipped, with what each logged (.github/skip-reasons.awk, issue 857):"
+          awk -f .github/skip-reasons.awk /tmp/live.txt || true
 
       # The step above makes a skip visible; this one makes the snap skip
       # *fail*. The install step exists only so these two can run, and if
@@ -630,7 +632,7 @@ jobs:
         run: |
           test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
           if grep -q '^--- SKIP: TestLiveSnap' /tmp/live.txt; then
-            grep -B 1 '^--- SKIP: TestLiveSnap' /tmp/live.txt || true
+            awk -f .github/skip-reasons.awk /tmp/live.txt | grep '^TestLiveSnap' || true
             echo '::error::a TestLiveSnap test skipped, so the snap table had nothing in it and the module has not been read. The install step above is what should have prevented that; its output says what happened.'
             exit 1
           fi
@@ -892,11 +894,11 @@ jobs:
           test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
           printf 'tests that ran:     %s\n' "$(grep -c '^--- PASS' /tmp/live.txt || true)"
           printf 'tests that skipped: %s\n' "$(grep -c '^--- SKIP' /tmp/live.txt || true)"
-          echo "--- skipped, with the reason each gave:"
-          # `go test -v` prints the reason on the line *before* the
-          # SKIP, so this keeps the previous line rather than reading
-          # the next one, which is the following test's RUN.
-          awk '/^--- SKIP/ { print $3": "prev } { prev=$0 }' /tmp/live.txt || true
+          echo "--- skipped, with what each logged (.github/skip-reasons.awk, issue 857):"
+          # Not the line before each `--- SKIP`, which is the reason only
+          # when nothing logs after it: a Cleanup does, and a skip message
+          # of several lines ends on its last one.
+          awk -f .github/skip-reasons.awk /tmp/live.txt || true
 
       - name: the machine was put back
         shell: cpa.sh {0}

@@ -1,0 +1,1496 @@
+=== RUN   TestLiveACLStatesOnPOSIXOneACLs
+=== RUN   TestLiveACLStatesOnPOSIXOneACLs/tmp
+    live_acl_state_test.go:114: /tmp/TestLiveACLStatesOnPOSIXOneACLstmp359402706/001:
+        /dev/mapper/cow-root on / type ext4 (rw,relatime,discard,journal_async_commit,nobarrier,errors=remount-ro,commit=30,data=writeback)
+=== RUN   TestLiveACLStatesOnPOSIXOneACLs/var-tmp
+    live_acl_state_test.go:114: /var/tmp/halite-acl-490398578:
+        /dev/mapper/cow-root on / type ext4 (rw,relatime,discard,journal_async_commit,nobarrier,errors=remount-ro,commit=30,data=writeback)
+--- PASS: TestLiveACLStatesOnPOSIXOneACLs (0.35s)
+    --- PASS: TestLiveACLStatesOnPOSIXOneACLs/tmp (0.17s)
+    --- PASS: TestLiveACLStatesOnPOSIXOneACLs/var-tmp (0.19s)
+=== RUN   TestLiveACLStatesOnNFSv4ACLs
+    live_acl_state_test.go:253: Linux's getfacl speaks POSIX.1e only; this is linux
+--- SKIP: TestLiveACLStatesOnNFSv4ACLs (0.00s)
+=== RUN   TestLiveACLWipeLeavesATrivialPOSIXOneACL
+--- PASS: TestLiveACLWipeLeavesATrivialPOSIXOneACL (0.01s)
+=== RUN   TestLiveACLRoundTripsAnNFSv4EntryOnARealFile
+    live_acl_test.go:115: this module speaks the FreeBSD getfacl/setfacl grammar; this is linux
+--- SKIP: TestLiveACLRoundTripsAnNFSv4EntryOnARealFile (0.00s)
+=== RUN   TestLiveACLReadsAPOSIXOneACLOnARealUFSFilesystem
+    live_acl_test.go:254: this leg makes a UFS filesystem with a POSIX.1e ACL; this is linux
+--- SKIP: TestLiveACLReadsAPOSIXOneACLOnARealUFSFilesystem (0.00s)
+=== RUN   TestLiveAppArmorReadsWhatSecurityfsPrints
+    live_apparmor_test.go:234: 133 profiles loaded; modes &{[{complain 4 { 0 0} { 0 0}} {kill 0 { 0 0} { 0 0}} {unconfined 91 { 0 0} { 0 0}} {enforce 38 { 0 0} { 0 0}}] map[scomplain:0 senforce:3 skill:1 sunconfined:2] <unknown>}
+--- PASS: TestLiveAppArmorReadsWhatSecurityfsPrints (0.45s)
+=== RUN   TestLiveAppArmorMovesAProfileThroughEveryMode
+--- PASS: TestLiveAppArmorMovesAProfileThroughEveryMode (0.83s)
+=== RUN   TestLiveAppArmorStateConvergesAndPredicts
+--- PASS: TestLiveAppArmorStateConvergesAndPredicts (0.42s)
+=== RUN   TestLiveAppArmorRefusesAProfileThatIsNotThere
+--- PASS: TestLiveAppArmorRefusesAProfileThatIsNotThere (0.82s)
+=== RUN   TestLiveAppArmorStatusSeesATreeTheToolsCannotRead
+    live_apparmor_test.go:504: with the conflict in place: the aa-* tools fail before they look up any profile, which is what they do when they cannot parse this node's profile tree, so no mode can be changed on it by any means: ERROR: Profile for /halite/live/dup/target exists in /etc/apparmor.d/halite-live-dup-a and {'f': '/etc/apparmor.d/halite-live-dup-b', 'p': 'halite-live-dup-b', 're': AARE('/halite/live/dup/target')}
+--- PASS: TestLiveAppArmorStatusSeesATreeTheToolsCannotRead (0.80s)
+=== RUN   TestLiveCheckCmdRunsAsAnotherAccount
+--- PASS: TestLiveCheckCmdRunsAsAnotherAccount (0.00s)
+=== RUN   TestLiveScriptRunsAsAnotherAccount
+--- PASS: TestLiveScriptRunsAsAnotherAccount (0.00s)
+=== RUN   TestLiveConformanceNetfilter
+    live_conformance_netfilter_test.go:378: inside the namespace:
+        === RUN   TestLiveConformanceNetfilter
+        === RUN   TestLiveConformanceNetfilter/iptables.chain_present
+        === RUN   TestLiveConformanceNetfilter/iptables.chain_absent
+        === RUN   TestLiveConformanceNetfilter/iptables.append
+        === RUN   TestLiveConformanceNetfilter/iptables.insert
+        === RUN   TestLiveConformanceNetfilter/iptables.delete
+        === RUN   TestLiveConformanceNetfilter/iptables.set_policy
+        === RUN   TestLiveConformanceNetfilter/iptables.flush
+        === RUN   TestLiveConformanceNetfilter/nftables.table_present
+        === RUN   TestLiveConformanceNetfilter/nftables.table_absent
+        === RUN   TestLiveConformanceNetfilter/nftables.chain_present
+        === RUN   TestLiveConformanceNetfilter/nftables.chain_absent
+        === RUN   TestLiveConformanceNetfilter/nftables.append
+        === RUN   TestLiveConformanceNetfilter/nftables.insert
+        === RUN   TestLiveConformanceNetfilter/nftables.delete
+        === RUN   TestLiveConformanceNetfilter/nftables.set_policy
+        === RUN   TestLiveConformanceNetfilter/nftables.flush
+        === NAME  TestLiveConformanceNetfilter
+            live_conformance_netfilter_test.go:421: 16 packet-filter conformance cases ran inside the namespace
+        --- PASS: TestLiveConformanceNetfilter (0.73s)
+            --- PASS: TestLiveConformanceNetfilter/iptables.chain_present (0.02s)
+            --- PASS: TestLiveConformanceNetfilter/iptables.chain_absent (0.03s)
+            --- PASS: TestLiveConformanceNetfilter/iptables.append (0.03s)
+            --- PASS: TestLiveConformanceNetfilter/iptables.insert (0.03s)
+            --- PASS: TestLiveConformanceNetfilter/iptables.delete (0.04s)
+            --- PASS: TestLiveConformanceNetfilter/iptables.set_policy (0.04s)
+            --- PASS: TestLiveConformanceNetfilter/iptables.flush (0.04s)
+            --- PASS: TestLiveConformanceNetfilter/nftables.table_present (0.07s)
+            --- PASS: TestLiveConformanceNetfilter/nftables.table_absent (0.05s)
+            --- PASS: TestLiveConformanceNetfilter/nftables.chain_present (0.04s)
+            --- PASS: TestLiveConformanceNetfilter/nftables.chain_absent (0.05s)
+            --- PASS: TestLiveConformanceNetfilter/nftables.append (0.04s)
+            --- PASS: TestLiveConformanceNetfilter/nftables.insert (0.04s)
+            --- PASS: TestLiveConformanceNetfilter/nftables.delete (0.06s)
+            --- PASS: TestLiveConformanceNetfilter/nftables.set_policy (0.05s)
+            --- PASS: TestLiveConformanceNetfilter/nftables.flush (0.06s)
+        PASS
+--- PASS: TestLiveConformanceNetfilter (0.73s)
+=== RUN   TestLiveConformanceNamespaceIsolated
+    live_conformance_netfilter_test.go:432: this assertion is made by the namespaced child of TestLiveConformanceNetfilter
+--- SKIP: TestLiveConformanceNamespaceIsolated (0.00s)
+=== RUN   TestLiveConformanceOnThisMachine
+=== RUN   TestLiveConformanceOnThisMachine/group.present
+=== RUN   TestLiveConformanceOnThisMachine/group.absent
+=== RUN   TestLiveConformanceOnThisMachine/user.present
+=== RUN   TestLiveConformanceOnThisMachine/user.absent
+=== RUN   TestLiveConformanceOnThisMachine/host.present
+=== RUN   TestLiveConformanceOnThisMachine/host.absent
+=== RUN   TestLiveConformanceOnThisMachine/cron.present
+=== RUN   TestLiveConformanceOnThisMachine/cron.absent
+=== RUN   TestLiveConformanceOnThisMachine/at.present
+    live_conformance_test.go:272: at is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/at.absent
+    live_conformance_test.go:272: at is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/pkg.installed
+=== RUN   TestLiveConformanceOnThisMachine/pkg.removed
+=== RUN   TestLiveConformanceOnThisMachine/kmod.present
+=== RUN   TestLiveConformanceOnThisMachine/kmod.absent
+=== RUN   TestLiveConformanceOnThisMachine/sysctl.present
+=== RUN   TestLiveConformanceOnThisMachine/service.running
+=== RUN   TestLiveConformanceOnThisMachine/service.dead
+=== RUN   TestLiveConformanceOnThisMachine/service.enabled
+=== RUN   TestLiveConformanceOnThisMachine/service.disabled
+=== RUN   TestLiveConformanceOnThisMachine/sysrc.present
+    live_conformance_test.go:272: this case is for freebsd and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/sysrc.managed
+    live_conformance_test.go:272: this case is for freebsd and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/sysrc.absent
+    live_conformance_test.go:272: this case is for freebsd and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/lvm.pv_present
+=== RUN   TestLiveConformanceOnThisMachine/lvm.pv_absent
+=== RUN   TestLiveConformanceOnThisMachine/lvm.vg_present
+=== RUN   TestLiveConformanceOnThisMachine/lvm.vg_absent
+=== RUN   TestLiveConformanceOnThisMachine/lvm.lv_present
+=== RUN   TestLiveConformanceOnThisMachine/lvm.lv_absent
+=== RUN   TestLiveConformanceOnThisMachine/zpool.present
+    live_conformance_test.go:272: zpool is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/zpool.absent
+    live_conformance_test.go:272: zpool is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/zfs.filesystem_present
+    live_conformance_test.go:272: zpool is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/zfs.absent
+    live_conformance_test.go:272: zpool is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/mount.mounted
+=== RUN   TestLiveConformanceOnThisMachine/mount.unmounted
+=== RUN   TestLiveConformanceOnThisMachine/win_task.present
+    live_conformance_test.go:272: this case is for windows and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/win_task.absent
+    live_conformance_test.go:272: this case is for windows and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/win_service.start_type
+    live_conformance_test.go:272: this case is for windows and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/mac_defaults.write
+    live_conformance_test.go:272: this case is for darwin and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/mac_defaults.absent
+    live_conformance_test.go:272: this case is for darwin and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/gem.installed
+=== RUN   TestLiveConformanceOnThisMachine/gem.removed
+=== RUN   TestLiveConformanceOnThisMachine/npm.installed
+=== RUN   TestLiveConformanceOnThisMachine/npm.removed
+=== RUN   TestLiveConformanceOnThisMachine/pip.installed
+=== RUN   TestLiveConformanceOnThisMachine/pip.removed
+=== RUN   TestLiveConformanceOnThisMachine/firewall.allowed
+=== RUN   TestLiveConformanceOnThisMachine/firewall.denied
+=== RUN   TestLiveConformanceOnThisMachine/firewall.absent
+=== RUN   TestLiveConformanceOnThisMachine/firewall.enabled
+=== RUN   TestLiveConformanceOnThisMachine/firewalld.present
+    live_conformance_test.go:272: firewall-cmd is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/locale.system
+    live_conformance_test.go:272: this node cannot load en_GB.UTF-8, the locale the case sets
+=== RUN   TestLiveConformanceOnThisMachine/locale.present
+    live_conformance_test.go:272: not an rpm-langpack node; on Debian with locales-all every SUPPORTED locale is already loadable, so locale.present has nothing to generate
+=== RUN   TestLiveConformanceOnThisMachine/logrotate.set_(global)
+=== RUN   TestLiveConformanceOnThisMachine/logrotate.set_(stanza,_in_an_included_file)
+=== RUN   TestLiveConformanceOnThisMachine/kernelpkg.latest_installed
+kernelpkg.latest_installed conformance cleanup put the kernel set back (purged [linux-image-7.0.0-1018-aws linux-modules-7.0.0-1018-aws])
+=== RUN   TestLiveConformanceOnThisMachine/kernelpkg.latest_wait
+=== RUN   TestLiveConformanceOnThisMachine/selinux.mode
+    live_conformance_test.go:272: semanage is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/selinux.boolean
+    live_conformance_test.go:272: semanage is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/selinux.fcontext_policy_present
+    live_conformance_test.go:272: semanage is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/selinux.fcontext_policy_absent
+    live_conformance_test.go:272: semanage is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/selinux.fcontext_policy_applied
+    live_conformance_test.go:272: semanage is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/selinux.port_policy_present
+    live_conformance_test.go:272: semanage is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/selinux.port_policy_absent
+    live_conformance_test.go:272: semanage is not on this machine
+=== RUN   TestLiveConformanceOnThisMachine/hostname.system
+=== RUN   TestLiveConformanceOnThisMachine/timezone.system
+=== RUN   TestLiveConformanceOnThisMachine/reboot.scheduled
+=== RUN   TestLiveConformanceOnThisMachine/pkg.latest
+=== RUN   TestLiveConformanceOnThisMachine/pkg.purged
+=== RUN   TestLiveConformanceOnThisMachine/pkgrepo.managed
+=== RUN   TestLiveConformanceOnThisMachine/pkgrepo.absent
+=== RUN   TestLiveConformanceOnThisMachine/debconf.set
+=== RUN   TestLiveConformanceOnThisMachine/snap.installed
+=== RUN   TestLiveConformanceOnThisMachine/snap.removed
+=== RUN   TestLiveConformanceOnThisMachine/apparmor.mode
+=== RUN   TestLiveConformanceOnThisMachine/netplan.managed
+=== RUN   TestLiveConformanceOnThisMachine/jail.running_(starting)
+    live_conformance_test.go:272: this case is for freebsd and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/jail.running_(stopping)
+    live_conformance_test.go:272: this case is for freebsd and this is linux
+=== RUN   TestLiveConformanceOnThisMachine/acl.present
+=== RUN   TestLiveConformanceOnThisMachine/acl.absent
+=== RUN   TestLiveConformanceOnThisMachine/acl.list_present
+=== RUN   TestLiveConformanceOnThisMachine/acl.list_absent
+=== RUN   TestLiveConformanceOnThisMachine/sudo.present
+=== RUN   TestLiveConformanceOnThisMachine/sudo.absent
+=== RUN   TestLiveConformanceOnThisMachine/what_ran_here
+    live_conformance_test.go:292: skipped at.absent: at is not on this machine
+    live_conformance_test.go:292: skipped at.present: at is not on this machine
+    live_conformance_test.go:292: skipped firewalld.present: firewall-cmd is not on this machine
+    live_conformance_test.go:292: skipped jail.running (starting): this case is for freebsd and this is linux
+    live_conformance_test.go:292: skipped jail.running (stopping): this case is for freebsd and this is linux
+    live_conformance_test.go:292: skipped locale.present: not an rpm-langpack node; on Debian with locales-all every SUPPORTED locale is already loadable, so locale.present has nothing to generate
+    live_conformance_test.go:292: skipped locale.system: this node cannot load en_GB.UTF-8, the locale the case sets
+    live_conformance_test.go:292: skipped mac_defaults.absent: this case is for darwin and this is linux
+    live_conformance_test.go:292: skipped mac_defaults.write: this case is for darwin and this is linux
+    live_conformance_test.go:292: skipped selinux.boolean: semanage is not on this machine
+    live_conformance_test.go:292: skipped selinux.fcontext_policy_absent: semanage is not on this machine
+    live_conformance_test.go:292: skipped selinux.fcontext_policy_applied: semanage is not on this machine
+    live_conformance_test.go:292: skipped selinux.fcontext_policy_present: semanage is not on this machine
+    live_conformance_test.go:292: skipped selinux.mode: semanage is not on this machine
+    live_conformance_test.go:292: skipped selinux.port_policy_absent: semanage is not on this machine
+    live_conformance_test.go:292: skipped selinux.port_policy_present: semanage is not on this machine
+    live_conformance_test.go:292: skipped sysrc.absent: this case is for freebsd and this is linux
+    live_conformance_test.go:292: skipped sysrc.managed: this case is for freebsd and this is linux
+    live_conformance_test.go:292: skipped sysrc.present: this case is for freebsd and this is linux
+    live_conformance_test.go:292: skipped win_service.start_type: this case is for windows and this is linux
+    live_conformance_test.go:292: skipped win_task.absent: this case is for windows and this is linux
+    live_conformance_test.go:292: skipped win_task.present: this case is for windows and this is linux
+    live_conformance_test.go:292: skipped zfs.absent: zpool is not on this machine
+    live_conformance_test.go:292: skipped zfs.filesystem_present: zpool is not on this machine
+    live_conformance_test.go:292: skipped zpool.absent: zpool is not on this machine
+    live_conformance_test.go:292: skipped zpool.present: zpool is not on this machine
+    live_conformance_test.go:294: linux/amd64: 57 of 83 live conformance cases ran, 26 skipped
+--- PASS: TestLiveConformanceOnThisMachine (116.35s)
+    --- PASS: TestLiveConformanceOnThisMachine/group.present (0.05s)
+    --- PASS: TestLiveConformanceOnThisMachine/group.absent (0.01s)
+    --- PASS: TestLiveConformanceOnThisMachine/user.present (0.02s)
+    --- PASS: TestLiveConformanceOnThisMachine/user.absent (0.02s)
+    --- PASS: TestLiveConformanceOnThisMachine/host.present (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/host.absent (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/cron.present (0.01s)
+    --- PASS: TestLiveConformanceOnThisMachine/cron.absent (0.01s)
+    --- SKIP: TestLiveConformanceOnThisMachine/at.present (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/at.absent (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/pkg.installed (5.29s)
+    --- PASS: TestLiveConformanceOnThisMachine/pkg.removed (3.55s)
+    --- PASS: TestLiveConformanceOnThisMachine/kmod.present (0.06s)
+    --- PASS: TestLiveConformanceOnThisMachine/kmod.absent (0.05s)
+    --- PASS: TestLiveConformanceOnThisMachine/sysctl.present (0.01s)
+    --- PASS: TestLiveConformanceOnThisMachine/service.running (0.85s)
+    --- PASS: TestLiveConformanceOnThisMachine/service.dead (0.57s)
+    --- PASS: TestLiveConformanceOnThisMachine/service.enabled (0.99s)
+    --- PASS: TestLiveConformanceOnThisMachine/service.disabled (0.84s)
+    --- SKIP: TestLiveConformanceOnThisMachine/sysrc.present (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/sysrc.managed (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/sysrc.absent (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/lvm.pv_present (0.55s)
+    --- PASS: TestLiveConformanceOnThisMachine/lvm.pv_absent (0.51s)
+    --- PASS: TestLiveConformanceOnThisMachine/lvm.vg_present (0.61s)
+    --- PASS: TestLiveConformanceOnThisMachine/lvm.vg_absent (0.67s)
+    --- PASS: TestLiveConformanceOnThisMachine/lvm.lv_present (0.80s)
+    --- PASS: TestLiveConformanceOnThisMachine/lvm.lv_absent (0.78s)
+    --- SKIP: TestLiveConformanceOnThisMachine/zpool.present (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/zpool.absent (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/zfs.filesystem_present (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/zfs.absent (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/mount.mounted (0.01s)
+    --- PASS: TestLiveConformanceOnThisMachine/mount.unmounted (0.01s)
+    --- SKIP: TestLiveConformanceOnThisMachine/win_task.present (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/win_task.absent (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/win_service.start_type (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/mac_defaults.write (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/mac_defaults.absent (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/gem.installed (5.22s)
+    --- PASS: TestLiveConformanceOnThisMachine/gem.removed (1.94s)
+    --- PASS: TestLiveConformanceOnThisMachine/npm.installed (8.06s)
+    --- PASS: TestLiveConformanceOnThisMachine/npm.removed (1.32s)
+    --- PASS: TestLiveConformanceOnThisMachine/pip.installed (7.38s)
+    --- PASS: TestLiveConformanceOnThisMachine/pip.removed (6.32s)
+    --- PASS: TestLiveConformanceOnThisMachine/firewall.allowed (1.23s)
+    --- PASS: TestLiveConformanceOnThisMachine/firewall.denied (1.19s)
+    --- PASS: TestLiveConformanceOnThisMachine/firewall.absent (1.39s)
+    --- PASS: TestLiveConformanceOnThisMachine/firewall.enabled (1.70s)
+    --- SKIP: TestLiveConformanceOnThisMachine/firewalld.present (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/locale.system (0.08s)
+    --- SKIP: TestLiveConformanceOnThisMachine/locale.present (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/logrotate.set_(global) (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/logrotate.set_(stanza,_in_an_included_file) (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/kernelpkg.latest_installed (33.44s)
+    --- PASS: TestLiveConformanceOnThisMachine/kernelpkg.latest_wait (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/selinux.mode (0.01s)
+    --- SKIP: TestLiveConformanceOnThisMachine/selinux.boolean (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/selinux.fcontext_policy_present (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/selinux.fcontext_policy_absent (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/selinux.fcontext_policy_applied (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/selinux.port_policy_present (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/selinux.port_policy_absent (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/hostname.system (0.04s)
+    --- PASS: TestLiveConformanceOnThisMachine/timezone.system (0.04s)
+    --- PASS: TestLiveConformanceOnThisMachine/reboot.scheduled (0.07s)
+    --- PASS: TestLiveConformanceOnThisMachine/pkg.latest (5.21s)
+    --- PASS: TestLiveConformanceOnThisMachine/pkg.purged (3.76s)
+    --- PASS: TestLiveConformanceOnThisMachine/pkgrepo.managed (6.12s)
+    --- PASS: TestLiveConformanceOnThisMachine/pkgrepo.absent (8.89s)
+    --- PASS: TestLiveConformanceOnThisMachine/debconf.set (0.60s)
+    --- PASS: TestLiveConformanceOnThisMachine/snap.installed (2.53s)
+    --- PASS: TestLiveConformanceOnThisMachine/snap.removed (1.94s)
+    --- PASS: TestLiveConformanceOnThisMachine/apparmor.mode (0.43s)
+    --- PASS: TestLiveConformanceOnThisMachine/netplan.managed (1.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/jail.running_(starting) (0.00s)
+    --- SKIP: TestLiveConformanceOnThisMachine/jail.running_(stopping) (0.00s)
+    --- PASS: TestLiveConformanceOnThisMachine/acl.present (0.01s)
+    --- PASS: TestLiveConformanceOnThisMachine/acl.absent (0.01s)
+    --- PASS: TestLiveConformanceOnThisMachine/acl.list_present (0.01s)
+    --- PASS: TestLiveConformanceOnThisMachine/acl.list_absent (0.01s)
+    --- PASS: TestLiveConformanceOnThisMachine/sudo.present (0.04s)
+    --- PASS: TestLiveConformanceOnThisMachine/sudo.absent (0.02s)
+    --- PASS: TestLiveConformanceOnThisMachine/what_ran_here (0.00s)
+=== RUN   TestLiveCronForAnotherAccount
+    live_cron_account_test.go:148: spool file /var/spool/cron/crontabs/halcr5459: uid 1002 gid 997, mode 600
+    live_cron_account_test.go:166: crontab -u halcrx5459 -l on this machine says: crontab:  user `halcrx5459' unknown
+    live_cron_account_test.go:175: cron.present for halcrx5459 failed, as it must: reading the crontab for halcrx5459: crontab:  user `halcrx5459' unknown
+--- PASS: TestLiveCronForAnotherAccount (66.51s)
+=== RUN   TestLivePkgAutoremoveReclaimsAnUnneededPackage
+    live_debian_test.go:679: set HALITE_FLEET_LIVE=1 to drive the real tools; `make fleetcheck` does
+--- SKIP: TestLivePkgAutoremoveReclaimsAnUnneededPackage (0.00s)
+=== RUN   TestLiveGroupGidIsSetAndNeverRenumbered
+    live_group_gid_test.go:59: linux: using gids 42100 and 42101
+=== RUN   TestLiveGroupGidIsSetAndNeverRenumbered/created_with_the_gid_asked_for
+=== RUN   TestLiveGroupGidIsSetAndNeverRenumbered/an_existing_group_is_never_renumbered
+=== RUN   TestLiveGroupGidIsSetAndNeverRenumbered/a_gid_another_group_has_is_not_shared
+    live_group_gid_test.go:110: linux: group.present halgid5459b with halgid5459a's gid 42100: ok=false changed=false "The group halgid5459b could not be created: groupadd -g 42100 halgid5459b exited 4: groupadd: GID '42100' already exists"
+    live_group_gid_test.go:113: linux: afterwards halgid5459b exists=false gid=0
+    live_group_gid_test.go:126: linux: after the refusal, halgid5459b listed=false, group.info=&{[] map[] <unknown>}
+--- PASS: TestLiveGroupGidIsSetAndNeverRenumbered (0.02s)
+    --- PASS: TestLiveGroupGidIsSetAndNeverRenumbered/created_with_the_gid_asked_for (0.01s)
+    --- PASS: TestLiveGroupGidIsSetAndNeverRenumbered/an_existing_group_is_never_renumbered (0.00s)
+    --- PASS: TestLiveGroupGidIsSetAndNeverRenumbered/a_gid_another_group_has_is_not_shared (0.00s)
+=== RUN   TestLiveGroupMembersAreExactlyTheList
+=== RUN   TestLiveGroupMembersAreExactlyTheList/members_become_exactly_the_list,_then_converge
+    live_group_members_test.go:99: linux: members [u1 u2]: ok=true changed=true "The members of halgm5459 were set."
+=== RUN   TestLiveGroupMembersAreExactlyTheList/test_mode_predicts_and_does_not_act
+=== RUN   TestLiveGroupMembersAreExactlyTheList/a_changed_list_adds_and_removes
+=== RUN   TestLiveGroupMembersAreExactlyTheList/an_account_whose_primary_group_it_is_is_left_alone
+    live_group_members_test.go:138: linux: members [u2 u3] with halgm5459u4's primary group halgm5459: ok=true changed=false "The group halgm5459 already has exactly those members."
+=== RUN   TestLiveGroupMembersAreExactlyTheList/an_empty_list_empties_the_group
+--- PASS: TestLiveGroupMembersAreExactlyTheList (0.10s)
+    --- PASS: TestLiveGroupMembersAreExactlyTheList/members_become_exactly_the_list,_then_converge (0.01s)
+    --- PASS: TestLiveGroupMembersAreExactlyTheList/test_mode_predicts_and_does_not_act (0.00s)
+    --- PASS: TestLiveGroupMembersAreExactlyTheList/a_changed_list_adds_and_removes (0.01s)
+    --- PASS: TestLiveGroupMembersAreExactlyTheList/an_account_whose_primary_group_it_is_is_left_alone (0.02s)
+    --- PASS: TestLiveGroupMembersAreExactlyTheList/an_empty_list_empties_the_group (0.01s)
+=== RUN   TestLiveHardLinkIsRefusedForAnotherAccount
+=== RUN   TestLiveHardLinkIsRefusedForAnotherAccount/file.managed
+    live_hardlink_test.go:160: the account could not link the root's file (exit status 1: ln: failed to create hard link '/tmp/halhl5459/.profile' => '/tmp/halhl5459-root/secret': Operation not permitted); root plants the link instead, standing in for a kernel that would have allowed it
+=== RUN   TestLiveHardLinkIsRefusedForAnotherAccount/file.directory_recurse
+    live_hardlink_test.go:175: the account could not link the root's file (exit status 1: ln: failed to create hard link '/tmp/halhl5459/tree/f' => '/tmp/halhl5459-root/secret': Operation not permitted); root plants the link instead, standing in for a kernel that would have allowed it
+=== RUN   TestLiveHardLinkIsRefusedForAnotherAccount/archive.extracted
+    live_hardlink_test.go:208: the account could not link the root's file (exit status 1: ln: failed to create hard link '/tmp/halhl5459/app/data/conf.txt' => '/tmp/halhl5459-root/secret': Operation not permitted); root plants the link instead, standing in for a kernel that would have allowed it
+--- PASS: TestLiveHardLinkIsRefusedForAnotherAccount (0.39s)
+    --- PASS: TestLiveHardLinkIsRefusedForAnotherAccount/file.managed (0.00s)
+    --- PASS: TestLiveHardLinkIsRefusedForAnotherAccount/file.directory_recurse (0.00s)
+    --- PASS: TestLiveHardLinkIsRefusedForAnotherAccount/archive.extracted (0.00s)
+=== RUN   TestLiveIPTablesSaveConverges
+    live_iptables_save_test.go:21: ran inside a network namespace:
+        === RUN   TestLiveIPTablesSaveConverges
+        --- PASS: TestLiveIPTablesSaveConverges (1.11s)
+        PASS
+--- SKIP: TestLiveIPTablesSaveConverges (1.11s)
+=== RUN   TestLiveIPTablesManagesARealFilterTable
+    live_iptables_test.go:15: ran inside a network namespace:
+        === RUN   TestLiveIPTablesManagesARealFilterTable
+        --- PASS: TestLiveIPTablesManagesARealFilterTable (0.08s)
+        PASS
+--- SKIP: TestLiveIPTablesManagesARealFilterTable (0.09s)
+=== RUN   TestLiveIPTablesStatesConverge
+    live_iptables_test.go:164: ran inside a network namespace:
+        === RUN   TestLiveIPTablesStatesConverge
+        --- PASS: TestLiveIPTablesStatesConverge (0.03s)
+        PASS
+--- SKIP: TestLiveIPTablesStatesConverge (0.04s)
+=== RUN   TestLiveJournaldReadsTheRealJournal
+--- PASS: TestLiveJournaldReadsTheRealJournal (0.02s)
+=== RUN   TestLiveJournaldControlOverVarlink
+--- PASS: TestLiveJournaldControlOverVarlink (0.01s)
+=== RUN   TestLiveKernelpkgReadsAgreeWithRPM
+    live_kernelpkg_rpm_test.go:82: this host's kernels are dpkg's; this test reads EL's
+--- SKIP: TestLiveKernelpkgReadsAgreeWithRPM (0.00s)
+=== RUN   TestLiveKernelpkgRPMInstallsAndRemovesKernels
+    live_kernelpkg_rpm_test.go:416: this host's kernels are dpkg's; this test reads EL's
+--- SKIP: TestLiveKernelpkgRPMInstallsAndRemovesKernels (0.00s)
+=== RUN   TestLiveKernelpkgIsRefusedOffLinux
+    live_kernelpkg_test.go:183: this is Linux, where kernelpkg runs; the read tests cover it
+--- SKIP: TestLiveKernelpkgIsRefusedOffLinux (0.00s)
+=== RUN   TestLiveKernelpkgReadsAgreeWithTheMachine
+    live_kernelpkg_test.go:214: running 7.0.0-1014-aws; installed [7.0.0-1014-aws]
+    live_kernelpkg_test.go:276: latest_active in test mode: result=0x2b2e09fdd58 comment=The latest installed kernel package is active: 7.0.0-1014-aws.
+--- PASS: TestLiveKernelpkgReadsAgreeWithTheMachine (1.10s)
+=== RUN   TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest
+    live_kernelpkg_test.go:695: before:
+        linux-headers-7.0.0-1014-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-headers-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-image-7.0.0-1014-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-image-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-modules-7.0.0-1014-aws 7.0.0-1014.14~24.04.1 (auto)
+    live_kernelpkg_test.go:710: installing [linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws] for the test
+    live_kernelpkg_test.go:729: apt will fetch 4 files, 183671042 bytes, for [linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws] from mirror+file:/etc/apt/apt-mirrors.txt/pool/main/l/linux-aws-7.0/linux-aws-7.0-headers-7.0.0-1013_7.0.0-1013.13%7e24.04.1_all.deb
+    live_kernelpkg_rpm_test.go:283: apt-get download of [linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws], attempt 1 has run for 4m0s; what is running and what the package manager last logged, before it is killed:
+        --- processes (pid ppid wchan cmdline)
+        1 0 ep_poll /sbin/init
+        2 0 kthreadd 
+        3 2 kthread_worker_fn 
+        4 2 rescuer_thread 
+        5 2 rescuer_thread 
+        6 2 rescuer_thread 
+        7 2 rescuer_thread 
+        8 2 rescuer_thread 
+        9 2 worker_thread 
+        10 2 worker_thread 
+        12 2 worker_thread 
+        13 2 rescuer_thread 
+        14 2 smpboot_thread_fn 
+        15 2 nbcon_kthread_func 
+        16 2 rcu_gp_kthread 
+        17 2 kthread_worker_fn 
+        18 2 kthread_worker_fn 
+        19 2 smpboot_thread_fn 
+        20 2 kprobe_optimizer_thread 
+        21 2 smpboot_thread_fn 
+        22 2 smpboot_thread_fn 
+        23 2 smpboot_thread_fn 
+        24 2 smpboot_thread_fn 
+        25 2 smpboot_thread_fn 
+        26 2 smpboot_thread_fn 
+        27 2 worker_thread 
+        28 2 worker_thread 
+        29 2 smpboot_thread_fn 
+        30 2 smpboot_thread_fn 
+        31 2 smpboot_thread_fn 
+        32 2 smpboot_thread_fn 
+        34 2 worker_thread 
+        35 2 smpboot_thread_fn 
+        36 2 smpboot_thread_fn 
+        37 2 smpboot_thread_fn 
+        38 2 smpboot_thread_fn 
+        40 2 worker_thread 
+        41 2 devtmpfs_work_loop 
+        42 2 rescuer_thread 
+        43 2 rcu_tasks_one_gp 
+        44 2 rcu_tasks_one_gp 
+        45 2 kauditd_thread 
+        46 2 watchdog 
+        47 2 oom_reaper 
+        48 2 worker_thread 
+        49 2 worker_thread 
+        50 2 worker_thread 
+        51 2 rescuer_thread 
+        52 2 kcompactd 
+        53 2 ksm_scan_thread 
+        54 2 khugepaged_wait_work 
+        55 2 rescuer_thread 
+        56 2 rescuer_thread 
+        57 2 rescuer_thread 
+        58 2 irq_wait_for_interrupt 
+        59 2 worker_thread 
+        60 2 rescuer_thread 
+        61 2 rescuer_thread 
+        62 2 rescuer_thread 
+        63 2 rescuer_thread 
+        64 2 rescuer_thread 
+        65 2 rescuer_thread 
+        66 2 rescuer_thread 
+        67 2 kthread_worker_fn 
+        68 2 rescuer_thread 
+        69 2 kswapd_try_to_sleep 
+        70 2 ecryptfs_threadfn 
+        71 2 rescuer_thread 
+        72 2 irq_wait_for_interrupt 
+        73 2 worker_thread 
+        74 2 irq_wait_for_interrupt 
+        75 2 irq_wait_for_interrupt 
+        76 2 irq_wait_for_interrupt 
+        77 2 irq_wait_for_interrupt 
+        78 2 irq_wait_for_interrupt 
+        79 2 irq_wait_for_interrupt 
+        80 2 irq_wait_for_interrupt 
+        81 2 irq_wait_for_interrupt 
+        82 2 irq_wait_for_interrupt 
+        83 2 irq_wait_for_interrupt 
+        84 2 irq_wait_for_interrupt 
+        85 2 irq_wait_for_interrupt 
+        86 2 irq_wait_for_interrupt 
+        87 2 irq_wait_for_interrupt 
+        88 2 irq_wait_for_interrupt 
+        89 2 irq_wait_for_interrupt 
+        90 2 irq_wait_for_interrupt 
+        91 2 irq_wait_for_interrupt 
+        92 2 irq_wait_for_interrupt 
+        93 2 irq_wait_for_interrupt 
+        94 2 irq_wait_for_interrupt 
+        95 2 irq_wait_for_interrupt 
+        96 2 irq_wait_for_interrupt 
+        97 2 irq_wait_for_interrupt 
+        98 2 irq_wait_for_interrupt 
+        99 2 irq_wait_for_interrupt 
+        100 2 irq_wait_for_interrupt 
+        101 2 irq_wait_for_interrupt 
+        102 2 irq_wait_for_interrupt 
+        103 2 irq_wait_for_interrupt 
+        104 2 irq_wait_for_interrupt 
+        105 2 irq_wait_for_interrupt 
+        106 2 irq_wait_for_interrupt 
+        107 2 irq_wait_for_interrupt 
+        108 2 irq_wait_for_interrupt 
+        109 2 irq_wait_for_interrupt 
+        110 2 irq_wait_for_interrupt 
+        111 2 irq_wait_for_interrupt 
+        112 2 irq_wait_for_interrupt 
+        113 2 rescuer_thread 
+        114 2 rescuer_thread 
+        115 2 rescuer_thread 
+        116 2 rescuer_thread 
+        117 2 rescuer_thread 
+        118 2 worker_thread 
+        120 2 worker_thread 
+        121 2 rescuer_thread 
+        122 2 rescuer_thread 
+        123 2 rescuer_thread 
+        127 2 worker_thread 
+        129 2 worker_thread 
+        140 2 rescuer_thread 
+        213 2 rescuer_thread 
+        237 2 worker_thread 
+        242 2 rescuer_thread 
+        339 2 rescuer_thread 
+        341 2 rescuer_thread 
+        342 2 rescuer_thread 
+        343 2 rescuer_thread 
+        372 2 worker_thread 
+        374 2 kjournald2 
+        375 2 rescuer_thread 
+        415 2 worker_thread 
+        464 1 ep_poll /usr/lib/systemd/systemd-journald
+        513 2 rescuer_thread 
+        514 2 rescuer_thread 
+        515 1 futex_do_wait /sbin/multipathd -d -s
+        520 1 ep_poll /usr/lib/systemd/systemd-udevd
+        525 2 psi_rtpoll_worker 
+        573 2 worker_thread 
+        578 2 worker_thread 
+        637 2 kjournald2 
+        638 2 rescuer_thread 
+        670 2 rescuer_thread 
+        784 1 poll_schedule_timeout.constprop.0 /usr/sbin/haveged --Foreground --verbose=1
+        785 1 ep_poll /usr/lib/systemd/systemd-resolved
+        816 2 rescuer_thread 
+        889 1 ep_poll /usr/lib/systemd/systemd-networkd
+        976 1 poll_schedule_timeout.constprop.0 /usr/sbin/acpid
+        979 1 hrtimer_nanosleep /usr/sbin/cron -f -P
+        980 1 ep_poll @dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+        985 1 poll_schedule_timeout.constprop.0 /usr/sbin/irqbalance
+        987 1 poll_schedule_timeout.constprop.0 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
+        988 1 ep_poll php-fpm: master process (/etc/php/8.3/fpm/php-fpm.conf)
+        992 1 poll_schedule_timeout.constprop.0 /usr/lib/polkit-1/polkitd --no-debug
+        995 1 futex_do_wait /usr/lib/snapd/snapd
+        1002 1 ep_poll /usr/lib/systemd/systemd-logind
+        1009 1 poll_schedule_timeout.constprop.0 /usr/libexec/udisks2/udisksd
+        1024 1 poll_schedule_timeout.constprop.0 /sbin/agetty -o -p -- \u --keep-baud 115200,57600,38400,9600 - vt220
+        1037 1 poll_schedule_timeout.constprop.0 /sbin/agetty -o -p -- \u --noclear - linux
+        1054 1 poll_schedule_timeout.constprop.0 /usr/sbin/rsyslogd -n -iNONE
+        1123 1 ep_poll /usr/lib/systemd/systemd --user
+        1125 1 futex_do_wait /usr/bin/containerd
+        1130 1123 do_sigtimedwait.isra.0 (sd-pam)
+        1135 1 poll_schedule_timeout.constprop.0 /usr/sbin/chronyd -F 1
+        1159 1 poll_schedule_timeout.constprop.0 /usr/sbin/ModemManager
+        1171 1135 __skb_wait_for_more_packets /usr/sbin/chronyd -F 1
+        1389 2 worker_thread 
+        1405 1 futex_do_wait /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+        1420 988 __skb_wait_for_more_packets php-fpm: pool www
+        1421 988 __skb_wait_for_more_packets php-fpm: pool www
+        1930 1 futex_do_wait /opt/hca/hosted-compute-agent
+        1969 1930 poll_schedule_timeout.constprop.0 sudo -n PROVJOBD_E2E=1 /tmp/provjobd2602748390
+        1972 1969 futex_do_wait /tmp/provjobd2602748390
+        1984 1930 futex_do_wait /home/runner/actions-runner/cached/2.338.2/bin/Runner.Listener run
+        2005 1984 futex_do_wait /home/runner/actions-runner/cached/2.338.2/bin/Runner.Worker spawnclient 142 145
+        3330 2005 do_wait /usr/bin/bash -e /home/runner/work/_temp/9f3fcb6f-174a-424f-9ed1-550990a44a51.sh
+        3331 3330 do_wait /usr/bin/bash -e /home/runner/work/_temp/9f3fcb6f-174a-424f-9ed1-550990a44a51.sh
+        3332 3330 anon_pipe_read tee /tmp/live.txt
+        3333 3331 poll_schedule_timeout.constprop.0 sudo -E env PATH=/home/runner/go/bin:/opt/hostedtoolcache/go/1.27.4/x64/bin:/snap/bin:/home/runner/.local/bin:/opt/pipx_bin:/home/runner/.cargo/bin:/home/runner/.config/composer/vendor/bin:/usr/local/.ghcup/bin:/home/runner/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 HALITE_REBOOT_LIVE=1 HALITE_KERNELPKG_LIVE=1 go test -count=1 -v -timeout 40m -run TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks|TestLiveRenderSandbox ./internal/builtin/ ./cmd/halite-api/ ./internal/atomicfile/ ./internal/rendersandbox/
+        3334 3333 futex_do_wait go test -count=1 -v -timeout 40m -run TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks|TestLiveRenderSandbox ./internal/builtin/ ./cmd/halite-api/ ./internal/atomicfile/ ./internal/rendersandbox/
+        5459 3334 futex_do_wait /tmp/go-build2871711443/b252/builtin.test -test.paniconexit0 -test.count=1 -test.v=true -test.timeout=40m0s -test.run=TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks|TestLiveRenderSandbox
+        8393 2 rescuer_thread 
+        20671 2 psi_rtpoll_worker 
+        21752 5459 poll_schedule_timeout.constprop.0 apt-get install -y -q -o DPkg::Lock::Timeout=60 -o Acquire::http::Dl-Limit=100 --download-only linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws
+        21757 21752 poll_schedule_timeout.constprop.0 /usr/lib/apt/methods/mirror+file
+        21759 21752 poll_schedule_timeout.constprop.0 /usr/lib/apt/methods/file
+        21761 21752 poll_schedule_timeout.constprop.0 /usr/lib/apt/methods/http
+        21762 21752 hrtimer_nanosleep /usr/lib/apt/methods/http
+        21830 2 worker_thread 
+        21832 2 worker_thread 
+        21838 2 worker_thread 
+        21861 2 worker_thread 
+        --- /var/log/dnf.librepo.log: open /var/log/dnf.librepo.log: no such file or directory
+        --- /var/log/dnf.log: open /var/log/dnf.log: no such file or directory
+        --- /var/log/dnf.rpm.log: open /var/log/dnf.rpm.log: no such file or directory
+        --- /var/log/apt/term.log, last 40 lines
+        Removing linux-modules-7.0.0-1018-aws (7.0.0-1018.19~24.04.1) ...
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216860 files and directories currently installed.)
+        Purging configuration files for linux-modules-7.0.0-1018-aws (7.0.0-1018.19~24.04.1) ...
+        dpkg: warning: while removing linux-modules-7.0.0-1018-aws, directory '/lib/modules/7.0.0-1018-aws' not empty so not removed
+        Purging configuration files for linux-image-7.0.0-1018-aws (7.0.0-1018.19~24.04.1) ...
+        Log ended: 2026-11-24  16:36:46
+        
+        Log started: 2026-11-24  16:36:50
+        Selecting previously unselected package tree.
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216861 files and directories currently installed.)
+        Preparing to unpack .../tree_2.1.1-2ubuntu3.24.04.2_amd64.deb ...
+        Unpacking tree (2.1.1-2ubuntu3.24.04.2) ...
+        Setting up tree (2.1.1-2ubuntu3.24.04.2) ...
+        Processing triggers for man-db (2.12.0-4build2) ...
+        Not building database; man-db/auto-update is not 'true'.
+        Log ended: 2026-11-24  16:36:50
+        
+        Log started: 2026-11-24  16:36:52
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216866 files and directories currently installed.)
+        Removing tree (2.1.1-2ubuntu3.24.04.2) ...
+        Processing triggers for man-db (2.12.0-4build2) ...
+        Not building database; man-db/auto-update is not 'true'.
+        Log ended: 2026-11-24  16:36:52
+        
+        Log started: 2026-11-24  16:36:54
+        Selecting previously unselected package tree.
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216861 files and directories currently installed.)
+        Preparing to unpack .../tree_2.1.1-2ubuntu3.24.04.2_amd64.deb ...
+        Unpacking tree (2.1.1-2ubuntu3.24.04.2) ...
+        Setting up tree (2.1.1-2ubuntu3.24.04.2) ...
+        Processing triggers for man-db (2.12.0-4build2) ...
+        Not building database; man-db/auto-update is not 'true'.
+        Log ended: 2026-11-24  16:36:54
+        
+        Log started: 2026-11-24  16:36:56
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216866 files and directories currently installed.)
+        Removing tree (2.1.1-2ubuntu3.24.04.2) ...
+        Processing triggers for man-db (2.12.0-4build2) ...
+        Not building database; man-db/auto-update is not 'true'.
+        Log ended: 2026-11-24  16:36:56
+        --- /var/log/dpkg.log, last 40 lines
+        2026-11-24 16:36:50 status installed man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:52 startup packages remove
+        2026-11-24 16:36:52 status installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:52 remove tree:amd64 2.1.1-2ubuntu3.24.04.2 <none>
+        2026-11-24 16:36:52 status half-configured tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:52 status half-installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:52 status triggers-pending man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:52 status config-files tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:52 status not-installed tree:amd64 <none>
+        2026-11-24 16:36:52 startup packages configure
+        2026-11-24 16:36:52 trigproc man-db:amd64 2.12.0-4build2 <none>
+        2026-11-24 16:36:52 status half-configured man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:52 status installed man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:52 startup packages configure
+        2026-11-24 16:36:54 startup archives unpack
+        2026-11-24 16:36:54 install tree:amd64 <none> 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 status half-installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 status triggers-pending man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:54 status unpacked tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 startup packages configure
+        2026-11-24 16:36:54 configure tree:amd64 2.1.1-2ubuntu3.24.04.2 <none>
+        2026-11-24 16:36:54 status unpacked tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 status half-configured tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 status installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 trigproc man-db:amd64 2.12.0-4build2 <none>
+        2026-11-24 16:36:54 status half-configured man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:54 status installed man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:56 startup packages remove
+        2026-11-24 16:36:56 status installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:56 remove tree:amd64 2.1.1-2ubuntu3.24.04.2 <none>
+        2026-11-24 16:36:56 status half-configured tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:56 status half-installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:56 status triggers-pending man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:56 status config-files tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:56 status not-installed tree:amd64 <none>
+        2026-11-24 16:36:56 startup packages configure
+        2026-11-24 16:36:56 trigproc man-db:amd64 2.12.0-4build2 <none>
+        2026-11-24 16:36:56 status half-configured man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:56 status installed man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:56 startup packages configure
+    live_kernelpkg_test.go:729: apt-get download of [linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws], attempt 1 did not finish in 4m0s and was killed with its process group. A healthy run does this in well under a minute; the log above says whether the package manager was still downloading or was in a scriptlet or hook (DIVERGENCE 5.319): apt-get install -y -q -o DPkg::Lock::Timeout=60 -o Acquire::http::Dl-Limit=100 --download-only linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws was cancelled
+        --- stdout
+        Reading package lists...
+        Building dependency tree...
+        Reading state information...
+        The following additional packages will be installed:
+          linux-aws-7.0-headers-7.0.0-1013 linux-modules-7.0.0-1013-aws
+        Suggested packages:
+          linux-perf linux-aws-7.0-doc-7.0.0 | linux-aws-7.0-source-7.0.0
+          linux-aws-7.0-tools
+        The following NEW packages will be installed:
+          linux-aws-7.0-headers-7.0.0-1013 linux-headers-7.0.0-1013-aws
+          linux-image-7.0.0-1013-aws linux-modules-7.0.0-1013-aws
+        0 upgraded, 4 newly installed, 0 to remove and 72 not upgraded.
+        Need to get 184 MB of archives.
+        After this operation, 292 MB of additional disk space will be used.
+        Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [152 B]
+        Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 linux-aws-7.0-headers-7.0.0-1013 all 7.0.0-1013.13~24.04.1 [14.9 MB]
+        Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 linux-headers-7.0.0-1013-aws amd64 7.0.0-1013.13~24.04.1 [3910 kB]
+        Get:4 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 linux-modules-7.0.0-1013-aws amd64 7.0.0-1013.13~24.04.1 [148 MB]
+        
+        --- stderr
+        
+        --- end
+    live_kernelpkg_rpm_test.go:283: apt-get download of [linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws], attempt 2 has run for 4m0s; what is running and what the package manager last logged, before it is killed:
+        --- processes (pid ppid wchan cmdline)
+        1 0 ep_poll /sbin/init
+        2 0 kthreadd 
+        3 2 kthread_worker_fn 
+        4 2 rescuer_thread 
+        5 2 rescuer_thread 
+        6 2 rescuer_thread 
+        7 2 rescuer_thread 
+        8 2 rescuer_thread 
+        10 2 worker_thread 
+        13 2 rescuer_thread 
+        14 2 smpboot_thread_fn 
+        15 2 nbcon_kthread_func 
+        16 2 rcu_gp_kthread 
+        17 2 kthread_worker_fn 
+        18 2 kthread_worker_fn 
+        19 2 smpboot_thread_fn 
+        20 2 kprobe_optimizer_thread 
+        21 2 smpboot_thread_fn 
+        22 2 smpboot_thread_fn 
+        23 2 smpboot_thread_fn 
+        24 2 smpboot_thread_fn 
+        25 2 smpboot_thread_fn 
+        26 2 smpboot_thread_fn 
+        28 2 worker_thread 
+        29 2 smpboot_thread_fn 
+        30 2 smpboot_thread_fn 
+        31 2 smpboot_thread_fn 
+        32 2 smpboot_thread_fn 
+        34 2 worker_thread 
+        35 2 smpboot_thread_fn 
+        36 2 smpboot_thread_fn 
+        37 2 smpboot_thread_fn 
+        38 2 smpboot_thread_fn 
+        40 2 worker_thread 
+        41 2 devtmpfs_work_loop 
+        42 2 rescuer_thread 
+        43 2 rcu_tasks_one_gp 
+        44 2 rcu_tasks_one_gp 
+        45 2 kauditd_thread 
+        46 2 watchdog 
+        47 2 oom_reaper 
+        49 2 worker_thread 
+        50 2 worker_thread 
+        51 2 rescuer_thread 
+        52 2 kcompactd 
+        53 2 ksm_scan_thread 
+        54 2 khugepaged_wait_work 
+        55 2 rescuer_thread 
+        56 2 rescuer_thread 
+        57 2 rescuer_thread 
+        58 2 irq_wait_for_interrupt 
+        59 2 worker_thread 
+        60 2 rescuer_thread 
+        61 2 rescuer_thread 
+        62 2 rescuer_thread 
+        63 2 rescuer_thread 
+        64 2 rescuer_thread 
+        65 2 rescuer_thread 
+        66 2 rescuer_thread 
+        67 2 kthread_worker_fn 
+        68 2 rescuer_thread 
+        69 2 kswapd_try_to_sleep 
+        70 2 ecryptfs_threadfn 
+        71 2 rescuer_thread 
+        72 2 irq_wait_for_interrupt 
+        73 2 worker_thread 
+        74 2 irq_wait_for_interrupt 
+        75 2 irq_wait_for_interrupt 
+        76 2 irq_wait_for_interrupt 
+        77 2 irq_wait_for_interrupt 
+        78 2 irq_wait_for_interrupt 
+        79 2 irq_wait_for_interrupt 
+        80 2 irq_wait_for_interrupt 
+        81 2 irq_wait_for_interrupt 
+        82 2 irq_wait_for_interrupt 
+        83 2 irq_wait_for_interrupt 
+        84 2 irq_wait_for_interrupt 
+        85 2 irq_wait_for_interrupt 
+        86 2 irq_wait_for_interrupt 
+        87 2 irq_wait_for_interrupt 
+        88 2 irq_wait_for_interrupt 
+        89 2 irq_wait_for_interrupt 
+        90 2 irq_wait_for_interrupt 
+        91 2 irq_wait_for_interrupt 
+        92 2 irq_wait_for_interrupt 
+        93 2 irq_wait_for_interrupt 
+        94 2 irq_wait_for_interrupt 
+        95 2 irq_wait_for_interrupt 
+        96 2 irq_wait_for_interrupt 
+        97 2 irq_wait_for_interrupt 
+        98 2 irq_wait_for_interrupt 
+        99 2 irq_wait_for_interrupt 
+        100 2 irq_wait_for_interrupt 
+        101 2 irq_wait_for_interrupt 
+        102 2 irq_wait_for_interrupt 
+        103 2 irq_wait_for_interrupt 
+        104 2 irq_wait_for_interrupt 
+        105 2 irq_wait_for_interrupt 
+        106 2 irq_wait_for_interrupt 
+        107 2 irq_wait_for_interrupt 
+        108 2 irq_wait_for_interrupt 
+        109 2 irq_wait_for_interrupt 
+        110 2 irq_wait_for_interrupt 
+        111 2 irq_wait_for_interrupt 
+        112 2 irq_wait_for_interrupt 
+        113 2 rescuer_thread 
+        114 2 rescuer_thread 
+        115 2 rescuer_thread 
+        116 2 rescuer_thread 
+        117 2 rescuer_thread 
+        118 2 worker_thread 
+        120 2 worker_thread 
+        121 2 rescuer_thread 
+        122 2 rescuer_thread 
+        123 2 rescuer_thread 
+        127 2 worker_thread 
+        129 2 worker_thread 
+        140 2 rescuer_thread 
+        213 2 rescuer_thread 
+        242 2 rescuer_thread 
+        339 2 rescuer_thread 
+        341 2 rescuer_thread 
+        342 2 rescuer_thread 
+        343 2 rescuer_thread 
+        372 2 worker_thread 
+        374 2 kjournald2 
+        375 2 rescuer_thread 
+        415 2 worker_thread 
+        464 1 ep_poll /usr/lib/systemd/systemd-journald
+        513 2 rescuer_thread 
+        514 2 rescuer_thread 
+        515 1 futex_do_wait /sbin/multipathd -d -s
+        520 1 ep_poll /usr/lib/systemd/systemd-udevd
+        525 2 psi_rtpoll_worker 
+        573 2 worker_thread 
+        578 2 worker_thread 
+        637 2 kjournald2 
+        638 2 rescuer_thread 
+        670 2 rescuer_thread 
+        784 1 poll_schedule_timeout.constprop.0 /usr/sbin/haveged --Foreground --verbose=1
+        785 1 ep_poll /usr/lib/systemd/systemd-resolved
+        816 2 rescuer_thread 
+        889 1 ep_poll /usr/lib/systemd/systemd-networkd
+        976 1 poll_schedule_timeout.constprop.0 /usr/sbin/acpid
+        979 1 hrtimer_nanosleep /usr/sbin/cron -f -P
+        980 1 ep_poll @dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+        985 1 poll_schedule_timeout.constprop.0 /usr/sbin/irqbalance
+        987 1 poll_schedule_timeout.constprop.0 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
+        988 1 ep_poll php-fpm: master process (/etc/php/8.3/fpm/php-fpm.conf)
+        992 1 poll_schedule_timeout.constprop.0 /usr/lib/polkit-1/polkitd --no-debug
+        995 1 futex_do_wait /usr/lib/snapd/snapd
+        1002 1 ep_poll /usr/lib/systemd/systemd-logind
+        1009 1 poll_schedule_timeout.constprop.0 /usr/libexec/udisks2/udisksd
+        1024 1 poll_schedule_timeout.constprop.0 /sbin/agetty -o -p -- \u --keep-baud 115200,57600,38400,9600 - vt220
+        1037 1 poll_schedule_timeout.constprop.0 /sbin/agetty -o -p -- \u --noclear - linux
+        1054 1 poll_schedule_timeout.constprop.0 /usr/sbin/rsyslogd -n -iNONE
+        1123 1 ep_poll /usr/lib/systemd/systemd --user
+        1125 1 futex_do_wait /usr/bin/containerd
+        1130 1123 do_sigtimedwait.isra.0 (sd-pam)
+        1135 1 poll_schedule_timeout.constprop.0 /usr/sbin/chronyd -F 1
+        1159 1 poll_schedule_timeout.constprop.0 /usr/sbin/ModemManager
+        1171 1135 __skb_wait_for_more_packets /usr/sbin/chronyd -F 1
+        1389 2 worker_thread 
+        1405 1 futex_do_wait /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
+        1420 988 __skb_wait_for_more_packets php-fpm: pool www
+        1421 988 __skb_wait_for_more_packets php-fpm: pool www
+        1930 1 futex_do_wait /opt/hca/hosted-compute-agent
+        1969 1930 poll_schedule_timeout.constprop.0 sudo -n PROVJOBD_E2E=1 /tmp/provjobd2602748390
+        1972 1969 futex_do_wait /tmp/provjobd2602748390
+        1984 1930 futex_do_wait /home/runner/actions-runner/cached/2.338.2/bin/Runner.Listener run
+        2005 1984 futex_do_wait /home/runner/actions-runner/cached/2.338.2/bin/Runner.Worker spawnclient 142 145
+        3330 2005 do_wait /usr/bin/bash -e /home/runner/work/_temp/9f3fcb6f-174a-424f-9ed1-550990a44a51.sh
+        3331 3330 do_wait /usr/bin/bash -e /home/runner/work/_temp/9f3fcb6f-174a-424f-9ed1-550990a44a51.sh
+        3332 3330 anon_pipe_read tee /tmp/live.txt
+        3333 3331 poll_schedule_timeout.constprop.0 sudo -E env PATH=/home/runner/go/bin:/opt/hostedtoolcache/go/1.27.4/x64/bin:/snap/bin:/home/runner/.local/bin:/opt/pipx_bin:/home/runner/.cargo/bin:/home/runner/.config/composer/vendor/bin:/usr/local/.ghcup/bin:/home/runner/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 HALITE_REBOOT_LIVE=1 HALITE_KERNELPKG_LIVE=1 go test -count=1 -v -timeout 40m -run TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks|TestLiveRenderSandbox ./internal/builtin/ ./cmd/halite-api/ ./internal/atomicfile/ ./internal/rendersandbox/
+        3334 3333 futex_do_wait go test -count=1 -v -timeout 40m -run TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks|TestLiveRenderSandbox ./internal/builtin/ ./cmd/halite-api/ ./internal/atomicfile/ ./internal/rendersandbox/
+        5459 3334 futex_do_wait /tmp/go-build2871711443/b252/builtin.test -test.paniconexit0 -test.count=1 -test.v=true -test.timeout=40m0s -test.run=TestLiveHostname|TestLiveSSHFiles|TestLiveSSHRefuses|TestLiveSSHConfig|TestLiveHardLink|TestLiveScriptRunsAs|TestLiveCheckCmdRunsAs|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLiveSystemdSelf|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit|TestLiveMount|TestLivePlantedLink|TestLiveOperatorLinks|TestLiveRenderSandbox
+        8393 2 rescuer_thread 
+        20671 2 psi_rtpoll_worker 
+        21830 2 worker_thread 
+        21832 2 worker_thread 
+        21838 2 worker_thread 
+        21861 2 worker_thread 
+        21863 5459 poll_schedule_timeout.constprop.0 apt-get install -y -q -o DPkg::Lock::Timeout=60 -o Acquire::http::Dl-Limit=100 --download-only linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws
+        21868 21863 poll_schedule_timeout.constprop.0 /usr/lib/apt/methods/mirror+file
+        21870 21863 poll_schedule_timeout.constprop.0 /usr/lib/apt/methods/file
+        21872 21863 hrtimer_nanosleep /usr/lib/apt/methods/http
+        21873 21863 poll_schedule_timeout.constprop.0 /usr/lib/apt/methods/http
+        21890 2 worker_thread 
+        21897 2 worker_thread 
+        21898 2 worker_thread 
+        --- /var/log/dnf.librepo.log: open /var/log/dnf.librepo.log: no such file or directory
+        --- /var/log/dnf.log: open /var/log/dnf.log: no such file or directory
+        --- /var/log/dnf.rpm.log: open /var/log/dnf.rpm.log: no such file or directory
+        --- /var/log/apt/term.log, last 40 lines
+        Removing linux-modules-7.0.0-1018-aws (7.0.0-1018.19~24.04.1) ...
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216860 files and directories currently installed.)
+        Purging configuration files for linux-modules-7.0.0-1018-aws (7.0.0-1018.19~24.04.1) ...
+        dpkg: warning: while removing linux-modules-7.0.0-1018-aws, directory '/lib/modules/7.0.0-1018-aws' not empty so not removed
+        Purging configuration files for linux-image-7.0.0-1018-aws (7.0.0-1018.19~24.04.1) ...
+        Log ended: 2026-11-24  16:36:46
+        
+        Log started: 2026-11-24  16:36:50
+        Selecting previously unselected package tree.
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216861 files and directories currently installed.)
+        Preparing to unpack .../tree_2.1.1-2ubuntu3.24.04.2_amd64.deb ...
+        Unpacking tree (2.1.1-2ubuntu3.24.04.2) ...
+        Setting up tree (2.1.1-2ubuntu3.24.04.2) ...
+        Processing triggers for man-db (2.12.0-4build2) ...
+        Not building database; man-db/auto-update is not 'true'.
+        Log ended: 2026-11-24  16:36:50
+        
+        Log started: 2026-11-24  16:36:52
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216866 files and directories currently installed.)
+        Removing tree (2.1.1-2ubuntu3.24.04.2) ...
+        Processing triggers for man-db (2.12.0-4build2) ...
+        Not building database; man-db/auto-update is not 'true'.
+        Log ended: 2026-11-24  16:36:52
+        
+        Log started: 2026-11-24  16:36:54
+        Selecting previously unselected package tree.
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216861 files and directories currently installed.)
+        Preparing to unpack .../tree_2.1.1-2ubuntu3.24.04.2_amd64.deb ...
+        Unpacking tree (2.1.1-2ubuntu3.24.04.2) ...
+        Setting up tree (2.1.1-2ubuntu3.24.04.2) ...
+        Processing triggers for man-db (2.12.0-4build2) ...
+        Not building database; man-db/auto-update is not 'true'.
+        Log ended: 2026-11-24  16:36:54
+        
+        Log started: 2026-11-24  16:36:56
+        (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 216866 files and directories currently installed.)
+        Removing tree (2.1.1-2ubuntu3.24.04.2) ...
+        Processing triggers for man-db (2.12.0-4build2) ...
+        Not building database; man-db/auto-update is not 'true'.
+        Log ended: 2026-11-24  16:36:56
+        --- /var/log/dpkg.log, last 40 lines
+        2026-11-24 16:36:50 status installed man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:52 startup packages remove
+        2026-11-24 16:36:52 status installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:52 remove tree:amd64 2.1.1-2ubuntu3.24.04.2 <none>
+        2026-11-24 16:36:52 status half-configured tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:52 status half-installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:52 status triggers-pending man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:52 status config-files tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:52 status not-installed tree:amd64 <none>
+        2026-11-24 16:36:52 startup packages configure
+        2026-11-24 16:36:52 trigproc man-db:amd64 2.12.0-4build2 <none>
+        2026-11-24 16:36:52 status half-configured man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:52 status installed man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:52 startup packages configure
+        2026-11-24 16:36:54 startup archives unpack
+        2026-11-24 16:36:54 install tree:amd64 <none> 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 status half-installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 status triggers-pending man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:54 status unpacked tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 startup packages configure
+        2026-11-24 16:36:54 configure tree:amd64 2.1.1-2ubuntu3.24.04.2 <none>
+        2026-11-24 16:36:54 status unpacked tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 status half-configured tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 status installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:54 trigproc man-db:amd64 2.12.0-4build2 <none>
+        2026-11-24 16:36:54 status half-configured man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:54 status installed man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:56 startup packages remove
+        2026-11-24 16:36:56 status installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:56 remove tree:amd64 2.1.1-2ubuntu3.24.04.2 <none>
+        2026-11-24 16:36:56 status half-configured tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:56 status half-installed tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:56 status triggers-pending man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:56 status config-files tree:amd64 2.1.1-2ubuntu3.24.04.2
+        2026-11-24 16:36:56 status not-installed tree:amd64 <none>
+        2026-11-24 16:36:56 startup packages configure
+        2026-11-24 16:36:56 trigproc man-db:amd64 2.12.0-4build2 <none>
+        2026-11-24 16:36:56 status half-configured man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:56 status installed man-db:amd64 2.12.0-4build2
+        2026-11-24 16:36:56 startup packages configure
+    live_kernelpkg_test.go:729: apt-get download of [linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws], attempt 2 did not finish in 4m0s and was killed with its process group. A healthy run does this in well under a minute; the log above says whether the package manager was still downloading or was in a scriptlet or hook (DIVERGENCE 5.319): apt-get install -y -q -o DPkg::Lock::Timeout=60 -o Acquire::http::Dl-Limit=100 --download-only linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws was cancelled
+        --- stdout
+        Reading package lists...
+        Building dependency tree...
+        Reading state information...
+        The following additional packages will be installed:
+          linux-aws-7.0-headers-7.0.0-1013 linux-modules-7.0.0-1013-aws
+        Suggested packages:
+          linux-perf linux-aws-7.0-doc-7.0.0 | linux-aws-7.0-source-7.0.0
+          linux-aws-7.0-tools
+        The following NEW packages will be installed:
+          linux-aws-7.0-headers-7.0.0-1013 linux-headers-7.0.0-1013-aws
+          linux-image-7.0.0-1013-aws linux-modules-7.0.0-1013-aws
+        0 upgraded, 4 newly installed, 0 to remove and 72 not upgraded.
+        Need to get 165 MB/184 MB of archives.
+        After this operation, 292 MB of additional disk space will be used.
+        Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [152 B]
+        Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 linux-modules-7.0.0-1013-aws amd64 7.0.0-1013.13~24.04.1 [148 MB]
+        Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu noble-updates/main amd64 linux-image-7.0.0-1013-aws amd64 7.0.0-1013.13~24.04.1 [16.7 MB]
+        
+        --- stderr
+        
+        --- end
+    live_kernelpkg_test.go:729: slow mirror: mirror+file:/etc/apt/apt-mirrors.txt/pool/main/l/linux-aws-7.0/linux-aws-7.0-headers-7.0.0-1013_7.0.0-1013.13%7e24.04.1_all.deb delivered 61529881 of the 183671042 bytes of [linux-image-7.0.0-1013-aws linux-headers-7.0.0-1013-aws] in 8m0s (128 kB/s) on a runner whose kernel flavour is aws; a kernel this test can install is not fetchable here in the time it is given (issue 852)
+    live_kernelpkg_test.go:696: kernel set put back ():
+        linux-headers-7.0.0-1014-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-headers-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-image-7.0.0-1014-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-image-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-modules-7.0.0-1014-aws 7.0.0-1014.14~24.04.1 (auto)
+--- SKIP: TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest (484.03s)
+=== RUN   TestLiveKernelpkgUpgradeInstallsTheNewest
+    live_kernelpkg_test.go:813: apt has everything [linux-image-7.0.0-1018-aws] needs in its cache
+    live_kernelpkg_test.go:832: kernelpkg.upgrade: 8.8s
+    live_kernelpkg_test.go:834: upgrade: {"upgrades":{"linux-image-7.0.0-1018-aws":{"old":"","new":"7.0.0-1018.19~24.04.1"}},"active":"7.0.0-1014-aws","latest_installed":"7.0.0-1018-aws","reboot_requested":false,"reboot_required":true}
+    live_kernelpkg_test.go:848: kernelpkg.upgrade, again: 200ms
+    live_kernelpkg_test.go:815: kernel set put back (purged [linux-image-7.0.0-1018-aws linux-modules-7.0.0-1018-aws]):
+        linux-headers-7.0.0-1014-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-headers-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-image-7.0.0-1014-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-image-aws 7.0.0-1014.14~24.04.1 (auto)
+        linux-modules-7.0.0-1014-aws 7.0.0-1014.14~24.04.1 (auto)
+--- PASS: TestLiveKernelpkgUpgradeInstallsTheNewest (13.68s)
+=== RUN   TestLiveLogrotateNamesNewsyslogOnAFreeBSDWithoutThePort
+    live_logrotate_test.go:60: newsyslog is FreeBSD's; elsewhere a missing logrotate is only a missing package
+--- SKIP: TestLiveLogrotateNamesNewsyslogOnAFreeBSDWithoutThePort (0.00s)
+=== RUN   TestLiveLogrotateEditsADropInOfTheSystemsConfiguration
+--- PASS: TestLiveLogrotateEditsADropInOfTheSystemsConfiguration (0.03s)
+=== RUN   TestLiveLogrotateDrivesAConfigurationOfItsOwn
+--- PASS: TestLiveLogrotateDrivesAConfigurationOfItsOwn (0.02s)
+=== RUN   TestLiveLVMBuildsAGroupAndAVolumeARealLVMReportsBack
+    live_lvm_loopback_test.go:184: attached /dev/loop4 -> /tmp/TestLiveLVMBuildsAGroupAndAVolumeARealLVMReportsBack2176901635/001/pv0.img
+    live_lvm_loopback_test.go:184: attached /dev/loop5 -> /tmp/TestLiveLVMBuildsAGroupAndAVolumeARealLVMReportsBack2176901635/001/pv1.img
+    live_lvm_loopback_test.go:267: lvresize to 34M left the volume at 37748736 bytes
+--- PASS: TestLiveLVMBuildsAGroupAndAVolumeARealLVMReportsBack (1.59s)
+=== RUN   TestLiveLVMPVCreateLeavesAnAliasedPVAlone
+    live_lvm_loopback_test.go:357: attached /dev/loop4 -> /tmp/TestLiveLVMPVCreateLeavesAnAliasedPVAlone543481091/001/pv0.img
+    live_lvm_loopback_test.go:357: attached /dev/loop5 -> /tmp/TestLiveLVMPVCreateLeavesAnAliasedPVAlone543481091/001/pv1.img
+    live_lvm_loopback_test.go:137: vgremove halitelive5459: Volume group "halitelive5459" successfully removed
+--- PASS: TestLiveLVMPVCreateLeavesAnAliasedPVAlone (0.31s)
+=== RUN   TestLiveMdadmBuildsAnArrayARealMdadmReportsBack
+--- PASS: TestLiveMdadmBuildsAnArrayARealMdadmReportsBack (5.26s)
+=== RUN   TestLiveMdadmDestroyRemovesTheArrayAndItsSuperblocks
+--- PASS: TestLiveMdadmDestroyRemovesTheArrayAndItsSuperblocks (0.12s)
+=== RUN   TestLiveMdadmCreateRefusesAMemberHoldingAFilesystem
+    live_mdadm_test.go:396: capture: wipefs /dev/loop4 exited 0
+        stdout: ""
+        stderr: ""
+    live_mdadm_test.go:396: capture: wipefs /dev/loop5 exited 0
+        stdout: "ext4 0x438\n"
+        stderr: ""
+--- PASS: TestLiveMdadmCreateRefusesAMemberHoldingAFilesystem (0.03s)
+=== RUN   TestLiveModprobeReadsRealModules
+--- PASS: TestLiveModprobeReadsRealModules (0.01s)
+=== RUN   TestLiveModprobeLoadsAndPersists
+--- PASS: TestLiveModprobeLoadsAndPersists (0.07s)
+=== RUN   TestLiveMountMountedConvergesAndRemounts
+    live_mount_test.go:78: the table it wrote: "tmpfs\t/tmp/TestLiveMountMountedConvergesAndRemounts849032501/001/mnt\ttmpfs\tdefaults\t0 0"
+--- PASS: TestLiveMountMountedConvergesAndRemounts (0.01s)
+=== RUN   TestLiveNetplanARefusedDocumentIsNotLeftForTheNextRun
+--- PASS: TestLiveNetplanARefusedDocumentIsNotLeftForTheNextRun (1.23s)
+=== RUN   TestLiveNetplanReadsTheRealConfigDirectory
+--- PASS: TestLiveNetplanReadsTheRealConfigDirectory (0.09s)
+=== RUN   TestLiveNetplanWritesADocumentRealNetplanAccepts
+--- PASS: TestLiveNetplanWritesADocumentRealNetplanAccepts (0.95s)
+=== RUN   TestLiveNetplanRefusesADocumentNetplanWillNotRender
+--- PASS: TestLiveNetplanRefusesADocumentNetplanWillNotRender (0.76s)
+=== RUN   TestLiveNetplanGenerateAcceptsTheRealTree
+--- PASS: TestLiveNetplanGenerateAcceptsTheRealTree (0.25s)
+=== RUN   TestLiveNFTablesSaveConvergesWithACounter
+    live_nftables_save_test.go:21: ran inside a network namespace:
+        === RUN   TestLiveNFTablesSaveConvergesWithACounter
+        --- PASS: TestLiveNFTablesSaveConvergesWithACounter (0.01s)
+        PASS
+--- SKIP: TestLiveNFTablesSaveConvergesWithACounter (0.02s)
+=== RUN   TestLiveNFTablesManagesARealRuleset
+    live_nftables_test.go:20: ran inside a network namespace:
+        === RUN   TestLiveNFTablesManagesARealRuleset
+        --- PASS: TestLiveNFTablesManagesARealRuleset (0.14s)
+        PASS
+--- SKIP: TestLiveNFTablesManagesARealRuleset (0.14s)
+=== RUN   TestLiveNFTablesStatesConverge
+    live_nftables_test.go:200: ran inside a network namespace:
+        === RUN   TestLiveNFTablesStatesConverge
+        --- PASS: TestLiveNFTablesStatesConverge (0.07s)
+        PASS
+--- SKIP: TestLiveNFTablesStatesConverge (0.07s)
+=== RUN   TestLivePkgInfoInstalledAgreesWithDpkg
+--- PASS: TestLivePkgInfoInstalledAgreesWithDpkg (0.06s)
+=== RUN   TestLivePkgFileDictAgreesWithDpkg
+--- PASS: TestLivePkgFileDictAgreesWithDpkg (0.08s)
+=== RUN   TestLivePkgDownloadAndListDownloaded
+--- PASS: TestLivePkgDownloadAndListDownloaded (0.44s)
+=== RUN   TestLivePlantedLinkIsNotFollowedAsRoot
+--- PASS: TestLivePlantedLinkIsNotFollowedAsRoot (0.00s)
+=== RUN   TestLivePlantedLinkChainIsNotFollowedAsRoot
+--- PASS: TestLivePlantedLinkChainIsNotFollowedAsRoot (0.00s)
+=== RUN   TestLiveOperatorLinksAreStillFollowedAsRoot
+=== RUN   TestLiveOperatorLinksAreStillFollowedAsRoot/sites-enabled
+=== RUN   TestLiveOperatorLinksAreStillFollowedAsRoot/sticky-root-link
+=== RUN   TestLiveOperatorLinksAreStillFollowedAsRoot/group-0-writable
+=== RUN   TestLiveOperatorLinksAreStillFollowedAsRoot/sticky-account-link
+=== RUN   TestLiveOperatorLinksAreStillFollowedAsRoot/group-writable-other-group
+--- PASS: TestLiveOperatorLinksAreStillFollowedAsRoot (0.01s)
+    --- PASS: TestLiveOperatorLinksAreStillFollowedAsRoot/sites-enabled (0.00s)
+    --- PASS: TestLiveOperatorLinksAreStillFollowedAsRoot/sticky-root-link (0.00s)
+    --- PASS: TestLiveOperatorLinksAreStillFollowedAsRoot/group-0-writable (0.00s)
+    --- PASS: TestLiveOperatorLinksAreStillFollowedAsRoot/sticky-account-link (0.00s)
+    --- PASS: TestLiveOperatorLinksAreStillFollowedAsRoot/group-writable-other-group (0.00s)
+=== RUN   TestLiveProReadsTheRealClient
+--- PASS: TestLiveProReadsTheRealClient (1.78s)
+=== RUN   TestLiveQuotaSetsALimitARealRepquotaReportsBack
+    live_quota_loopback_test.go:258: the mount as applied (exit 0):
+        rw,relatime,quota,usrquota,grpquota ext4   /dev/loop4
+    live_quota_loopback_test.go:258: this kernel gives the classic quota route on /tmp/TestLiveQuotaSetsALimitARealRepquotaReportsBack3077391337/001/quota.img
+    live_quota_loopback_test.go:290: this host's repquota answered in the csv format
+--- PASS: TestLiveQuotaSetsALimitARealRepquotaReportsBack (0.03s)
+=== RUN   TestLiveQuotaReadsBothStatesOfARealFilesystem
+    live_quota_loopback_test.go:327: the mount as applied (exit 0):
+        rw,relatime,quota,usrquota,grpquota ext4   /dev/loop4
+    live_quota_loopback_test.go:327: this kernel gives the classic quota route on /tmp/TestLiveQuotaReadsBothStatesOfARealFilesystem1755321939/001/quota.img
+--- PASS: TestLiveQuotaReadsBothStatesOfARealFilesystem (0.02s)
+=== RUN   TestLiveQuotaOnARealUFSFilesystem
+    live_quota_ufs_test.go:63: this leg makes a UFS filesystem with BSD quotas; this is linux
+--- SKIP: TestLiveQuotaOnARealUFSFilesystem (0.00s)
+=== RUN   TestLiveQuotaReadsTheBSDMountFlagInBothStates
+    live_quota_ufs_test.go:148: this leg makes a UFS filesystem with BSD quotas; this is linux
+--- SKIP: TestLiveQuotaReadsTheBSDMountFlagInBothStates (0.00s)
+=== RUN   TestLiveRebootSchedulesAndCancelsWithoutRebooting
+    live_reboot_test.go:50: if this test is interrupted, countermand what it left with: `shutdown -c`
+--- PASS: TestLiveRebootSchedulesAndCancelsWithoutRebooting (0.04s)
+=== RUN   TestLiveRebootCancelOnAQuietMachineIsNotAnError
+    live_reboot_test.go:133: cancelling nothing said: no shutdown is pending on this node, so there was nothing to cancel
+--- PASS: TestLiveRebootCancelOnAQuietMachineIsNotAnError (0.01s)
+=== RUN   TestLiveRebootReadsThisMachine
+    live_reboot_test.go:151: reboot required: known=true, /run/reboot-required exists; 1 package(s) asked for it
+    live_reboot_test.go:168: this machine booted at 2026-11-24T16:33:18Z, 821 seconds ago
+--- PASS: TestLiveRebootReadsThisMachine (0.00s)
+=== RUN   TestLiveSelinuxReadsAgreeWithTheTools
+    live_selinux_test.go:180: SELinux is not running on this node: /sys/fs/selinux/enforce does not exist; TestLiveSelinuxRefusesWhereThereIsNone is the test for this node
+--- SKIP: TestLiveSelinuxReadsAgreeWithTheTools (0.00s)
+=== RUN   TestLiveSelinuxBooleanRuntimeAndPersistent
+    live_selinux_test.go:253: SELinux is not running on this node: /sys/fs/selinux/enforce does not exist; TestLiveSelinuxRefusesWhereThereIsNone is the test for this node
+--- SKIP: TestLiveSelinuxBooleanRuntimeAndPersistent (0.00s)
+=== RUN   TestLiveSelinuxRunningModeAndItsState
+    live_selinux_test.go:335: SELinux is not running on this node: /sys/fs/selinux/enforce does not exist; TestLiveSelinuxRefusesWhereThereIsNone is the test for this node
+--- SKIP: TestLiveSelinuxRunningModeAndItsState (0.00s)
+=== RUN   TestLiveSelinuxFcontextRulesAndRelabelling
+    live_selinux_test.go:411: SELinux is not running on this node: /sys/fs/selinux/enforce does not exist; TestLiveSelinuxRefusesWhereThereIsNone is the test for this node
+--- SKIP: TestLiveSelinuxFcontextRulesAndRelabelling (0.00s)
+=== RUN   TestLiveSelinuxPortRules
+    live_selinux_test.go:578: SELinux is not running on this node: /sys/fs/selinux/enforce does not exist; TestLiveSelinuxRefusesWhereThereIsNone is the test for this node
+--- SKIP: TestLiveSelinuxPortRules (0.00s)
+=== RUN   TestLiveSelinuxRefusesWhereThereIsNone
+    live_selinux_test.go:704: file.get_selinux_context: /etc/passwd has no SELinux context to read: stat: failed to get security context of '/etc/passwd': No data available (SELinux is not running on this node: /sys/fs/selinux/enforce does not exist)
+    live_selinux_test.go:709: selinux.mode: SELinux cannot be put into Enforcing mode: SELinux is not running on this node: /sys/fs/selinux/enforce does not exist. Enabling it takes a change to /etc/selinux/config and a reboot with a relabel.
+--- PASS: TestLiveSelinuxRefusesWhereThereIsNone (0.00s)
+=== RUN   TestLiveServiceWaitsForAStartLongerThanNinetySeconds
+--- PASS: TestLiveServiceWaitsForAStartLongerThanNinetySeconds (95.30s)
+=== RUN   TestLiveServiceStartStopsAtTheCallersDeadline
+--- PASS: TestLiveServiceStartStopsAtTheCallersDeadline (5.27s)
+=== RUN   TestLiveServiceStartsStopsAndRestartsOverDBus
+--- PASS: TestLiveServiceStartsStopsAndRestartsOverDBus (2.60s)
+=== RUN   TestLiveServiceEnablesAndDisablesOverDBus
+--- PASS: TestLiveServiceEnablesAndDisablesOverDBus (0.82s)
+=== RUN   TestLiveServiceMasksAndUnmasksOverDBus
+--- PASS: TestLiveServiceMasksAndUnmasksOverDBus (0.80s)
+=== RUN   TestLiveServiceGetAllListsTheProbeOverDBus
+--- PASS: TestLiveServiceGetAllListsTheProbeOverDBus (0.89s)
+=== RUN   TestLiveServiceFallbackDrivesTheSameUnit
+--- PASS: TestLiveServiceFallbackDrivesTheSameUnit (1.58s)
+=== RUN   TestLiveShadowDrivesAThrowawayAccount
+--- PASS: TestLiveShadowDrivesAThrowawayAccount (0.08s)
+=== RUN   TestLiveSnapReadsTheRealList
+    live_snap_test.go:117: 4 snaps, channels: [core=latest/stable core22=latest/stable hello-world=latest/stable snapd=latest/stable]
+--- PASS: TestLiveSnapReadsTheRealList (0.03s)
+=== RUN   TestLiveSnapChannelAgreesWithSnapInfo
+--- PASS: TestLiveSnapChannelAgreesWithSnapInfo (1.72s)
+=== RUN   TestLiveSSHFilesForAnotherAccount
+--- PASS: TestLiveSSHFilesForAnotherAccount (0.49s)
+=== RUN   TestLiveSSHRefusesALinkedSSHDirectory
+--- PASS: TestLiveSSHRefusesALinkedSSHDirectory (0.39s)
+=== RUN   TestLiveSSHConfigInsideHomeRefusesALink
+--- PASS: TestLiveSSHConfigInsideHomeRefusesALink (0.38s)
+=== RUN   TestLiveSudoStatesManageADropIn
+    live_sudo_state_test.go:56: drop-in directory /etc/sudoers.d, read from the node's sudoers
+--- PASS: TestLiveSudoStatesManageADropIn (0.07s)
+=== RUN   TestLiveSudoValidatesWithTheRealVisudo
+=== RUN   TestLiveSudoValidatesWithTheRealVisudo/a_rule_the_real_grammar_accepts
+=== RUN   TestLiveSudoValidatesWithTheRealVisudo/a_line_that_is_not_a_rule
+--- PASS: TestLiveSudoValidatesWithTheRealVisudo (0.00s)
+    --- PASS: TestLiveSudoValidatesWithTheRealVisudo/a_rule_the_real_grammar_accepts (0.00s)
+    --- PASS: TestLiveSudoValidatesWithTheRealVisudo/a_line_that_is_not_a_rule (0.00s)
+=== RUN   TestLiveSudoDoesNotCallAMissingFileValid
+--- PASS: TestLiveSudoDoesNotCallAMissingFileValid (0.00s)
+=== RUN   TestLiveSudoReadsItsOwnVersion
+    live_sudo_test.go:101: this host runs sudo 1.9.15p5
+--- PASS: TestLiveSudoReadsItsOwnVersion (0.00s)
+=== RUN   TestLiveSudoPathSaysWhichRouteItTook
+    live_sudo_test.go:156: sudoers is /etc/sudoers, per sudo
+--- PASS: TestLiveSudoPathSaysWhichRouteItTook (0.00s)
+=== RUN   TestLiveSudoListsARealAccount
+    live_sudo_test.go:172: root may run: [env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin, use_pty (ALL : ALL) ALL]
+--- PASS: TestLiveSudoListsARealAccount (0.01s)
+=== RUN   TestLiveHostnameRenamesTheMachineAndPutsItBack
+    live_system_test.go:90: running="ip-10-0-141-35" persistent="ip-10-0-141-35"; hostnamectl="/usr/bin/hostnamectl" sysrc=""
+    live_system_test.go:155: /etc/hostname: "halite-live-probe"
+--- PASS: TestLiveHostnameRenamesTheMachineAndPutsItBack (0.04s)
+=== RUN   TestLiveHostnameTellsTheRunningNameFromTheBootTimeOne
+    live_system_test.go:198: /etc/hostname: "ip-10-0-141-35"
+--- PASS: TestLiveHostnameTellsTheRunningNameFromTheBootTimeOne (0.00s)
+=== RUN   TestLiveHostnameStateConvergesOnTheNameTheMachineHas
+--- PASS: TestLiveHostnameStateConvergesOnTheNameTheMachineHas (0.00s)
+=== RUN   TestLiveSysctlSetsARealKernelParameter
+    live_system_test.go:369: vm.swappiness is "60" on this linux kernel
+--- PASS: TestLiveSysctlSetsARealKernelParameter (0.00s)
+=== RUN   TestLiveSysctlPresentSetsAndPersists
+--- PASS: TestLiveSysctlPresentSetsAndPersists (0.00s)
+=== RUN   TestLiveSysctlRefusesAParameterThisKernelDoesNotHave
+--- PASS: TestLiveSysctlRefusesAParameterThisKernelDoesNotHave (0.00s)
+=== RUN   TestLiveSystemdSelfRestartIsRefused
+    live_systemd_service_self_test.go:83: the inner run, under haliteprobeself-5459.service:
+        === RUN   TestLiveSystemdSelfRestartIsRefused
+            live_systemd_service_self_test.go:98: /proc/self/cgroup inside haliteprobeself-5459.service: "0::/system.slice/haliteprobeself-5459.service\n"
+            live_systemd_service_self_test.go:104: the units on this process's cgroup path: ["haliteprobeself-5459.service"]
+            live_systemd_service_self_test.go:158: service.restart was refused and this process is still alive
+        --- PASS: TestLiveSystemdSelfRestartIsRefused (0.00s)
+        PASS
+--- PASS: TestLiveSystemdSelfRestartIsRefused (0.02s)
+=== RUN   TestLiveUdevReadsRealDevices
+--- PASS: TestLiveUdevReadsRealDevices (0.08s)
+=== RUN   TestLiveUdevControlAsRoot
+--- PASS: TestLiveUdevControlAsRoot (0.03s)
+=== RUN   TestLiveUserGroupsAreKeptOrRemovedAsAsked
+=== RUN   TestLiveUserGroupsAreKeptOrRemovedAsAsked/a_hand-added_group_survives_a_run_that_changes_something_else
+=== RUN   TestLiveUserGroupsAreKeptOrRemovedAsAsked/a_group_the_tree_drops_is_kept_by_default
+=== RUN   TestLiveUserGroupsAreKeptOrRemovedAsAsked/remove_groups_makes_the_list_exact,_then_converges
+--- PASS: TestLiveUserGroupsAreKeptOrRemovedAsAsked (0.07s)
+    --- PASS: TestLiveUserGroupsAreKeptOrRemovedAsAsked/a_hand-added_group_survives_a_run_that_changes_something_else (0.00s)
+    --- PASS: TestLiveUserGroupsAreKeptOrRemovedAsAsked/a_group_the_tree_drops_is_kept_by_default (0.00s)
+    --- PASS: TestLiveUserGroupsAreKeptOrRemovedAsAsked/remove_groups_makes_the_list_exact,_then_converges (0.01s)
+PASS
+ok  	github.com/edlitmus/halite/internal/builtin	812.115s
+=== RUN   TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir
+    live_unit_test.go:190: the old unit, as expected, failed:
+        Starting halite-live-apiunit.service - halite HTTP API...
+        halite: creating the token store: mkdir /var/lib/halite: read-only file system
+        halite-live-apiunit.service: Main process exited, code=exited, status=1/FAILURE
+        halite-live-apiunit.service: Failed with result 'exit-code'.
+        Failed to start halite-live-apiunit.service - halite HTTP API.
+        -- systemctl show:
+        Result=exit-code
+        ExecMainPID=5665
+        ExecMainCode=1
+        ExecMainStatus=1
+        ActiveState=failed
+        SubState=failed
+        -- the binary and its directory:
+        drwxr-xr-x 2 root root     4096 Nov 24 16:35 /usr/local/libexec/halite-live-apiunit
+        -rwxr-xr-x 1 root root 16814343 Nov 24 16:35 /usr/local/libexec/halite-live-apiunit/halite-api
+        -- the mount it is on:
+        TARGET FSTYPE OPTIONS
+        /      ext4   rw,relatime,discard,journal_async_commit,nobarrier,errors=remount-ro,commit=30,data=writeback
+        -- the journal since the start, naming the unit, the binary or an exec failure:
+        Nov 24 16:35:18.491012 ip-10-0-141-35 systemd[1]: Starting halite-live-apiunit.service - halite HTTP API...
+        Nov 24 16:35:18.513252 ip-10-0-141-35 systemd[1]: halite-live-apiunit.service: Main process exited, code=exited, status=1/FAILURE
+        Nov 24 16:35:18.513334 ip-10-0-141-35 systemd[1]: halite-live-apiunit.service: Failed with result 'exit-code'.
+        Nov 24 16:35:18.513477 ip-10-0-141-35 systemd[1]: Failed to start halite-live-apiunit.service - halite HTTP API.
+    live_unit_test.go:200: the shipped unit ran:
+        Starting halite-live-apiunit.service - halite HTTP API...
+        no tokens have been issued
+        halite-live-apiunit.service: Deactivated successfully.
+        Finished halite-live-apiunit.service - halite HTTP API.
+    live_unit_test.go:221: /var/lib/halite: drwxr-xr-x, uid 0
+--- PASS: TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir (0.58s)
+PASS
+ok  	github.com/edlitmus/halite/cmd/halite-api	0.591s
+=== RUN   TestLiveACLIsNotCopiedOntoAFileTheAccountLinked
+--- PASS: TestLiveACLIsNotCopiedOntoAFileTheAccountLinked (0.01s)
+PASS
+ok  	github.com/edlitmus/halite/internal/atomicfile	0.014s
+=== RUN   TestLiveRenderSandboxConfinesTheChildAsRequired
+=== RUN   TestLiveRenderSandboxConfinesTheChildAsRequired/confined
+    live_confine_linux_test.go:84: the child reports uid 65534 gid 65534, interfaces up []
+    live_confine_linux_test.go:113: from the child: read "open /tmp/TestLiveRenderSandboxConfinesTheChildAsRequired2061381034/001/root-only: permission denied", dial "dial tcp 127.0.0.1:35201: connect: network is unreachable"
+=== RUN   TestLiveRenderSandboxConfinesTheChildAsRequired/the_read_probe_works_when_the_child_is_root
+--- PASS: TestLiveRenderSandboxConfinesTheChildAsRequired (0.01s)
+    --- PASS: TestLiveRenderSandboxConfinesTheChildAsRequired/confined (0.01s)
+    --- PASS: TestLiveRenderSandboxConfinesTheChildAsRequired/the_read_probe_works_when_the_child_is_root (0.00s)
+PASS
+ok  	github.com/edlitmus/halite/internal/rendersandbox	0.019s

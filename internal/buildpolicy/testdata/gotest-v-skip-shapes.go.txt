@@ -1,0 +1,45 @@
+package skipshapes
+
+import (
+	"testing"
+	"time"
+)
+
+// Shapes of `go test -v` output that the fleet's skip report has to read.
+
+func TestPlainSkip(t *testing.T) { t.Skip("the plain reason") }
+
+func TestSkipThenCleanupLogs(t *testing.T) {
+	t.Cleanup(func() { t.Log("cleanup put things back:\nline two of the cleanup") })
+	t.Log("before the skip")
+	t.Skip("the reason, with the cleanup after it")
+}
+
+func TestMultiLineSkip(t *testing.T) {
+	t.Skip("ran inside a child:\n=== RUN   Child\n--- PASS: Child (0.00s)\nPASS")
+}
+
+func TestSkipWithSubtests(t *testing.T) {
+	t.Run("sub-passes", func(t *testing.T) { t.Log("a subtest's own log") })
+	t.Run("sub-skips", func(t *testing.T) { t.Skip("a subtest's skip") })
+	t.Skip("the parent's reason, after its subtests")
+}
+
+func TestSilentSkip(t *testing.T) { t.SkipNow() }
+
+func TestPasses(t *testing.T) { t.Log("a passing test's log") }
+
+func TestParallelA(t *testing.T) {
+	t.Parallel()
+	t.Log("A before")
+	time.Sleep(50 * time.Millisecond)
+	t.Skip("A's reason")
+}
+
+func TestParallelB(t *testing.T) {
+	t.Parallel()
+	time.Sleep(20 * time.Millisecond)
+	t.Log("B logs while A waits")
+	time.Sleep(60 * time.Millisecond)
+	t.Skip("B's reason")
+}
