@@ -132,7 +132,7 @@ func (f Files) Exists(name string) bool {
 // empty file under the key's name, which ReadKey cannot read and this
 // refused to replace. A hub killed during its first start then never
 // started again: it could not load the key, made another, and was refused
-// writing it (DIVERGENCE 5.738). atomicfile.WriteNew writes a temporary
+// writing it (DIVERGENCE 5.739). atomicfile.WriteNew writes a temporary
 // file and links it into place, so that state no longer arises.
 //
 // An empty file already there, left by a build from before that, is
@@ -258,7 +258,7 @@ func (f Files) LoadCA(now func() time.Time) (*CA, error) {
 // holds an enrollment CA" -- a CA that had never issued anything, because
 // nothing can be issued without the certificate. A stress loop killing a
 // first `serve` at random moments left that state in 6 runs of 150
-// (DIVERGENCE 5.738). The certificate is now made from the key that is
+// (DIVERGENCE 5.739). The certificate is now made from the key that is
 // there, which is the same thing the interrupted start would have written
 // apart from its serial and dates, and the key is never replaced.
 //

@@ -336,7 +336,7 @@ func newOrchWaitLab(t *testing.T) *orchWaitLab {
 	// still writing its own key. Under -race on macos-15 it did, between
 	// hub.key's creation and the key going into it, and the second serve
 	// refused the empty file for ever. That was a defect in the hub, fixed
-	// in internal/pki (DIVERGENCE 5.738); this lab is not where it is held,
+	// in internal/pki (DIVERGENCE 5.739); this lab is not where it is held,
 	// and waiting for a file that is not the last one written was the
 	// lab's own mistake. The old loop also carried on silently when ca.crt
 	// never came; this one says so.

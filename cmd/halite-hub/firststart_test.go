@@ -19,7 +19,7 @@ import (
 // `serve` at random moments (150 runs, before the fix): ca.key with no
 // ca.crt in 6 of them, refused with "already holds an enrollment CA", and
 // an empty hub.key beside a whole CA in one, refused with "already holds a
-// private key". CI met the second on macos-15. DIVERGENCE 5.738.
+// private key". CI met the second on macos-15. DIVERGENCE 5.739.
 //
 // Built here rather than raced for, because a race that lands one run in
 // a hundred and fifty is a test that passes. The loop is what found them;

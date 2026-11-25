@@ -17,7 +17,7 @@ import (
 //
 // Put back the write it replaced -- open the final name with O_EXCL, then
 // write -- and this fails: the name exists before the data does, and
-// linkNew is never reached. DIVERGENCE 5.738.
+// linkNew is never reached. DIVERGENCE 5.739.
 func TestWriteNewNeverShowsAPartialName(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "hub.key")

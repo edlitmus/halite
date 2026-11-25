@@ -11,7 +11,7 @@ import (
 // What a crash during a first start leaves, and what the next start makes
 // of it. cmd/halite-hub's TestAHubKilledDuringItsFirstStartStartsAgain is
 // the same two layouts through a real `serve`; these are the refusals that
-// must survive the fix, which that test cannot see. DIVERGENCE 5.738.
+// must survive the fix, which that test cannot see. DIVERGENCE 5.739.
 
 func TestCreateCAFinishesACAWhoseCertificateWasNeverWritten(t *testing.T) {
 	f := Files{Dir: t.TempDir()}
