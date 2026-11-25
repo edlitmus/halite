@@ -241,7 +241,7 @@ func TestAStringThatIsNotANumberIsStillAnError(t *testing.T) {
 // way on every architecture. The binder tested `t == float64(int64(t))`,
 // whose conversion Go leaves undefined out of range: 2^63 came back as
 // MaxInt64 on arm64 (saturating, and float64(MaxInt64) rounds to 2^63) and
-// as an error on amd64. DIVERGENCE 5.741.
+// as an error on amd64. DIVERGENCE 5.743.
 func TestAFloatBindsToAnIntOnlyWhenItIsOne(t *testing.T) {
 	s := Signature{Module: "m", Function: "f", Params: []Param{{Name: "count", Type: Int}}}
 	for _, f := range []float64{1000, -1, math.Ldexp(-1, 63)} {

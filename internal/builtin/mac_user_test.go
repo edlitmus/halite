@@ -262,7 +262,7 @@ func TestMacUserPresentRefusesAPasswordHash(t *testing.T) {
 // On macOS user.present went to specFrom without checking resolveGID's
 // error, so a gid naming no group, or one that is not a number, became 0:
 // a new account was made in staff and the state succeeded. DIVERGENCE
-// 5.742.
+// 5.744.
 func TestMacUserPresentRefusesAGidItCannotResolve(t *testing.T) {
 	for _, gid := range []any{"no-such-group-here-4f2a", 1000.7, []any{int64(1000)}} {
 		c, runner := macAccountCtx(t, map[string]exec.Result{

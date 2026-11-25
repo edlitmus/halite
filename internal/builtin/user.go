@@ -539,7 +539,7 @@ func registerUserStates(r *Registries) {
 // `.nan` and `.inf` as whatever the architecture made of them. A gid that
 // is not positive is not passed to useradd or pw at all, so each of those
 // either changed nothing and succeeded, or asked for a gid nobody wrote.
-// DIVERGENCE 5.742.
+// DIVERGENCE 5.744.
 func resolveGID(args *value.Map) (int64, error) {
 	v, ok := args.Get("gid")
 	if !ok || v == nil {

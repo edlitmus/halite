@@ -52101,7 +52101,39 @@ macOS only, and the failure was met on Linux. On Windows a write to a
 closed socket is `WSAECONNRESET` or `WSAECONNABORTED`, not `EPIPE`, and
 whether either is worded as a reset there was not checked.
 
-### 5.741 A float became an integer by a conversion each architecture answers differently (2026-11-25)
+### 5.742 The incident playbook contained a leaked API certificate by re-issuing it, which contains nothing (2026-11-25)
+
+Chapter 40's table for a leaked credential said, for **the API's operator
+certificate**: "Re-issue it (`keys operator create api`), restart the
+API". The row above it, for any operator certificate, says what is true:
+there is no revocation for operator certificates, and the way to contain
+one is to remove its binding and issue a new one under a new name. Chapter
+37 says it too: "Re-issuing does not revoke the previous certificate". The
+API row was the one place that disagreed. It was an exculpatory
+instruction: it reads as containment and stops the investigation.
+
+**Shown** against a hub built from `main` at `08a55e4b` on this Mac (macOS
+26.7.3, arm64), with `ed` standing in for `api`. A copy of ed's pair was
+taken, ed's certificate was re-issued (serial `1C75…` became `2488…`), and
+the hub was started. The copy, presented with `--cert` and `--key`, was
+accepted as `cert:CN=ed`: `runner manage.up` exited 0, and the hub logged
+that principal. A self-signed pair with the same CN was refused, as a
+control.
+
+**Fix.** The row now says not to re-issue. It says to issue under a new name
+(`api2`), bind `api-service` to `cert:CN=api2` and remove the `cert:CN=api`
+binding, set `api_operator: api2`, and restart hub and API. Run as written,
+with `ed` and `ed2`: after the binding was moved and the hub restarted, the
+leaked `ed` pair was refused with `cert:CN=ed is bound to no role`, and
+`ed2` was accepted.
+
+**Not covered.** The `api_operator` half was not run against a real
+`halite-api`. What was run is the hub's half, which is the half that
+refuses the leaked certificate. That the API presents the new name after
+a restart with `api_operator: api2` rests on chapter 27's description of
+the key.
+
+### 5.743 A float became an integer by a conversion each architecture answers differently (2026-11-25)
 
 Found while dismissing code scanning alerts 47 and 48 (`go/incorrect-integer-conversion`
 on `orch_steps.go`), which were not this: those convert `int64` to `int`, which is
@@ -52124,7 +52156,7 @@ accident.
 **`states.Int`.** It returned `int64(t)` for a float. A declared `Int` reaches it
 already an `int64`, so a float only arrives through a parameter declared `Any`. The
 registry has one such parameter that a module reads with `states.Int`: `user.present`'s
-`gid`, which also takes a group name (5.742). Through that, `gid: .inf` read as 9223372036854775807 on arm64 and
+`gid`, which also takes a group name (5.744). Through that, `gid: .inf` read as 9223372036854775807 on arm64 and
 -9223372036854775808 on amd64.
 
 **Fix.** `value.ExactInt64` checks the range before it converts: a whole number from
@@ -52146,7 +52178,7 @@ edges, -2^63 and the largest float below 2^63 among them.
 **Not covered.** A state was not run through the compiler and runner with such a
 value; `Bind` was called directly. Not run on a native Linux or FreeBSD host.
 
-### 5.742 `user.present` ran without a `gid` it could not read, and on macOS without one naming no group (2026-11-25)
+### 5.744 `user.present` ran without a `gid` it could not read, and on macOS without one naming no group (2026-11-25)
 
 `user.present`'s `gid` is declared `Any`, because it takes a group name as well as a
 number (`gid: postfix`). So the binder checks nothing, and `resolveGID` is the only
@@ -52155,7 +52187,7 @@ check. It handled a string, and sent everything else to `states.Int`:
 - `gid: 1000.7` was truncated to 1000.
 - `gid: [1000]`, `gid: {id: 1000}` and `gid: yes` read as 0.
 - `.nan`, `.inf` and anything past 2^63 read as whatever the architecture made of
-  them (5.741): on amd64 `math.MinInt64`, on arm64 0 or `MaxInt64`.
+  them (5.743): on amd64 `math.MinInt64`, on arm64 0 or `MaxInt64`.
 
 A gid that is not positive is not passed to `useradd` or `pw`, and `diffAccount` does
 not compare it. So most of these created or left the account without the group the tree

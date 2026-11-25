@@ -180,7 +180,7 @@ func TestUserGidAcceptsAGroupName(t *testing.T) {
 // is neither a number nor a string, is refused. They went to states.Int,
 // which truncated 1000.7 to 1000, read a list or a boolean as 0 (so the
 // gid was never applied, and the state succeeded), and read .nan and .inf
-// as whatever the architecture made of them. DIVERGENCE 5.742.
+// as whatever the architecture made of them. DIVERGENCE 5.744.
 func TestUserGidRefusesWhatIsNeitherANumberNorAName(t *testing.T) {
 	if got, err := resolveGID(value.MapOf("gid", 1000.0)); err != nil || got != 1000 {
 		t.Errorf("gid 1000.0 resolved to %d (%v), want 1000", got, err)

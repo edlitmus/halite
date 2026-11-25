@@ -8,7 +8,7 @@ import (
 // ExactInt64 must give the same answer on every architecture, which a
 // round trip through int64 does not: Go leaves an out-of-range float
 // conversion to the implementation. The cases that matter are the edges,
-// so the table is mostly edges. DIVERGENCE 5.741.
+// so the table is mostly edges. DIVERGENCE 5.743.
 func TestExactInt64TakesOnlyWholeNumbersInRange(t *testing.T) {
 	twoTo63 := math.Ldexp(1, 63)
 	cases := []struct {

@@ -467,7 +467,7 @@ func coerce(s Signature, p Param, v any) (any, error) {
 			// one is the integer it spells. The test is ExactInt64's and
 			// not a round trip through int64, which was undefined out of
 			// range and made 2^63 an integer on arm64 and an error on
-			// amd64 (DIVERGENCE 5.741).
+			// amd64 (DIVERGENCE 5.743).
 			if n, ok := value.ExactInt64(t); ok {
 				return n, nil
 			}

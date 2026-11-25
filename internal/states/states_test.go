@@ -569,7 +569,7 @@ func (errBoom) Error() string { return "boom" }
 // binder has already made a declared Int an int64. What it did with one
 // was int64(t), which for a NaN, an infinity or anything past 2^63 is
 // whatever the architecture makes of it. Those now give the default; a
-// fraction in range still truncates. DIVERGENCE 5.741.
+// fraction in range still truncates. DIVERGENCE 5.743.
 func TestIntGivesTheDefaultForAFloatPastInt64(t *testing.T) {
 	args := func(v any) *value.Map { return value.MapOf("n", v) }
 	if got := Int(args(1000.0), "n", -7); got != 1000 {

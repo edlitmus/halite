@@ -966,7 +966,7 @@ func macUserPresentState(c *exec.Context, args *value.Map) (states.Result, error
 	// it gets here and this did not: on macOS `gid: no-such-group`, and
 	// `gid: [1000]` or `.nan`, became gid 0: a new account was given
 	// staff (20), an existing one kept the group it had, and the state
-	// reported success. DIVERGENCE 5.742.
+	// reported success. DIVERGENCE 5.744.
 	if _, err := resolveGID(args); err != nil {
 		return states.False(fmt.Sprintf("%v.", err)), nil
 	}
