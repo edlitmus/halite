@@ -187,21 +187,32 @@ func canonicalURI(u *url.URL) string {
 
 // canonicalQuery is the query sorted by name, then by value, with both
 // encoded.
+//
+// The pairs are sorted by their encoded name, and a repeated name by its
+// encoded value, because that is what SigV4 sorts. They were sorted raw:
+// `a{` and `ab` came out `ab=2&a%7B=1`, where `{` (0x7B) sorts after `b`
+// and its encoding `%7B` before it, so the signature a server computes
+// differs and the request is refused (issue 613, DIVERGENCE 5.736). The
+// same held for two values of one name. Nothing sends such a key today;
+// a caller passing a user's key through would be the first.
 func canonicalQuery(u *url.URL) string {
-	values := u.Query()
-	keys := make([]string, 0, len(values))
-	for k := range values {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var parts []string
-	for _, k := range keys {
-		list := append([]string(nil), values[k]...)
-		sort.Strings(list)
-		for _, v := range list {
-			parts = append(parts, uriEncode(k, true)+"="+uriEncode(v, true))
+	type pair struct{ name, value string }
+	var pairs []pair
+	for k, vs := range u.Query() {
+		name := uriEncode(k, true)
+		for _, v := range vs {
+			pairs = append(pairs, pair{name, uriEncode(v, true)})
 		}
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].name != pairs[j].name {
+			return pairs[i].name < pairs[j].name
+		}
+		return pairs[i].value < pairs[j].value
+	})
+	parts := make([]string, len(pairs))
+	for i, p := range pairs {
+		parts[i] = p.name + "=" + p.value
 	}
 	return strings.Join(parts, "&")
 }
