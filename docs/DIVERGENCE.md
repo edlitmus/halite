@@ -51898,6 +51898,53 @@ unknown until a pod runs `TestLivePodIdentityCredentialsAnswerSTS`. That
 test skips, saying why, outside a pod EKS has configured, and no CI leg
 runs it. Item 1 stays open on the issue until it has run.
 
+### 5.738.1 Run on EKS: the token is all the agent wanted
+
+**Where it ran.** A throwaway cluster in preprod us-west-2:
+- EKS 1.37, `eks-pod-identity-agent` v1.5.0-eksbuild.3, one `t4g.small` node on Amazon Linux 2023 (arm64).
+- A pod running `public.ecr.aws/amazonlinux/amazonlinux:2023-minimal` as root, under a service account whose Pod Identity association grants a role allowed to read one secret.
+- The binaries were built on macOS for linux/arm64 at the commits named below.
+- The cluster was destroyed the same day.
+
+**What EKS put in the pod**, captured:
+- `AWS_CONTAINER_CREDENTIALS_FULL_URI=http://169.254.170.23/v1/credentials`.
+- `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE=/var/run/secrets/pods.eks.amazonaws.com/serviceaccount/eks-pod-identity-token`. The file is a symlink to a regular file with mode `0644`, owned by root.
+- `AWS_REGION`, `AWS_DEFAULT_REGION` and `AWS_STS_REGIONAL_ENDPOINTS=regional`.
+
+**What the agent answers:**
+
+| Request | Answer |
+|---|---|
+| no `Authorization` | `400` `Service account token cannot be empty` |
+| `Authorization: not-the-token` | `400` `Service account token cannot be parsed: token is malformed: token contains an invalid number of segments` |
+| the file's contents, unchanged | `200` |
+
+So the token goes exactly as the file holds it, with no prefix. The refusal is a `400`, not the `401` the stand-in had guessed. `podidentity_test.go`'s stand-in now answers with these captured texts. Nothing in the code depended on the status: any answer other than `200` is an error.
+
+**`TestLivePodIdentityCredentialsAnswerSTS`:**
+- **Before**, at `43e20fb1` (with the test copied in and pointed at the old function): `http://169.254.170.23/v1/credentials answered 400`.
+- **After**, at `26754d0f`: it passed. STS named the caller `assumed-role/eds-test-ref-pod-identity-pod/eks-...`, which is the association's role, not the node's.
+
+**`TestLiveAWSSecretsReadsThroughPodIdentity`**, added here, runs `aws_secrets_manager` 1.3.0 through the hub's own pillar compiler and extension runtime. The extension is given only `PATH` and `HOME`, and the two values reach it only through `container_credentials_full_uri` and `container_authorization_token_file`.
+- **As the hub's own account (root):** it read the secret.
+- **Dropped to `nobody` with `extension_user`:** it failed before the extension ran, with `fork/exec .../aws-secrets: permission denied`.
+- **Dropped to `nobody`, with the working directory first made for `nobody` (`HALITE_PREPARE_WORKDIR=1`):** it read the secret. So an extension under another account can read the token file, and the failure is somewhere else.
+
+**That failure is a separate defect, and this does not fix it.** The runtime makes an extension's working directory (`<state_dir>/ext-work/<name>`) as the hub, mode `0700`, and then starts the extension in it as `extension_user`. The `chdir` fails, and Go reports it as `fork/exec <executable>`, which names the wrong thing. So with `extension_user` set, no extension can start on a hub or node that runs as root. It is left for its own change. `HALITE_PREPARE_WORKDIR` exists only to show what the cause is.
+
+**Getting there**, recorded so the next run does not spend an hour on it:
+- The reference VPC hands out central DNS servers, not the VPC resolver. They answer the cluster endpoint's name with its public addresses, so the node, and anything else in the VPC, reaches the API through NAT, and the endpoint's allowlist has to hold the NAT addresses. Without them the node group sat in `CREATING` for nineteen minutes.
+- The operator's Mac could not reach the API at all: its proxy client tunnels `*.eks.amazonaws.com`, and the TLS handshake died inside the tunnel. `kubectl` ran from an instance in the VPC over SSM.
+
+**Not covered:**
+- An IPv6 pod, and so `fd00:ec2::23`.
+- A token rotated under a running pod; the stand-in test holds that.
+- The `AWS_CONTAINER_AUTHORIZATION_TOKEN` value form.
+- Any architecture but arm64.
+- `halite-ext-signer-kms`, which takes the same `awsauth` path and was not run here.
+
+No CI leg runs either live test.
+
 ### 5.739 A hub killed during its first start never started again (2026-11-25)
 
 `TestRunnerStateOrchestrateWaitsForARunLongerThanTheClientsTimeout` failed

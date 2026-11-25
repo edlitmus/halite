@@ -3,6 +3,7 @@ package awsauth
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,10 +17,12 @@ import (
 // podIdentityStandIn answers like the full-URI credential endpoint and
 // records the Authorization header of every request.
 //
-// It refuses a request whose header is not `want` with a 401. That is
-// this stand-in's choice, not a claim about what the EKS agent answers:
-// the agent's own refusal is what TestLivePodIdentity... sees, and it is
-// not written down here because nobody has captured it yet.
+// A request whose header is not `want` is refused as the EKS Pod Identity
+// agent refused it, captured from eks-pod-identity-agent v1.5.0 on EKS 1.37
+// on 2026-11-25 (DIVERGENCE 5.738.1): 400, with a plain-text reason. No
+// token is "cannot be empty"; any string that is not a JWT, which every
+// token here is, is "malformed". The first cut of this stand-in answered
+// 401, which was a guess.
 type podIdentityStandIn struct {
 	mu   sync.Mutex
 	want string
@@ -34,7 +37,13 @@ func (s *podIdentityStandIn) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	got := r.Header.Get("Authorization")
 	s.seen = append(s.seen, got)
 	if got != s.want {
-		w.WriteHeader(http.StatusUnauthorized)
+		w.WriteHeader(http.StatusBadRequest)
+		if got == "" {
+			io.WriteString(w, "Service account token cannot be empty\n")
+		} else {
+			io.WriteString(w, "Service account token cannot be parsed: token is malformed: "+
+				"token contains an invalid number of segments\n")
+		}
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{
