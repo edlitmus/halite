@@ -151,6 +151,8 @@ func TestTheSecretKeyIsPartOfTheIdentity(t *testing.T) {
 		func(c *Config) { c.RoleARN = "arn:aws:iam::1:role/other" },
 		func(c *Config) { c.RoleSession = "other" },
 		func(c *Config) { c.WebIdentityTokenFile = "/other" },
+		func(c *Config) { c.ContainerCredentialsFullURI = "http://169.254.170.23/v1/credentials" },
+		func(c *Config) { c.ContainerAuthorizationTokenFile = "/other-token" },
 		func(c *Config) { c.AccessKeyID = "OTHER" },
 	} {
 		c := *cfgA

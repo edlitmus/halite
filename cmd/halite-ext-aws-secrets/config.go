@@ -128,6 +128,18 @@ type Config struct {
 	RoleARN              string `json:"role_arn"`
 	RoleSession          string `json:"role_session"`
 	WebIdentityTokenFile string `json:"web_identity_token_file"`
+	// ContainerCredentialsFullURI and ContainerAuthorizationTokenFile
+	// are EKS Pod Identity's endpoint and token file. EKS puts both in
+	// the pod's environment, as AWS_CONTAINER_CREDENTIALS_FULL_URI and
+	// AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE, but this extension is
+	// started with PATH and HOME and nothing else, so it never sees
+	// them: a hub in a pod names them here, normally
+	// `http://169.254.170.23/v1/credentials` and
+	// `/var/run/secrets/pods.eks.amazonaws.com/serviceaccount/eks-pod-identity-token`.
+	// The token file has to be readable by the account the extension
+	// runs as.
+	ContainerCredentialsFullURI     string `json:"container_credentials_full_uri"`
+	ContainerAuthorizationTokenFile string `json:"container_authorization_token_file"`
 }
 
 // Duration reads Go's duration spelling out of JSON, so a block can say
@@ -247,6 +259,9 @@ func (c *Config) provider() *awsauth.Provider {
 		RoleARN:              c.RoleARN,
 		RoleSession:          c.RoleSession,
 		WebIdentityTokenFile: c.WebIdentityTokenFile,
+
+		ContainerCredentialsFullURI:     c.ContainerCredentialsFullURI,
+		ContainerAuthorizationTokenFile: c.ContainerAuthorizationTokenFile,
 	}
 }
 

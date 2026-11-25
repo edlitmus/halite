@@ -155,6 +155,27 @@ func TestTheTokenFileWinsOverTheTokenValue(t *testing.T) {
 	}
 }
 
+// An extension is not given the pod's environment, so aws_secrets_manager
+// names the URI and the token file in its configuration. Those are used
+// with nothing in the environment at all.
+func TestTheContainerEndpointCanBeNamedInConfiguration(t *testing.T) {
+	stand := &podIdentityStandIn{want: "configured", expires: time.Now().Add(time.Hour)}
+	srv := httptest.NewServer(stand)
+	defer srv.Close()
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("configured"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := &Provider{
+		ContainerCredentialsFullURI:     srv.URL,
+		ContainerAuthorizationTokenFile: tokenFile,
+		Environ:                         envFrom(nil),
+	}
+	if _, err := p.Retrieve(context.Background()); err != nil {
+		t.Fatalf("%v (headers %q)", err, stand.headers())
+	}
+}
+
 // A token with a line break in it is refused by name, before any request.
 func TestATokenWithALineBreakIsRefusedBeforeTheRequest(t *testing.T) {
 	stand := &podIdentityStandIn{want: "x"}

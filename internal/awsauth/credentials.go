@@ -57,6 +57,20 @@ type Provider struct {
 	// `AssumeRoleWithWebIdentity` is used and no base credentials are
 	// needed.
 	WebIdentityTokenFile string
+	// ContainerCredentialsFullURI and ContainerAuthorizationTokenFile
+	// are EKS Pod Identity's, named in configuration rather than read
+	// from AWS_CONTAINER_CREDENTIALS_FULL_URI and
+	// AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE.
+	//
+	// They exist for a process that is not given the pod's environment.
+	// An extension is started with PATH and HOME and nothing else
+	// (internal/extension), so aws_secrets_manager in a pod never sees
+	// the two variables EKS sets, and reading them from the environment
+	// alone would leave Pod Identity unreachable from the one component
+	// most likely to want it. Each is used only when it is set; empty
+	// falls back to the environment.
+	ContainerCredentialsFullURI     string
+	ContainerAuthorizationTokenFile string
 	// Now is the clock, for the tests.
 	Now func() time.Time
 	// Environ reads the environment, for the tests.
@@ -134,6 +148,10 @@ func (p *Provider) baseCredentials(ctx context.Context) (Credentials, error) {
 	if p.Explicit.AccessKeyID != "" && p.Explicit.SecretAccessKey != "" {
 		return p.Explicit, nil
 	}
+	// Configuration before environment, as for the key above.
+	if p.ContainerCredentialsFullURI != "" {
+		return p.fetchFullURICredentials(ctx, p.ContainerCredentialsFullURI)
+	}
 	if id := p.env("AWS_ACCESS_KEY_ID"); id != "" {
 		return Credentials{
 			AccessKeyID:     id,
@@ -203,13 +221,16 @@ func (p *Provider) fetchFullURICredentials(ctx context.Context, uri string) (Cre
 
 // containerAuthorizationToken is the token a full-URI request carries.
 //
-// A file before a value: the file is
+// A file before a value, configuration before environment: the file is
 // what EKS sets and what it rotates, and a value in the environment is
 // the older ECS-on-anywhere form. Nothing set is no token, which is not
 // an error here -- the endpoint will say so if it wanted one, and a
 // local endpoint for a test may not.
 func (p *Provider) containerAuthorizationToken() (string, error) {
-	file := p.env("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE")
+	file := p.ContainerAuthorizationTokenFile
+	if file == "" {
+		file = p.env("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE")
+	}
 	token := ""
 	if file != "" {
 		raw, err := os.ReadFile(filepath.Clean(file))
