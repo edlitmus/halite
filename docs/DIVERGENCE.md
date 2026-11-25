@@ -51821,6 +51821,42 @@ on every CI leg of the first push and now name 1.2.1.
 metadata service actually restarting under a running node was not done;
 the 401 it would answer with was.
 
+### 5.739 The refusal test took a broken pipe for a certificate verdict (2026-11-25)
+
+`TestOnlyARevokedOrUnacceptableCertificateIsRefusedForGood/an_expired_certificate`
+failed on ubuntu-24.04 in PR 863's CI (run 45642150918) with
+
+    write tcp 127.0.0.1:…->127.0.0.1:…: write: broken pipe
+
+where it expected `remote error: tls: expired certificate`. The hub sends
+its alert and closes; the client's next write can reach the closed socket
+before the client reads the alert. `getWith` retries until the alert comes,
+but its `lostTheAlert` knew two shapes of the lost alert, HTTP/2's message
+and `connection reset by peer` (PR 846), and not this third one, which is
+the same race caught a step later.
+
+**Reproduced** on this Mac (macOS 26.7.3, arm64): 0 failures in 400 runs
+without `-race`, and 1 in 1,000 with it, `GOMAXPROCS=2`, the same broken
+pipe for the same case. With the fix, 3,000 runs under `-race` passed.
+
+**Fix.** `lostTheAlert` also accepts an error that `errors.Is` `EPIPE`.
+Matched as an errno rather than as text, so the wording of the platform's
+message does not matter.
+
+**What a node does was already right, and is now held.** `CertificateRefused`
+reads only an `OpError` whose `Op` is `remote error`, and a broken pipe's is
+`write`, so a node retries it, as it retries a reset. The test built only
+the HTTP/2 shape before. It now builds all three as the client returns
+them, and checks for each that `CertificateRefused` says no and that
+`lostTheAlert` would retry it. Without the `EPIPE` clause that check fails
+at once, every run, which a race that lands one run in a thousand would
+not do.
+
+Nothing an operator sees changed. **Not covered**: the stress run was on
+macOS only, and the failure was met on Linux. On Windows a write to a
+closed socket is `WSAECONNRESET` or `WSAECONNABORTED`, not `EPIPE`, and
+whether either is worded as a reset there was not checked.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
