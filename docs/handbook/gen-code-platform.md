@@ -260,7 +260,7 @@ Six packages had their own copy of the same write-a-temp-file-and- rename helper
 
 which are the two sides of one race. MoveFileEx has to open the destination for delete with no sharing; a reader holding it open makes that fail, and while it holds it a reader's open fails instead. Neither error mentions the other party, and neither is recoverable by the caller, so both are handled here rather than at eighteen call sites.
 
-**Files:** `atomicfile.go`, `atomicfile_unix.go`, `atomicfile_windows.go`, `gate.go`, `perm.go`, `root.go`, `xattr_linux.go`, `xattr_other.go`; with tests.
+**Files:** `atomicfile.go`, `atomicfile_unix.go`, `atomicfile_windows.go`, `gate.go`, `new.go`, `perm.go`, `root.go`, `xattr_linux.go`, `xattr_other.go`; with tests.
 
 **Exports.**
 
@@ -271,6 +271,7 @@ which are the two sides of one race. MoveFileEx has to open the destination for 
 - `Write` (func): Write replaces path with data, atomically as far as any reader is concerned: a reader sees either the old contents or the new, never a partial write and never an empty file.
 - `WriteIn` (func): WriteIn is Write for a name inside an os.Root: every component of name is resolved by the root, so a symlink anywhere on the way -- one that was already on disk, or one an archive created a moment earlier -- is followed only while it stays inside the root, and refused when it leaves.
 - `WriteInFrom` (func): WriteInFrom is WriteIn for contents that are read as they are written, so that an archive entry of a gigabyte costs a buffer and not a gigabyte.
+- `WriteNew` (func): WriteNew creates path holding data, and refuses if path already exists: the error then satisfies errors.Is(err, fs.ErrExist).
 - `WritePrepared` (func): WritePrepared is Write with one step inserted between the finished temporary file and the rename.
 
 ## `internal/fileperm`

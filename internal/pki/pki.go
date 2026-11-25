@@ -355,6 +355,13 @@ func NewCA(alg KeyAlgorithm, commonName string, lifetime time.Duration) (*CA, er
 	if err != nil {
 		return nil, err
 	}
+	return caFromKey(key, commonName, lifetime)
+}
+
+// caFromKey self-signs a CA certificate over a key that already exists:
+// NewCA's second half, and what Files.CreateCA uses to finish a CA whose
+// creation was interrupted after the key was written.
+func caFromKey(key crypto.Signer, commonName string, lifetime time.Duration) (*CA, error) {
 	serial, err := serialNumber()
 	if err != nil {
 		return nil, err
