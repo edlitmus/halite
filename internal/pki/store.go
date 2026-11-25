@@ -126,6 +126,24 @@ func (f Files) Exists(name string) bool {
 // Overwriting a private key is how an estate loses an identity, and no
 // caller here has a reason to: a rotation writes a new name and the old
 // one is retired deliberately.
+//
+// **The name holds the whole key or does not exist.** It was created with
+// O_EXCL and then written, so a process killed between the two left an
+// empty file under the key's name, which ReadKey cannot read and this
+// refused to replace. A hub killed during its first start then never
+// started again: it could not load the key, made another, and was refused
+// writing it (DIVERGENCE 5.738). atomicfile.WriteNew writes a temporary
+// file and links it into place, so that state no longer arises.
+//
+// An empty file already there, left by a build from before that, is
+// replaced rather than refused. It holds no key, so replacing it cannot
+// lose one, and the refusal's own message, "already holds a private key",
+// was false about it. Anything with even one byte in it is still refused:
+// a key in a form this package does not read is still somebody's key.
+//
+// The restriction is applied to the temporary file before the key is
+// written into it, so there is no instant at which the key exists on disk
+// reachable by another account (5.161, 5.164).
 func (f Files) WriteKey(name string, key crypto.Signer) error {
 	if err := f.Ensure(); err != nil {
 		return err
@@ -135,28 +153,24 @@ func (f Files) WriteKey(name string, key crypto.Signer) error {
 		return err
 	}
 	path := f.Path(name)
-	// fileperm.OpenFile restricts the handle before anything is written
-	// through it, so there is no instant at which the key exists on disk
-	// reachable by another account. The 0o600 alone is the whole answer on
-	// unix and, on Windows, the read-only attribute and whatever list the
-	// file inherited -- the mode said private and the file was not (5.161).
-	//
-	// This was an os.OpenFile and an ApplyFile beside it until the sweep in
-	// 5.164 gave the pair a name. Two calls that must both happen are one
-	// call now, which is the whole point of the sweep: the second half is
-	// what gets forgotten.
-	file, err := fileperm.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	err = atomicfile.WriteNew(path, pemBytes, 0o600)
+	if errors.Is(err, fs.ErrExist) && emptyRegularFile(path) {
+		if rmErr := os.Remove(path); rmErr != nil {
+			return fmt.Errorf("%s is empty, left by a write that never finished, and could not be removed: %w", path, rmErr)
+		}
+		err = atomicfile.WriteNew(path, pemBytes, 0o600)
+	}
 	if errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("%s already holds a private key; move it aside deliberately if it is to be replaced", path)
 	}
-	if err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	defer file.Close()
-	if _, err := file.Write(pemBytes); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	return file.Sync()
+	return err
+}
+
+// emptyRegularFile reports whether path is a regular file of no bytes.
+// Lstat, so that a link named like a key is never taken for an empty one.
+func emptyRegularFile(path string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() == 0
 }
 
 // ReadKey loads a private key.
@@ -237,9 +251,35 @@ func (f Files) LoadCA(now func() time.Time) (*CA, error) {
 // CreateCA generates an enrollment CA and stores it. It refuses to
 // replace one, because a second CA in the same directory means every
 // node in the estate has to enrol again.
+//
+// **A key with no certificate is finished rather than refused.** The key
+// is written first and the certificate after it, so a hub killed between
+// the two left ca.key alone, and every later start refused with "already
+// holds an enrollment CA" -- a CA that had never issued anything, because
+// nothing can be issued without the certificate. A stress loop killing a
+// first `serve` at random moments left that state in 6 runs of 150
+// (DIVERGENCE 5.738). The certificate is now made from the key that is
+// there, which is the same thing the interrupted start would have written
+// apart from its serial and dates, and the key is never replaced.
+//
+// The algorithm is the key's, not alg: alg chose it the first time.
 func (f Files) CreateCA(alg KeyAlgorithm, commonName string, lifetime time.Duration) (*CA, error) {
-	if f.Exists(CACertFile) || f.Exists(CAKeyFile) {
+	if f.Exists(CACertFile) {
 		return nil, fmt.Errorf("%s already holds an enrollment CA; `keys rotate-ca` is how one is replaced", f.Dir)
+	}
+	if f.Exists(CAKeyFile) && !emptyRegularFile(f.Path(CAKeyFile)) {
+		key, err := f.ReadKey(CAKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("%s holds no certificate and a key that cannot be read, so it is neither a CA nor the start of one: %w", f.Dir, err)
+		}
+		ca, err := caFromKey(key, commonName, lifetime)
+		if err != nil {
+			return nil, err
+		}
+		if err := f.WriteCert(CACertFile, ca.Cert.Raw); err != nil {
+			return nil, err
+		}
+		return ca, nil
 	}
 	ca, err := NewCA(alg, commonName, lifetime)
 	if err != nil {

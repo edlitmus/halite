@@ -108,10 +108,6 @@ func sharedReadExemptions() map[string]string {
 		"internal/job/signedreplay.go:append": "an append, not a read, and the " +
 			"replace it shares the file with is rewrite, which append itself calls " +
 			"with the same lock held, so within one SignedReplay the two cannot meet",
-		"internal/pki/store.go:WriteKey": "an exclusive create that refuses an " +
-			"existing file, not a read. It matches because every file in a " +
-			"pki.Files is one origin to this audit: certificates are replaced, and " +
-			"keys are created once",
 	}
 }
 
