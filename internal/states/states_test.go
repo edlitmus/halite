@@ -1,6 +1,7 @@
 package states
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -563,3 +564,26 @@ func hasPhase(failures []Failure, phase string) bool {
 type errBoom struct{}
 
 func (errBoom) Error() string { return "boom" }
+
+// Int reads a float only through a parameter declared Any, since the
+// binder has already made a declared Int an int64. What it did with one
+// was int64(t), which for a NaN, an infinity or anything past 2^63 is
+// whatever the architecture makes of it. Those now give the default; a
+// fraction in range still truncates. DIVERGENCE 5.741.
+func TestIntGivesTheDefaultForAFloatPastInt64(t *testing.T) {
+	args := func(v any) *value.Map { return value.MapOf("n", v) }
+	if got := Int(args(1000.0), "n", -7); got != 1000 {
+		t.Errorf("1000.0 read as %d", got)
+	}
+	if got := Int(args(1000.7), "n", -7); got != 1000 {
+		t.Errorf("1000.7 read as %d, want it truncated", got)
+	}
+	if got := Int(args(math.Nextafter(math.Ldexp(1, 63), 0)), "n", -7); got != 1<<63-1024 {
+		t.Errorf("the largest float below 2^63 read as %d", got)
+	}
+	for _, f := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), math.Ldexp(1, 63), 1e19} {
+		if got := Int(args(f), "n", -7); got != -7 {
+			t.Errorf("%v read as %d, want the default", f, got)
+		}
+	}
+}

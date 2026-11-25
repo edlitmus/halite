@@ -52055,6 +52055,51 @@ macOS only, and the failure was met on Linux. On Windows a write to a
 closed socket is `WSAECONNRESET` or `WSAECONNABORTED`, not `EPIPE`, and
 whether either is worded as a reset there was not checked.
 
+### 5.741 A float became an integer by a conversion each architecture answers differently (2026-11-25)
+
+Found while dismissing code scanning alerts 47 and 48 (`go/incorrect-integer-conversion`
+on `orch_steps.go`), which were not this: those convert `int64` to `int`, which is
+exact on every release target (5.690). Looking at where the `int64` came from led to
+two conversions from `float64` that CodeQL did not flag.
+
+YAML resolves `1000.0`, `1.0e+19`, `.nan` and `.inf` to floats. Go leaves the
+conversion of a NaN, an infinity or a float past int64's range to an integer to the
+implementation, and the two tier-1 architectures disagree: amd64 gives
+`math.MinInt64` for all of them, and arm64 saturates (NaN gives 0).
+
+**The binder.** A parameter declared `Int` took a float when
+`t == float64(int64(t))`. For 2^63 (`9.223372036854775808e+18` in YAML) arm64
+saturates to `MaxInt64`, `float64(MaxInt64)` rounds back up to 2^63, and the value
+was bound as 9223372036854775807. On amd64 it was refused. Every other out-of-range
+float, NaN and the infinities failed the round trip on both, so 2^63 was the one value
+the two disagreed on. Nobody writes it by accident, but the test was right only by
+accident.
+
+**`states.Int`.** It returned `int64(t)` for a float. A declared `Int` reaches it
+already an `int64`, so a float only arrives through a parameter declared `Any`. The
+registry has one such parameter that a module reads with `states.Int`: `user.present`'s
+`gid`, which also takes a group name. Through that, `gid: .inf` read as 9223372036854775807 on arm64 and
+-9223372036854775808 on amd64.
+
+**Fix.** `value.ExactInt64` checks the range before it converts: a whole number from
+-2^63 up to, not including, 2^63, with NaN failing the `Trunc` comparison. The binder
+uses it, so 2^63 is refused on both. `states.Int` uses it on the truncated value, so
+NaN, the infinities and anything out of range give the default; a fraction in range is
+still truncated, as `TestArgumentHelpersCoerceAndDefault` has always held, because that
+conversion is defined.
+
+**Shown.** Measured on this Mac (macOS, arm64) natively and as amd64 under Rosetta,
+through `yaml.Parse` and the real `user.present` and `group.present` signatures, before
+the fix: the table above is what came back. With the old code put back,
+`TestAFloatBindsToAnIntOnlyWhenItIsOne` fails on arm64 and passes on amd64 (which
+already refused 2^63), and `TestIntGivesTheDefaultForAFloatPastInt64` fails on both,
+with the values above. CI's macOS leg is arm64, so the binder's regression would show
+there and not on the Linux leg. `TestExactInt64TakesOnlyWholeNumbersInRange` holds the
+edges, -2^63 and the largest float below 2^63 among them.
+
+**Not covered.** A state was not run through the compiler and runner with such a
+value; `Bind` was called directly. Not run on a native Linux or FreeBSD host.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
