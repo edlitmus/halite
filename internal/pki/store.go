@@ -265,7 +265,14 @@ func (f Files) LoadCA(now func() time.Time) (*CA, error) {
 // The algorithm is the key's, not alg: alg chose it the first time.
 func (f Files) CreateCA(alg KeyAlgorithm, commonName string, lifetime time.Duration) (*CA, error) {
 	if f.Exists(CACertFile) {
-		return nil, fmt.Errorf("%s already holds an enrollment CA; `keys rotate-ca` is how one is replaced", f.Dir)
+		// It named `keys rotate-ca` as the way to replace one, and that
+		// command has never existed: SPEC 7.5 describes it, and it is not
+		// built (DIVERGENCE 6.1a). An operator following the message got
+		// "unknown subcommand". What it says now is what is true: there is
+		// no rotation, and a second CA means every node enrolls again, so
+		// this will not make one over the first. DIVERGENCE 5.739.1.
+		return nil, fmt.Errorf("%s already holds an enrollment CA (%s), and this will not make a second one over it: "+
+			"every node would have to enroll again. There is no CA rotation yet (SPEC 7.5, not built)", f.Dir, CACertFile)
 	}
 	if f.Exists(CAKeyFile) && !emptyRegularFile(f.Path(CAKeyFile)) {
 		key, err := f.ReadKey(CAKeyFile)

@@ -73,6 +73,15 @@ func runKeys(args *cli.Args) int {
 		return runKeysOperator(args)
 	case "signer":
 		return runKeysSigner(args)
+	case "rotate-ca":
+		// SPEC 7.5 names it and lists it among these subcommands, so an
+		// operator will try it. It answered "unknown subcommand", as a
+		// typo would, while the CA's own refusal told operators to use it
+		// (DIVERGENCE 5.739.1). Refused here, before the hub is opened,
+		// as `files` is.
+		cli.Fatalf("`keys rotate-ca` is CA rotation (SPEC 7.5), which is not built. " +
+			"There is one CA generation, and it lasts ten years: `halite-hub doctor` " +
+			"warns 30 days before it expires.")
 	}
 
 	// Opened on first use, so that a subcommand that is none of these
