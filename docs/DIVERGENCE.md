@@ -51821,6 +51821,83 @@ on every CI leg of the first push and now name 1.2.1.
 metadata service actually restarting under a running node was not done;
 the 401 it would answer with was.
 
+### 5.738 EKS Pod Identity's credential endpoint was asked without its token (2026-11-25)
+
+Issue 613, item 1. The full-URI form of the container credential
+endpoint, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, was fetched with no
+`Authorization` header, and nothing read
+`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` or
+`AWS_CONTAINER_AUTHORIZATION_TOKEN`. EKS Pod Identity sets both, and its
+agent wants the token, so the path EKS documents for a pod could not
+work. Found by the issue 321 audit against a stand-in, where the request
+carried `Authorization=""`.
+
+Looking at the path turned up two more things the issue did not name.
+
+**The full URI was fetched wherever it pointed, over plain HTTP.** It
+comes from the environment and the answer is a key, so a URI naming an
+arbitrary host would have sent the token there and taken credentials
+back. The AWS SDKs allow plain HTTP only to loopback and to the ECS and
+EKS agents' link-local addresses; that rule is taken from the SDKs'
+documented behaviour, not captured from them.
+
+**An extension could not reach it at all.** The extension runtime starts
+an extension with `PATH` and `HOME` and nothing else
+(`internal/extension/runtime.go`), so `aws_secrets_manager` in a pod
+never sees the two variables, and fixing only the environment path would
+have left Pod Identity unreachable from the component most likely to
+want it. `halite-ext-signer-kms` and the hub's S3 backend are given the
+operator's own environment and are covered by that path alone.
+
+**Fix.**
+- The full-URI request carries the token. A file is read before a value,
+  configuration before environment, and the file is read again on every
+  fetch, because EKS rotates it under a running pod.
+- A token with a line break is refused by name before any request.
+- Plain HTTP is refused to any host but loopback, `localhost`,
+  `169.254.170.2`, `169.254.170.23` and `fd00:ec2::23`, and the refusal
+  says to use HTTPS. Only literal addresses count, so a name that
+  resolves to one of them is refused: resolving it and checking the
+  answer leaves room for the answer to change before the connection.
+- `awsauth.Provider` takes `ContainerCredentialsFullURI` and
+  `ContainerAuthorizationTokenFile` from configuration, used before the
+  environment. `aws_secrets_manager` exposes them as
+  `container_credentials_full_uri` and
+  `container_authorization_token_file`, and both are part of its cache
+  identity (issue 622), because they decide which principal signs.
+- The relative-URI ECS form is unchanged and sends no token.
+
+**Held by tests.** `internal/awsauth/podidentity_test.go` holds the token
+from the file, a rotated file at the next refresh, the file over the
+value, configuration with an empty environment, the line-break refusal
+with no request made, and a table of allowed and refused URIs in which a
+refused one is shown never to be fetched.
+`cmd/halite-ext-aws-secrets/podidentity_test.go` takes the two keys
+through `parseConfig` to a request that carries the token, with the
+environment empty. Each fix was taken out in turn and its tests failed:
+- no header: four tests;
+- no host check: the URI table;
+- no line-break check: its test;
+- the token read once and kept: four, the rotation test among them;
+- the keys not handed to the provider: the extension's test and the
+  identity test;
+- the keys left out of the identity: the identity test.
+
+**Two extensions move.** `halite-ext-aws-secrets` goes from 1.2.1 to
+1.3.0, because it has two new keys. `halite-ext-signer-kms` goes from
+1.0.2 to 1.0.3, because its credentials now carry a token and refuse
+some URIs they used to fetch. As in 5.737, each needs signing again and
+each pin moved. The handbook's signing example (chapter 29) and the two
+tests that pin the aws-secrets version name 1.3.0.
+
+**Not demonstrated.** Nothing here has run against EKS. The stand-in
+refuses a missing token with a 401 by its own choice. What the Pod
+Identity agent answers, whether its token needs any prefix, and whether
+the token file is readable by the account an extension drops to are all
+unknown until a pod runs `TestLivePodIdentityCredentialsAnswerSTS`. That
+test skips, saying why, outside a pod EKS has configured, and no CI leg
+runs it. Item 1 stays open on the issue until it has run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
