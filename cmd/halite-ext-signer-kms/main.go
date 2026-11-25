@@ -52,7 +52,7 @@ import (
 // that is not a region name before it builds the STS host (DIVERGENCE
 // 5.324), so a configuration that used to send a signed AssumeRole call
 // somewhere now fails before it is sent.
-const Version = "1.0.2"
+const Version = "1.0.3"
 
 // callTimeout bounds one call to KMS. A `run` waits on it, so a service
 // that does not answer should fail the submission in seconds rather

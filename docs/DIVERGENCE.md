@@ -51821,6 +51821,47 @@ on every CI leg of the first push and now name 1.2.1.
 metadata service actually restarting under a running node was not done;
 the 401 it would answer with was.
 
+### 5.738 EKS Pod Identity's credential endpoint was asked without its token (2026-11-25)
+
+Issue 613, item 1. The full-URI form of the container credential
+endpoint, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, was fetched with no
+`Authorization` header, and nothing read
+`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` or
+`AWS_CONTAINER_AUTHORIZATION_TOKEN`. EKS Pod Identity sets both, and its
+agent wants the token, so the path EKS documents for a pod could not
+work. Found by the issue 321 audit against a stand-in, where the request
+carried `Authorization=""`.
+
+**Fix.**
+- The full-URI request carries the token. A file is read before a value,
+  and the file is read again on every fetch, because EKS rotates it under
+  a running pod.
+- A token with a line break is refused by name before any request.
+- The relative-URI ECS form is unchanged and sends no token.
+
+**Held by tests.** `internal/awsauth/podidentity_test.go` holds the token
+from the file, a rotated file at the next refresh, the file over the
+value, and the line-break refusal with no request made. Each fix was
+taken out in turn and its tests failed:
+- no header: three tests;
+- no line-break check: its test;
+- the token read once and kept: three, the rotation test among them.
+
+**One extension moves.** `halite-ext-signer-kms` goes from 1.0.2 to
+1.0.3: it is given the operator's own environment, so in a pod its
+credentials now carry the token. As in 5.737, its bundle needs signing
+again and its pin moved. `halite-ext-aws-secrets` keeps 1.2.1 with a new
+source digest, because its behaviour has not changed: it is started with
+`PATH` and `HOME` only, never sees the variables, and so cannot use Pod
+Identity yet.
+
+**Not demonstrated.** Nothing here has run against EKS. The stand-in
+refuses a missing token with a 401 by its own choice. What the Pod
+Identity agent answers and whether its token needs any prefix are both
+unknown until a pod runs `TestLivePodIdentityCredentialsAnswerSTS`. That
+test skips, saying why, outside a pod EKS has configured, and no CI leg
+runs it. Item 1 stays open on the issue until it has run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -145,9 +145,67 @@ func (p *Provider) baseCredentials(ctx context.Context) (Credentials, error) {
 		return p.fetchContainerCredentials(ctx, ECSAddress+uri)
 	}
 	if uri := p.env("AWS_CONTAINER_CREDENTIALS_FULL_URI"); uri != "" {
-		return p.fetchContainerCredentials(ctx, uri)
+		return p.fetchFullURICredentials(ctx, uri)
 	}
 	return p.fetchInstanceCredentials(ctx)
+}
+
+// fetchFullURICredentials is the full-URI form of the container
+// credential endpoint: EKS Pod Identity, and anything else that hands a
+// process a URL and a token.
+//
+// The first cut sent no Authorization header. Pod Identity's agent refuses a
+// request without the pod's token, so the path EKS documents could not
+// work -- the request carried `Authorization=""` against a stand-in.
+// The token is read here, on every fetch and not once at start, because
+// EKS rotates the file under a running pod; a token read at start is a
+// pod that loses its credentials when the first one expires.
+func (p *Provider) fetchFullURICredentials(ctx context.Context, uri string) (Credentials, error) {
+	token, err := p.containerAuthorizationToken()
+	if err != nil {
+		return Credentials{}, err
+	}
+	var headers map[string]string
+	if token != "" {
+		headers = map[string]string{"Authorization": token}
+	}
+	body, err := p.get(ctx, uri, headers)
+	if err != nil {
+		return Credentials{}, err
+	}
+	var parsed containerCredentials
+	if err := decodeJSON(body, &parsed); err != nil {
+		return Credentials{}, err
+	}
+	return parsed.toCredentials()
+}
+
+// containerAuthorizationToken is the token a full-URI request carries.
+//
+// A file before a value: the file is
+// what EKS sets and what it rotates, and a value in the environment is
+// the older ECS-on-anywhere form. Nothing set is no token, which is not
+// an error here -- the endpoint will say so if it wanted one, and a
+// local endpoint for a test may not.
+func (p *Provider) containerAuthorizationToken() (string, error) {
+	file := p.env("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE")
+	token := ""
+	if file != "" {
+		raw, err := os.ReadFile(filepath.Clean(file))
+		if err != nil {
+			return "", fmt.Errorf("reading the container authorization token: %w", err)
+		}
+		token = strings.TrimSpace(string(raw))
+	} else {
+		token = strings.TrimSpace(p.env("AWS_CONTAINER_AUTHORIZATION_TOKEN"))
+	}
+	// A header value cannot carry a line break, and Go's client refuses
+	// one with a message about an invalid header field that says nothing
+	// about where the value came from. Say it here instead.
+	if strings.ContainsAny(token, "\r\n") {
+		return "", fmt.Errorf("the container authorization token has a line break in it")
+	}
+	return token, nil
 }
 
 // containerCredentials is what the ECS credential endpoint and IMDS
