@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -45,11 +47,26 @@ const lostAlert = "http2: client conn could not be established"
 
 // lostTheAlert reports an error that carries no word of why the handshake
 // ended. Besides HTTP/2's own message, the client's next write can meet the
-// server's reset before the alert is read: "connection reset by peer", seen
-// once for the expired-certificate case on CI's fips-test leg (PR 846). A
-// node retries both, and so does this helper, until the alert itself comes.
+// server's close before the alert is read, and that write fails in one of
+// two ways depending on how far the close has got:
+//
+//   - "connection reset by peer", seen once for the expired-certificate case
+//     on CI's fips-test leg (PR 846);
+//   - "write: broken pipe" (EPIPE), seen for the same case on ubuntu-24.04
+//     in PR 863's CI, and once in 1,000 runs under -race on macOS. The
+//     helper knew the reset and not this, so the case failed on an error
+//     that says no more about the certificate than the reset does.
+//     DIVERGENCE 5.740.
+//
+// A node retries all three, because CertificateRefused reads only a remote
+// alert and none of them is one, and so does this helper, until the alert
+// itself comes. The test below holds that CertificateRefused says no to
+// each, so that retrying here is what a node does rather than a kindness
+// the test does itself.
 func lostTheAlert(err error) bool {
-	return strings.Contains(err.Error(), lostAlert) || strings.Contains(err.Error(), "connection reset by peer")
+	return strings.Contains(err.Error(), lostAlert) ||
+		strings.Contains(err.Error(), "connection reset by peer") ||
+		errors.Is(err, syscall.EPIPE)
 }
 
 // getWith makes one request on a fresh client, again while the alert was
@@ -118,9 +135,21 @@ func TestOnlyARevokedOrUnacceptableCertificateIsRefusedForGood(t *testing.T) {
 			"refused", false},
 	}
 	// The lost alert is not a refusal: it carries nothing that says which
-	// failure it was, so the node must retry it.
-	if CertificateRefused(&url.Error{Op: "Get", URL: hub.url, Err: errors.New(lostAlert)}) {
-		t.Error("a lost alert was read as a refusal")
+	// failure it was, so the node must retry it. Each shape of it is built as
+	// the client returns it, and lostTheAlert must recognise each too, or
+	// getWith would hand the case a race instead of an alert.
+	for name, lost := range map[string]error{
+		"http2": errors.New(lostAlert),
+		"reset": &net.OpError{Op: "read", Net: "tcp", Err: os.NewSyscallError("read", syscall.ECONNRESET)},
+		"pipe":  &net.OpError{Op: "write", Net: "tcp", Err: os.NewSyscallError("write", syscall.EPIPE)},
+	} {
+		err := &url.Error{Op: "Get", URL: hub.url, Err: lost}
+		if CertificateRefused(err) {
+			t.Errorf("a lost alert (%s: %v) was read as a refusal", name, err)
+		}
+		if !lostTheAlert(err) {
+			t.Errorf("getWith would not retry a lost alert (%s: %v)", name, err)
+		}
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
