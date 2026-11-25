@@ -52101,6 +52101,38 @@ macOS only, and the failure was met on Linux. On Windows a write to a
 closed socket is `WSAECONNRESET` or `WSAECONNABORTED`, not `EPIPE`, and
 whether either is worded as a reset there was not checked.
 
+### 5.742 The incident playbook contained a leaked API certificate by re-issuing it, which contains nothing (2026-11-25)
+
+Chapter 40's table for a leaked credential said, for **the API's operator
+certificate**: "Re-issue it (`keys operator create api`), restart the
+API". The row above it, for any operator certificate, says what is true:
+there is no revocation for operator certificates, and the way to contain
+one is to remove its binding and issue a new one under a new name. Chapter
+37 says it too: "Re-issuing does not revoke the previous certificate". The
+API row was the one place that disagreed. It was an exculpatory
+instruction: it reads as containment and stops the investigation.
+
+**Shown** against a hub built from `main` at `08a55e4b` on this Mac (macOS
+26.7.3, arm64), with `ed` standing in for `api`. A copy of ed's pair was
+taken, ed's certificate was re-issued (serial `1C75…` became `2488…`), and
+the hub was started. The copy, presented with `--cert` and `--key`, was
+accepted as `cert:CN=ed`: `runner manage.up` exited 0, and the hub logged
+that principal. A self-signed pair with the same CN was refused, as a
+control.
+
+**Fix.** The row now says not to re-issue. It says to issue under a new name
+(`api2`), bind `api-service` to `cert:CN=api2` and remove the `cert:CN=api`
+binding, set `api_operator: api2`, and restart hub and API. Run as written,
+with `ed` and `ed2`: after the binding was moved and the hub restarted, the
+leaked `ed` pair was refused with `cert:CN=ed is bound to no role`, and
+`ed2` was accepted.
+
+**Not covered.** The `api_operator` half was not run against a real
+`halite-api`. What was run is the hub's half, which is the half that
+refuses the leaked certificate. That the API presents the new name after
+a restart with `api_operator: api2` rests on chapter 27's description of
+the key.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
