@@ -33,6 +33,7 @@ package states
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -283,7 +284,17 @@ func Int(args *value.Map, name string, def int64) int64 {
 	case int64:
 		return t
 	case float64:
-		return int64(t)
+		// A parameter declared Int arrives here already an int64, because
+		// the binder converted it. A float reaches this only through a
+		// parameter declared Any, and int64(t) of a NaN, an infinity or
+		// anything past 2^63 is whatever the architecture says it is --
+		// math.MinInt64 on amd64, saturated on arm64 (DIVERGENCE 5.743).
+		// Those give the default. A fraction is still truncated, as it
+		// always was and TestArgumentHelpersCoerceAndDefault holds: that
+		// is defined, and a parameter that must refuse 1.5 declares Int.
+		if n, ok := value.ExactInt64(math.Trunc(t)); ok {
+			return n
+		}
 	}
 	return def
 }

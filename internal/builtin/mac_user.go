@@ -962,6 +962,14 @@ func macPlainAccountName(name string) bool {
 // in place of the account tool.
 
 func macUserPresentState(c *exec.Context, args *value.Map) (states.Result, error) {
+	// specFrom drops resolveGID's error, which userPresent checks before
+	// it gets here and this did not: on macOS `gid: no-such-group`, and
+	// `gid: [1000]` or `.nan`, became gid 0: a new account was given
+	// staff (20), an existing one kept the group it had, and the state
+	// reported success. DIVERGENCE 5.744.
+	if _, err := resolveGID(args); err != nil {
+		return states.False(fmt.Sprintf("%v.", err)), nil
+	}
 	spec := specFrom(args)
 	if spec.Name == "" {
 		return states.False("This state needs an account name."), nil

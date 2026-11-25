@@ -18,7 +18,7 @@ import (
 // certificate with an operator's and exited 0; the hub then refused to
 // start, and the CA could not be got back. Now a pair is replaced only when
 // the certificate there is an operator certificate for the same name.
-// DIVERGENCE 5.741.
+// DIVERGENCE 5.745.
 func TestOperatorCreateReplacesOnlyThatOperatorsPair(t *testing.T) {
 	root := t.TempDir()
 	pkiDir := filepath.Join(root, "pki")

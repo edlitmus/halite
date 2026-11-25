@@ -609,7 +609,7 @@ func runKeysOperator(args *cli.Args) int {
 // not a CA certificate") under a CA nobody could recover, so every node
 // would have to enroll again. `--out <pki_dir>/hub` did the same to the
 // hub's own pair. The key store refuses to overwrite a key, and this wrote
-// around it. DIVERGENCE 5.741.
+// around it. DIVERGENCE 5.745.
 //
 // So a pair is replaced only when the certificate there is an operator
 // certificate for this same name. Anything else at either name is refused,

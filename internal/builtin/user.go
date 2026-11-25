@@ -531,30 +531,49 @@ func registerUserStates(r *Registries) {
 // A name that no group has is an error naming it, rather than a silent
 // zero -- gid 0 is root's, and defaulting to it is the one wrong answer
 // that would look like it worked.
+//
+// Anything that is neither a number nor a name is an error too. `gid` is
+// declared Any so that it can take a name, which means the binder checks
+// nothing, and this went to states.Int for whatever was not a string:
+// `gid: 1000.7` was truncated to 1000, `[1000]` or `yes` read as 0, and
+// `.nan` and `.inf` as whatever the architecture made of them. A gid that
+// is not positive is not passed to useradd or pw at all, so each of those
+// either changed nothing and succeeded, or asked for a gid nobody wrote.
+// DIVERGENCE 5.744.
 func resolveGID(args *value.Map) (int64, error) {
 	v, ok := args.Get("gid")
 	if !ok || v == nil {
 		return 0, nil
 	}
-	if name, isStr := v.(string); isStr {
-		if trimmed := strings.TrimSpace(name); trimmed != "" {
-			// A group named by its digits is still a gid.
-			if n, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
-				return n, nil
-			}
-			g, err := user.LookupGroup(trimmed)
-			if err != nil {
-				return 0, fmt.Errorf("the group %q named by `gid` does not exist: %w", trimmed, err)
-			}
-			n, err := strconv.ParseInt(g.Gid, 10, 64)
-			if err != nil {
-				return 0, fmt.Errorf("the group %q has gid %q, which is not a number", trimmed, g.Gid)
-			}
+	switch t := v.(type) {
+	case int64:
+		return t, nil
+	case float64:
+		// YAML makes `1000.0` a float, and it is still the gid 1000.
+		if n, ok := value.ExactInt64(t); ok {
 			return n, nil
 		}
-		return 0, nil
+		return 0, fmt.Errorf("`gid` must be a whole number or a group name, found %v", t)
+	case string:
+		trimmed := strings.TrimSpace(t)
+		if trimmed == "" {
+			return 0, nil
+		}
+		// A group named by its digits is still a gid.
+		if n, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+			return n, nil
+		}
+		g, err := user.LookupGroup(trimmed)
+		if err != nil {
+			return 0, fmt.Errorf("the group %q named by `gid` does not exist: %w", trimmed, err)
+		}
+		n, err := strconv.ParseInt(g.Gid, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("the group %q has gid %q, which is not a number", trimmed, g.Gid)
+		}
+		return n, nil
 	}
-	return states.Int(args, "gid", 0), nil
+	return 0, fmt.Errorf("`gid` must be a numeric id or a group name, found %s", value.TypeName(v))
 }
 
 func specFrom(args *value.Map) userSpec {

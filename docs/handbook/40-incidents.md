@@ -108,7 +108,7 @@ signing key.*
 | **A person's API password** | Remove or lock the account (`accounts.yaml`), `halite-api token revoke --principal alice`, restart the API | Rotate the password; check for `halite_auth_attempts_total{result="accepted"}` from odd sources |
 | **LDAP/OIDC identity** | Disable it in the directory or provider; `token revoke --principal` | Review role mappings |
 | **An operator certificate** | Remove its binding from `policy.yaml` and restart hub **and** API: the certificate is still valid but is bound to nothing and can do nothing. There is no certificate revocation list for operators; it expires (30 days by default) | Issue a new one under a new name |
-| **The API's operator certificate** | Re-issue it (`keys operator create api`), restart the API; narrow the `api-service` role | |
+| **The API's operator certificate** | **Not** by re-issuing it: a re-issue revokes nothing, and the old certificate still authenticates as `cert:CN=api` until it expires. Issue one under a new name (`keys operator create api2`), bind `api-service` to `cert:CN=api2` and remove the `cert:CN=api` binding in `policy.yaml`, set `api_operator: api2` in the API's configuration, and restart hub **and** API | Narrow the `api-service` role; delete the old `operator-api.*` files |
 | **A webhook secret** | Change `secret_file`, restart the API | Replays are refused by nonce within the window; rotate and re-sign senders |
 | **A job-signing key** | Remove its line from `job_signer_keys` on every node (a state does this) | Make a new signer; sign with it |
 | **An extension signing key** | Remove it from `extension_trust_keys` on hub and nodes; re-sign extensions with a new key and update the pins | |
