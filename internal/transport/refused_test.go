@@ -56,7 +56,7 @@ const lostAlert = "http2: client conn could not be established"
 //     in PR 863's CI, and once in 1,000 runs under -race on macOS. The
 //     helper knew the reset and not this, so the case failed on an error
 //     that says no more about the certificate than the reset does.
-//     DIVERGENCE 5.739.
+//     DIVERGENCE 5.740.
 //
 // A node retries all three, because CertificateRefused reads only a remote
 // alert and none of them is one, and so does this helper, until the alert

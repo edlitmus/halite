@@ -56,7 +56,8 @@ func (c *secretsClient) now() time.Time {
 // Everything in the block that decides which principal signs, or which
 // service hears it: the static access key and its secret, the role
 // assumed and the session name, the web identity token file, the
-// endpoint and the partition. Two blocks agreeing on all of these send
+// container credential endpoint and its token file, the endpoint and
+// the partition. Two blocks agreeing on all of these send
 // the same signed request for the same secret, so one may reuse what the
 // other fetched; two that differ in any of them may not (issue 622).
 //
@@ -81,6 +82,11 @@ func (c *secretsClient) identity() string {
 		part(p.RoleARN)
 		part(p.RoleSession)
 		part(p.WebIdentityTokenFile)
+		// The pod's credential endpoint and token decide the principal
+		// as much as a role does: two blocks naming different ones ask
+		// as different identities.
+		part(p.ContainerCredentialsFullURI)
+		part(p.ContainerAuthorizationTokenFile)
 		part(p.Partition)
 	}
 	return hex.EncodeToString(h.Sum(nil))
