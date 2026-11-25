@@ -52101,6 +52101,69 @@ macOS only, and the failure was met on Linux. On Windows a write to a
 closed socket is `WSAECONNRESET` or `WSAECONNABORTED`, not `EPIPE`, and
 whether either is worded as a reset there was not checked.
 
+### 5.741 `keys operator create --out` could write over the enrollment CA's key (2026-11-25)
+
+`keys operator create` replaces the pair at its destination, and that is
+deliberate: running it again is how an operator certificate is renewed
+(handbook chapter 37). But `--out` takes any path, and replacing was all
+the command did. Run against a hub built from `main` at `08a55e4b` on this
+Mac (macOS 26.7.3, arm64):
+
+    halite-hub keys operator create ed2 --out <pki_dir>/ca
+
+exited 0 and printed `cert <pki_dir>/ca.crt`. `ca.key` had been replaced
+with ed2's key and `ca.crt` with ed2's certificate. The next `serve`
+stopped with `ca.crt is not a CA certificate`. The CA's key was gone, so
+there was no way back that did not mean every node enrolling again.
+`--out <pki_dir>/hub` replaced the hub's own pair the same way. The key
+store refuses to overwrite a key (`WriteKey`, 5.739). This command wrote
+with `fileperm.WriteFile` and went around it.
+
+An operator's name cannot reach those files by itself: `IssueOperator`
+refuses `/` and `..`, and the default path is `operator-<name>`. Only
+`--out` could.
+
+**Fix.** Before a key is made, `mayReplaceOperatorPair` looks at what is at
+`<out>.crt` and `<out>.key`. A pair is replaced only when the certificate
+there is an operator certificate for the same name. Each of these is
+refused, with what was found:
+
+- a certificate that is not an operator's: the CA's, the hub's, a node's,
+  or one from another PKI;
+- a file that is not a certificate at all;
+- another operator's certificate, which would have ended that operator's
+  access as a side effect;
+- a key with no certificate beside it. That is what a signer's `.key` and
+  `.pub` look like. It is accepted only at the default
+  `<pki_dir>/operator-<name>`, where it is what a run killed between its
+  two writes leaves. Refusing it there would strand the re-run that mends
+  it, as 5.739 found for the hub.
+
+`TestOperatorCreateReplacesOnlyThatOperatorsPair` holds the five refusals,
+that the refused files are byte-for-byte unchanged and the CA still loads,
+and the three replacements that must still work. With the check taken out
+it fails: the first case writes over the CA, and every later case then fails
+on the broken CA. With the default-place exception taken out, the
+crash-remnant case fails. The demonstration above, run again with the fix,
+is refused, `ca.key`'s digest is unchanged, and `serve` starts. The test
+also passed on Linux (cross-compiled, run in Docker on this Mac, as
+uid 1000).
+
+**Found beside it, and not changed here.** The command writes the key and
+then the certificate, as two plain writes. A reader loading the pair in a
+loop through 200 re-issues failed 227 of 5,187 loads: 195 found a key and
+certificate that do not match, and 32 found an empty or partly written
+file. `halite-api` is not affected: `certreload` keeps the previous pair
+when a load fails, and that pair is still valid because a re-issue revokes
+nothing. A `halite-hub run` that starts at that moment can fail once. A
+re-issue killed between its writes leaves a mismatched pair, which another
+re-issue mends.
+
+**Not covered.** FreeBSD was not run: `ssh beastie` failed on the ssh-agent
+signing error recorded before. The check reads files and decides; nothing
+in it is platform-specific, but that is a judgement. Windows was not run.
+A destination that is a symbolic link is followed, as it was before.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
