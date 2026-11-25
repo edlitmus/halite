@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"sort"
 	"strings"
@@ -544,6 +546,16 @@ func runKeysOperator(args *cli.Args) int {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	if err := pki.ValidateNodeID(name); err != nil {
+		cli.Fatalf("%v", err)
+	}
+	base := args.Flag("out", "")
+	if base == "" {
+		base = h.files.Path("operator-" + name)
+	}
+	if err := mayReplaceOperatorPair(base, name, base == h.files.Path("operator-"+name)); err != nil {
+		cli.Fatalf("%v", err)
+	}
 	key, err := pki.GenerateKey(alg)
 	if err != nil {
 		cli.Fatalf("%v", err)
@@ -553,10 +565,6 @@ func runKeysOperator(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
-	base := args.Flag("out", "")
-	if base == "" {
-		base = h.files.Path("operator-" + name)
-	}
 	keyPEM, err := pki.EncodeKey(key)
 	if err != nil {
 		cli.Fatalf("%v", err)
@@ -588,6 +596,65 @@ func runKeysOperator(args *cli.Args) int {
 	fmt.Printf("key       %s\n", base+".key")
 	fmt.Printf("expires   %s\n", cert.NotAfter.UTC().Format(time.RFC3339))
 	return 0
+}
+
+// mayReplaceOperatorPair reports whether `keys operator create` may write
+// base.key and base.crt, which it does by replacing whatever is there.
+//
+// Replacing is the point when the pair is this operator's: re-running the
+// command is how an operator certificate is renewed (handbook chapter 37).
+// It was also all the command ever checked, and `--out` takes any path.
+// `--out <pki_dir>/ca` replaced the enrollment CA's private key with an
+// operator's, exited 0, and left a hub that would not start ("ca.crt is
+// not a CA certificate") under a CA nobody could recover, so every node
+// would have to enroll again. `--out <pki_dir>/hub` did the same to the
+// hub's own pair. The key store refuses to overwrite a key, and this wrote
+// around it. DIVERGENCE 5.745.
+//
+// So a pair is replaced only when the certificate there is an operator
+// certificate for this same name. Anything else at either name is refused,
+// and says what it found:
+//
+//   - a certificate that is not an operator's (the CA's, the hub's, a
+//     node's, one from another PKI) or that does not parse;
+//   - an operator certificate for somebody else, which would end that
+//     operator's access as a side effect;
+//   - a key with no certificate beside it, which is what a signer's
+//     `.key` and `.pub` look like, and the CA's key after a crash. The one
+//     exception is the default location, `<pki_dir>/operator-<name>`,
+//     where a key alone is what this command leaves when it is killed
+//     between its two writes; refusing it there would strand the re-run
+//     that fixes it, as 5.739 found for the hub.
+//
+// Nothing is checked about the key itself when the certificate is an
+// operator's: a key that does not match it is a half-finished earlier run.
+func mayReplaceOperatorPair(base, name string, defaultPlace bool) error {
+	certPath, keyPath := base+".crt", base+".key"
+	_, keyErr := os.Lstat(keyPath)
+	raw, certErr := os.ReadFile(certPath)
+	switch {
+	case certErr == nil:
+		cert, err := pki.DecodeCert(raw)
+		if err != nil {
+			return fmt.Errorf("%s is there and is not a certificate this command made, so it is not replaced: %v", certPath, err)
+		}
+		owner, err := pki.OperatorFromCert(cert)
+		if err != nil {
+			return fmt.Errorf("%s is there and is not an operator certificate (its subject is %q), so neither it nor %s is replaced; choose another --out",
+				certPath, cert.Subject.CommonName, keyPath)
+		}
+		if owner != name {
+			return fmt.Errorf("%s is operator %s's certificate, so it is not replaced with one for %s; choose another --out",
+				certPath, owner, name)
+		}
+		return nil
+	case !errors.Is(certErr, fs.ErrNotExist):
+		return fmt.Errorf("reading %s: %w", certPath, certErr)
+	case keyErr == nil && !defaultPlace:
+		return fmt.Errorf("%s is there with no certificate beside it, so it is not an operator's pair and is not replaced; choose another --out",
+			keyPath)
+	}
+	return nil
 }
 
 func orAny(s string) string {
