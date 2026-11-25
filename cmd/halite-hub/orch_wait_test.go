@@ -329,14 +329,20 @@ func newOrchWaitLab(t *testing.T) *orchWaitLab {
 	// The first serve makes the CA the operator's certificate is issued
 	// from; the hub reads the policy `--admin` writes when it starts, so
 	// it is started again after.
+	//
+	// It is killed once it is listening, which it does only after its key
+	// material is all on disk. This waited for ca.crt, which is written
+	// before hub.key and hub.crt, so the kill could land while the hub was
+	// still writing its own key. Under -race on macos-15 it did, between
+	// hub.key's creation and the key going into it, and the second serve
+	// refused the empty file for ever. That was a defect in the hub, fixed
+	// in internal/pki (DIVERGENCE 5.739); this lab is not where it is held,
+	// and waiting for a file that is not the last one written was the
+	// lab's own mistake. The old loop also carried on silently when ca.crt
+	// never came; this one says so.
 	serve := append([]string{"serve", "--names", "127.0.0.1,localhost"}, lab.hubArgs...)
 	first := lab.start(serve...)
-	for i := 0; i < 100; i++ {
-		if _, err := os.Stat(filepath.Join(dir, "pki", "ca.crt")); err == nil {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	waitListening(t, addr, 10*time.Second)
 	_ = first.Process.Kill()
 	_ = first.Wait()
 	if got := lab.hub("keys", "operator", "create", "ed", "--admin"); got.code != 0 {
@@ -362,6 +368,23 @@ func newOrchWaitLab(t *testing.T) *orchWaitLab {
 	lab.serve = serve
 	lab.startHub()
 	return lab
+}
+
+// waitListening waits until something accepts a TCP connection at addr.
+func waitListening(t *testing.T, addr string, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for {
+		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the first serve was not listening on %s after %v: %v", addr, within, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // startHub starts the hub and waits until it answers an operator.

@@ -51898,6 +51898,80 @@ unknown until a pod runs `TestLivePodIdentityCredentialsAnswerSTS`. That
 test skips, saying why, outside a pod EKS has configured, and no CI leg
 runs it. Item 1 stays open on the issue until it has run.
 
+### 5.739 A hub killed during its first start never started again (2026-11-25)
+
+`TestRunnerStateOrchestrateWaitsForARunLongerThanTheClientsTimeout` failed
+under `-race` on macos-15 in PR 863's CI (run 45642150918). Its lab starts
+`serve`, kills it as soon as `pki/ca.crt` exists, and starts it again, and
+the second `serve` exited with
+
+    <dir>/pki/hub.key already holds a private key; move it aside deliberately if it is to be replaced
+
+The lab was wrong to treat `ca.crt` as the end of a first start, but the
+failure was the hub's. **A first start interrupted at either of two
+moments left key material that every later start refused**, and nothing
+but an operator moving a file aside would get the hub out of it.
+
+**The two moments.** A first start writes `ca.key`, `ca.crt`, `hub.key`
+and `hub.crt`, in that order.
+
+- `CreateCA` refused when *either* CA file existed, so a kill between
+  `ca.key` and `ca.crt` left a CA that had never issued anything, and every
+  start after it said `already holds an enrollment CA; keys rotate-ca is
+  how one is replaced`. `serve` loads a CA only when `ca.crt` exists, so it
+  took this path every time.
+- `WriteKey` opened the key's final name with `O_CREATE|O_EXCL` and then
+  wrote the key into it. A kill between the two left an empty `hub.key`.
+  The next start could not read a key from it, made a new one, and was
+  refused writing it, with a message that called an empty file a private
+  key.
+
+**Measured.** A loop that started a first `serve` in a fresh directory,
+killed it with SIGKILL a random 0-30 ms after `pki/` appeared, then started
+it again and waited for `hub.crt`, on this Mac (macOS 26.7.3, arm64):
+
+| | runs | stranded | what was left |
+|---|---|---|---|
+| before | 150 | 7 | `ca.key` alone (6); whole CA and a 0-byte `hub.key` (1) |
+| after | 150 | 0 | |
+
+**Fix.**
+
+- `atomicfile.WriteNew` writes a temporary file in the same directory,
+  restricts, writes and syncs it, and gives it the final name with
+  link(2), which refuses an existing name where rename(2) would replace it.
+  The name either does not exist or holds the whole file. `WriteKey` uses
+  it, so this covers every key the project writes: the CA's, the hub's,
+  and a node's `node.key` and pending key, which had the same window.
+- `WriteKey` replaces a zero-length regular file rather than refusing it.
+  It holds no key, so nothing can be lost, and it is what a build from
+  before this fix leaves. Anything with a byte in it is still refused.
+- `CreateCA` refuses only when `ca.crt` exists. A `ca.key` alone is
+  finished: a certificate is self-signed over the key that is there,
+  which is never replaced. A `ca.key` that cannot be read is left alone
+  and reported.
+- The lab now waits for the first `serve` to accept a TCP connection,
+  which it does only after all four files are written, and fails if that
+  never happens. It used to carry on silently after ten seconds.
+
+`TestAHubKilledDuringItsFirstStartStartsAgain` starts a real `serve` on
+each of the two layouts. With the `internal/pki` changes taken out it fails
+on both, with the two messages above. `TestWriteNewNeverShowsAPartialName`
+looks at the final name from the moment the link is made, and fails when
+`WriteNew` is put back to create-then-write. `TestWriteKeyReplacesAnEmptyFileAndNothingElse`
+fails without the empty-file rule. The shared-readers audit's exemption for
+`WriteKey`'s exclusive open went with the open.
+
+**Not covered.** The kill loop was run only on macOS. Linux, FreeBSD and
+Windows have only CI's unit legs, which run the tests above and not the
+loop. On Windows, `os.Link` is `CreateHardLink`, which NTFS supports. A key
+directory on a filesystem without hard links (FAT, exFAT, some FUSE mounts)
+can no longer be written, and there is no fallback to the write that could
+strand the name. That was decided, not tried. A CA finished this way takes
+the algorithm of the key on disk, not `key_algorithm`, so a hub whose
+configuration changed between the crash and the restart keeps the first
+choice. `keys rotate-ca` was not looked at for the same kind of window.
+
 ### 5.740 The refusal test took a broken pipe for a certificate verdict (2026-11-25)
 
 `TestOnlyARevokedOrUnacceptableCertificateIsRefusedForGood/an_expired_certificate`
