@@ -259,6 +259,29 @@ func TestMacUserPresentRefusesAPasswordHash(t *testing.T) {
 	}
 }
 
+// On macOS user.present went to specFrom without checking resolveGID's
+// error, so a gid naming no group, or one that is not a number, became 0:
+// a new account was made in staff and the state succeeded. DIVERGENCE
+// 5.742.
+func TestMacUserPresentRefusesAGidItCannotResolve(t *testing.T) {
+	for _, gid := range []any{"no-such-group-here-4f2a", 1000.7, []any{int64(1000)}} {
+		c, runner := macAccountCtx(t, map[string]exec.Result{
+			"dscl -plist . -read /Users/newbie": dsclNotFound,
+			"dscl . -list /Users UniqueID":      {Stdout: "root 0\nalice 501\n"},
+		})
+		res, err := macUserPresentState(c, value.MapOf("name", "newbie", "gid", gid))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Succeeded() {
+			t.Errorf("gid %#v: user.present succeeded: %+v", gid, res)
+		}
+		if ran := runner.RanCommands(); len(ran) > 0 {
+			t.Errorf("gid %#v: ran commands before refusing:\n%s", gid, strings.Join(ran, "\n"))
+		}
+	}
+}
+
 func TestMacUserAbsentState(t *testing.T) {
 	c, _ := macAccountCtx(t, map[string]exec.Result{
 		"dscl -plist . -read /Users/ghost": dsclNotFound,

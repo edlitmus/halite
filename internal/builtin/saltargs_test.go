@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"math"
 	"os"
 	osexec "os/exec"
 	"os/user"
@@ -170,6 +171,40 @@ func TestUserGidAcceptsAGroupName(t *testing.T) {
 	// that looks like it worked.
 	if got, err := resolveGID(value.MapOf("gid", "no-such-group-here-4f2a")); err == nil {
 		t.Errorf("an unknown group name resolved to %d instead of failing", got)
+	}
+}
+
+// `gid` is declared Any so that it can take a group name, so the binder
+// checks nothing and resolveGID is the only check there is. A YAML float
+// that is a whole number is that gid; any other float, and anything that
+// is neither a number nor a string, is refused. They went to states.Int,
+// which truncated 1000.7 to 1000, read a list or a boolean as 0 (so the
+// gid was never applied, and the state succeeded), and read .nan and .inf
+// as whatever the architecture made of them. DIVERGENCE 5.742.
+func TestUserGidRefusesWhatIsNeitherANumberNorAName(t *testing.T) {
+	if got, err := resolveGID(value.MapOf("gid", 1000.0)); err != nil || got != 1000 {
+		t.Errorf("gid 1000.0 resolved to %d (%v), want 1000", got, err)
+	}
+	for _, v := range []any{1000.7, -1.5, math.NaN(), math.Inf(1), math.Inf(-1), math.Ldexp(1, 63),
+		[]any{int64(1000)}, value.MapOf("id", int64(1000)), true} {
+		if got, err := resolveGID(value.MapOf("gid", v)); err == nil {
+			t.Errorf("gid %#v resolved to %d instead of being refused", v, got)
+		}
+	}
+	// And user.present says so, before it runs anything, rather than
+	// running without the gid.
+	c := newCtx(false)
+	runner := &exec.RecordingRunner{}
+	c.Runner = runner
+	res, err := userPresent(c, value.MapOf("name", "nobody-4f2a", "gid", 1000.7))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Succeeded() || !strings.Contains(res.Comment, "whole number") {
+		t.Errorf("user.present with gid 1000.7: %+v", res)
+	}
+	if ran := runner.RanCommands(); len(ran) > 0 {
+		t.Errorf("user.present ran commands before refusing:\n%s", strings.Join(ran, "\n"))
 	}
 }
 
