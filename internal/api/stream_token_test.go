@@ -121,17 +121,41 @@ func TestARevokedTokensEventStreamEnds(t *testing.T) {
 	}
 }
 
+// The expiry is passed on a clock the test moves, as the idle-limit test
+// below does and for the same reason. It used to be a one-second token
+// on the real clock, and the request opening the stream had to be
+// authorised inside that second: on the macOS race CI leg it was not,
+// and the stream was refused 401 before expiry could end it
+// (DIVERGENCE 5.685.2).
+//
+// The recheck itself still runs on a real 50 ms ticker, which only sets
+// how soon the moved clock is noticed; nothing here can expire early,
+// because the clock does not move until the stream has delivered.
 func TestAnExpiredTokensEventStreamEnds(t *testing.T) {
 	l, _ := streamLab(t)
+	var clock atomic.Int64
+	clock.Store(time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC).UnixNano())
+	now := func() time.Time { return time.Unix(0, clock.Load()) }
+	l.server.Now, l.server.Tokens.Now = now, now
+
 	_, secret, err := l.server.Tokens.Issue(apitoken.Options{
-		Principal: "local:ed", Roles: []string{"operator"}, Lifetime: 1 * time.Second,
+		Principal: "local:ed", Roles: []string{"operator"}, Lifetime: time.Hour,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines, ended := openSSE(t, l, secret)
 	awaitLine(t, lines, "event: halite/job/")
-	awaitEnd(t, ended, 4*time.Second, "its token expired")
+	clock.Add(int64(time.Hour + time.Second))
+	awaitEnd(t, ended, 3*time.Second, "its token expired")
+
+	var said []string
+	for line := range lines {
+		said = append(said, line)
+	}
+	if !strings.Contains(strings.Join(said, "\n"), "this token expired at") {
+		t.Errorf("the stream ended without saying it expired: %q", said)
+	}
 }
 
 // An open stream is the token in use, so the idle limit does not end it;
