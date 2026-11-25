@@ -172,3 +172,60 @@ func TestATokenWithALineBreakIsRefusedBeforeTheRequest(t *testing.T) {
 		t.Errorf("the endpoint was asked %d times", n)
 	}
 }
+
+// recordingTransport answers nothing and remembers that it was asked, so a
+// refused URI can be shown not to have been fetched at all.
+type recordingTransport struct{ asked []string }
+
+func (r *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.asked = append(r.asked, req.URL.String())
+	return nil, http.ErrHandlerTimeout
+}
+
+// The full URI comes from the environment and the answer is a key. Plain
+// HTTP is allowed only where the SDKs allow it; anything else is refused
+// before a request carries the token anywhere.
+func TestAPlainHTTPFullURIIsAllowedOnlyToTheKnownAddresses(t *testing.T) {
+	for _, tc := range []struct {
+		uri   string
+		allow bool
+	}{
+		{"http://169.254.170.23/v1/credentials", true},
+		{"http://[fd00:ec2::23]/v1/credentials", true},
+		{"http://169.254.170.2/v2/credentials/x", true},
+		{"http://127.0.0.1:9911/creds", true},
+		{"http://[::1]/creds", true},
+		{"http://localhost:9911/creds", true},
+		{"https://creds.example.com/v1", true},
+		{"http://creds.example.com/v1", false},
+		{"http://10.0.0.5/v1/credentials", false},
+		{"http://169.254.169.254/latest/meta-data/", false},
+		{"http://169.254.170.23.example.com/", false},
+		{"ftp://169.254.170.23/", false},
+		{"https:///nohost", false},
+	} {
+		t.Run(tc.uri, func(t *testing.T) {
+			rt := &recordingTransport{}
+			p := &Provider{
+				Client: &http.Client{Transport: rt},
+				Environ: envFrom(map[string]string{
+					"AWS_CONTAINER_CREDENTIALS_FULL_URI": tc.uri,
+					"AWS_CONTAINER_AUTHORIZATION_TOKEN":  "secret-token",
+				}),
+			}
+			_, err := p.Retrieve(context.Background())
+			if tc.allow {
+				if len(rt.asked) != 1 {
+					t.Errorf("an allowed URI was asked %d times (err %v)", len(rt.asked), err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "container credentials URI") {
+				t.Errorf("got %v, want the URI refused", err)
+			}
+			if len(rt.asked) != 0 {
+				t.Errorf("a refused URI was fetched: %q", rt.asked)
+			}
+		})
+	}
+}

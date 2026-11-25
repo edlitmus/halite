@@ -51832,25 +51832,42 @@ agent wants the token, so the path EKS documents for a pod could not
 work. Found by the issue 321 audit against a stand-in, where the request
 carried `Authorization=""`.
 
+Looking at the path turned up something the issue did not name.
+
+**The full URI was fetched wherever it pointed, over plain HTTP.** It
+comes from the environment and the answer is a key, so a URI naming an
+arbitrary host would have sent the token there and taken credentials
+back. The AWS SDKs allow plain HTTP only to loopback and to the ECS and
+EKS agents' link-local addresses; that rule is taken from the SDKs'
+documented behaviour, not captured from them.
+
 **Fix.**
 - The full-URI request carries the token. A file is read before a value,
   and the file is read again on every fetch, because EKS rotates it under
   a running pod.
 - A token with a line break is refused by name before any request.
+- Plain HTTP is refused to any host but loopback, `localhost`,
+  `169.254.170.2`, `169.254.170.23` and `fd00:ec2::23`, and the refusal
+  says to use HTTPS. Only literal addresses count, so a name that
+  resolves to one of them is refused: resolving it and checking the
+  answer leaves room for the answer to change before the connection.
 - The relative-URI ECS form is unchanged and sends no token.
 
 **Held by tests.** `internal/awsauth/podidentity_test.go` holds the token
 from the file, a rotated file at the next refresh, the file over the
-value, and the line-break refusal with no request made. Each fix was
-taken out in turn and its tests failed:
+value, the line-break refusal with no request made, and a table of
+allowed and refused URIs in which a refused one is shown never to be
+fetched. Each fix was taken out in turn and its tests failed:
 - no header: three tests;
+- no host check: the URI table;
 - no line-break check: its test;
 - the token read once and kept: three, the rotation test among them.
 
 **One extension moves.** `halite-ext-signer-kms` goes from 1.0.2 to
 1.0.3: it is given the operator's own environment, so in a pod its
-credentials now carry the token. As in 5.737, its bundle needs signing
-again and its pin moved. `halite-ext-aws-secrets` keeps 1.2.1 with a new
+credentials now carry the token, and a plain-HTTP URI it used to fetch
+may now be refused. As in 5.737, its bundle needs signing again and its
+pin moved. `halite-ext-aws-secrets` keeps 1.2.1 with a new
 source digest, because its behaviour has not changed: it is started with
 `PATH` and `HOME` only, never sees the variables, and so cannot use Pod
 Identity yet.

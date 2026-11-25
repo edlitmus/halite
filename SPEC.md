@@ -1437,7 +1437,8 @@ request, a string to sign, a derived signing key over four HMAC-SHA-256 rounds, 
 Credentials resolve in this order: explicit configuration, environment variables, the EC2 or ECS
 instance metadata service using IMDSv2 with a token, and the web identity token file for IRSA on
 EKS. The container credential endpoint's full-URI form, which EKS Pod Identity uses, carries the
-token from `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`. `AssumeRole` and `AssumeRoleWithWebIdentity` are implemented as two signed `sts` calls, which
+token from `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, and over plain HTTP is reached only at a
+loopback address or the ECS and EKS agents' link-local ones. `AssumeRole` and `AssumeRoleWithWebIdentity` are implemented as two signed `sts` calls, which
 is the only STS surface needed. Regions, custom endpoints, path-style addressing, dual-stack, and
 the GovCloud and China partitions are configuration, and ARNs are constructed from a partition
 value rather than hardcoded to `aws`.

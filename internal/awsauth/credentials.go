@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -150,17 +151,37 @@ func (p *Provider) baseCredentials(ctx context.Context) (Credentials, error) {
 	return p.fetchInstanceCredentials(ctx)
 }
 
+// EKSPodIdentityAddress and EKSPodIdentityAddressV6 are where the EKS
+// Pod Identity agent answers, on every node that runs it.
+const (
+	EKSPodIdentityAddress   = "169.254.170.23"
+	EKSPodIdentityAddressV6 = "fd00:ec2::23"
+)
+
 // fetchFullURICredentials is the full-URI form of the container
 // credential endpoint: EKS Pod Identity, and anything else that hands a
 // process a URL and a token.
 //
-// The first cut sent no Authorization header. Pod Identity's agent refuses a
+// Two things the first cut did not do (issue 613, item 1):
+//
+// It sent no Authorization header. Pod Identity's agent refuses a
 // request without the pod's token, so the path EKS documents could not
 // work -- the request carried `Authorization=""` against a stand-in.
 // The token is read here, on every fetch and not once at start, because
 // EKS rotates the file under a running pod; a token read at start is a
 // pod that loses its credentials when the first one expires.
+//
+// And it fetched whatever URL it was given, over plain HTTP. The URL
+// comes from the environment, and the answer is a key: a full URI
+// pointing at an arbitrary host would send the pod's token there and
+// take credentials back from it. The AWS SDKs allow plain HTTP only to
+// a loopback address or to the ECS and EKS agents' link-local ones, and
+// so does this; HTTPS is allowed to any host, because there the host
+// has to prove who it is.
 func (p *Provider) fetchFullURICredentials(ctx context.Context, uri string) (Credentials, error) {
+	if err := checkFullURI(uri); err != nil {
+		return Credentials{}, err
+	}
 	token, err := p.containerAuthorizationToken()
 	if err != nil {
 		return Credentials{}, err
@@ -206,6 +227,42 @@ func (p *Provider) containerAuthorizationToken() (string, error) {
 		return "", fmt.Errorf("the container authorization token has a line break in it")
 	}
 	return token, nil
+}
+
+// checkFullURI refuses a full URI that would send a token to a host
+// that has not proved who it is.
+func checkFullURI(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("the container credentials URI is not a URL: %w", err)
+	}
+	switch u.Scheme {
+	case "https":
+		if u.Hostname() == "" {
+			return fmt.Errorf("the container credentials URI %q names no host", raw)
+		}
+		return nil
+	case "http":
+	default:
+		return fmt.Errorf("the container credentials URI %q is neither http nor https", raw)
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return nil
+	}
+	// A literal address only. A name would have to be resolved and every
+	// answer checked, and the answer can change between the check and the
+	// connection; the agents this exists for are reached by address.
+	ip := net.ParseIP(host)
+	if ip != nil && (ip.IsLoopback() ||
+		ip.Equal(net.ParseIP(ECSAddress[len("http://"):])) ||
+		ip.Equal(net.ParseIP(EKSPodIdentityAddress)) ||
+		ip.Equal(net.ParseIP(EKSPodIdentityAddressV6))) {
+		return nil
+	}
+	return fmt.Errorf("the container credentials URI %q is plain http to a host that is not "+
+		"loopback, %s, %s or %s; use https, or one of those addresses",
+		raw, ECSAddress[len("http://"):], EKSPodIdentityAddress, EKSPodIdentityAddressV6)
 }
 
 // containerCredentials is what the ECS credential endpoint and IMDS
