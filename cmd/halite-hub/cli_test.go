@@ -91,6 +91,19 @@ func TestVersionAndUnknownSubcommand(t *testing.T) {
 			t.Errorf("%s = %+v", sub, got)
 		}
 	}
+	// `keys rotate-ca` is in SPEC 7.5's list and not built. It answered
+	// "unknown subcommand" while the CA's own refusal named it as the
+	// way to replace a CA (DIVERGENCE 5.739.1), so it says so by name,
+	// and before opening anything: the pki directory it was pointed at
+	// is not created.
+	pkiDir := filepath.Join(t.TempDir(), "pki")
+	if got := run(t, "keys", "rotate-ca", "--pki-dir", pkiDir); got.code == 0 ||
+		!strings.Contains(got.stderr, "not built") || strings.Contains(got.stderr, "unknown subcommand") {
+		t.Errorf("keys rotate-ca = %+v", got)
+	}
+	if _, err := os.Stat(pkiDir); !os.IsNotExist(err) {
+		t.Errorf("keys rotate-ca opened the hub before refusing: %s exists (%v)", pkiDir, err)
+	}
 	// `ssh` is built now. Bare, it describes itself and exits non-zero,
 	// because a call with no target and no function is a mistake.
 	if got := run(t, "ssh"); got.code == 0 || !strings.Contains(got.stderr, "no agent") {

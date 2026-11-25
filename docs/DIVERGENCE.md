@@ -52019,6 +52019,52 @@ the algorithm of the key on disk, not `key_algorithm`, so a hub whose
 configuration changed between the crash and the restart keeps the first
 choice. `keys rotate-ca` was not looked at for the same kind of window.
 
+### 5.739.1 `keys rotate-ca` has no window, because it does not exist, and the CA's refusal sent operators to it
+
+5.739 ended with "`keys rotate-ca` was not looked at for the same kind of
+window". It has none: **the command has never existed.** SPEC 7.5 describes
+it and SPEC 7.4 lists it among `halite-hub keys`' subcommands, 6.1a records
+it as not built, and the handbook says there is no CA rotation
+(chapters 25 and 37). The binary on `main` at `f926c1fa` answered
+
+    halite-hub keys: unknown subcommand "rotate-ca"
+
+**Two things disagreed with that, which is what looking found.**
+
+- `CreateCA`'s refusal, the one 5.739 quotes, said `` `keys rotate-ca` is
+  how one is replaced``. An operator who followed it got the line above.
+  6.1a counts that refusal as the safe outcome, "a message rather than an
+  estate that has to enrol again", so the message has to be one an operator
+  can act on.
+- 6.1a says "a subcommand whose phase has not landed still reports that by
+  name rather than failing obscurely". `files` does. `keys rotate-ca` failed
+  as a typo would.
+
+**Fix.** The refusal now says the directory already holds a CA, that a
+second one would mean every node enrolling again, and that there is no CA
+rotation yet (SPEC 7.5, not built). It names no command. `keys rotate-ca`
+now says it is CA rotation, not built, that there is one CA generation
+lasting ten years, and that `doctor` warns 30 days before it expires. It
+says so before the hub is opened, as `files` does, so it needs no
+configuration.
+
+`TestCreateCAStillRefusesAWholeCA` fails on the old message.
+`TestVersionAndUnknownSubcommand` fails on the old dispatch with
+`unknown subcommand "rotate-ca"`. With the case moved after `openHub`, it
+fails again, on the hub's own "there is no enrollment CA" refusal, which
+shows the refusal now comes before anything is opened.
+
+**The other key writers, checked for the same window.** Everything that
+writes a key through `WriteKey` is covered by 5.739. `keys operator create`
+and `keys signer create` write with `fileperm.WriteFile`, which replaces
+rather than refuses, so a kill between their two files is undone by running
+the command again. Nothing strands. Whether `operator create` should
+replace an existing operator's key without asking is a different question,
+and it was not taken up here.
+
+SPEC 7.4's list still names `rotate-ca`, because SPEC describes the design;
+6.1a is where its absence is recorded.
+
 ### 5.740 The refusal test took a broken pipe for a certificate verdict (2026-11-25)
 
 `TestOnlyARevokedOrUnacceptableCertificateIsRefusedForGood/an_expired_certificate`

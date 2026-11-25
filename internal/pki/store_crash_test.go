@@ -44,9 +44,15 @@ func TestCreateCAStillRefusesAWholeCA(t *testing.T) {
 	if _, err := f.CreateCA(ECDSAP384, "halite enrollment CA", time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.CreateCA(ECDSAP384, "halite enrollment CA", time.Hour); err == nil ||
-		!strings.Contains(err.Error(), "already holds an enrollment CA") {
+	_, err := f.CreateCA(ECDSAP384, "halite enrollment CA", time.Hour)
+	if err == nil || !strings.Contains(err.Error(), "already holds an enrollment CA") {
 		t.Fatalf("a second CA over a whole one gave %v", err)
+	}
+	// The refusal named `keys rotate-ca`, which does not exist. A message
+	// that sends an operator to a command must name one that is there;
+	// this one names none (DIVERGENCE 5.739.1).
+	if strings.Contains(err.Error(), "`keys rotate-ca`") || !strings.Contains(err.Error(), "not built") {
+		t.Fatalf("the refusal sends an operator somewhere that is not there: %v", err)
 	}
 }
 
