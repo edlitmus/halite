@@ -47578,6 +47578,37 @@ which is what shows the moved clock is what makes it bite. Passed under
 expiry or revocation, with margins of seconds rather than 200 ms, and
 were left as they are.
 
+#### 5.685.2 The expiry test raced its own expiry (2026-11-25)
+
+The margin of seconds that 5.685.1 left alone was not enough.
+`TestAnExpiredTokensEventStreamEnds` failed on the `race (macos-15)` leg
+of PR 868 with `the stream answered 401`, 2.21 s in. Its token had a
+one-second lifetime on the real clock, and the request that opens the
+stream is authorised like any other: when it arrived after that second,
+the token had already expired, and the test failed before reaching what it
+tests. This is the same defect as 5.685.1, with expiry where that one had
+the idle limit. A 1100 ms sleep before the stream opens fails it every time.
+
+The test now runs the API server and the token store on one clock it
+moves, as 5.685.1's does: the token is issued with an hour's lifetime
+and the stream is opened at a fixed instant. After the first event the
+clock moves an hour and a second, and the stream must then end within
+three seconds of 50 ms rechecks, saying `this token expired at`. The
+recheck still ticks in real time. That only sets how soon the moved clock
+is noticed, and nothing can expire before the clock moves. With the 1100 ms
+sleep it passes. With the clock not moved it fails. With the recheck
+blind to `Expires` it fails, and the other three stream tests still pass.
+`go test -race ./internal/api/` passed once on an M-series Mac with
+`GOMAXPROCS=2`, and the four stream tests passed 50 times under `-race`
+on that machine.
+
+**Not covered:** the whole package was not run 50 times under `-race`;
+one run takes about two minutes. The two revocation tests still wait
+in real time, but for a revocation the test makes after the stream is
+open, so a slow runner cannot fail them the same way. Their deadline is
+three seconds of 50 ms rechecks. A runner slow enough to miss that would
+fail them, and that has not been seen.
+
 ### 5.686 The webhook returner followed a redirect, with the body or without it
 
 Reported privately as GHSA-3h7q-c9jf-rw88 (2026-11-20) and reproduced before
