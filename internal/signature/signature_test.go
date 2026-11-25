@@ -1,6 +1,7 @@
 package signature
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -232,6 +233,32 @@ func TestAStringThatIsNotANumberIsStillAnError(t *testing.T) {
 	b := Signature{Module: "m", Function: "f", Params: []Param{{Name: "on", Type: Bool}}}
 	if _, errs := b.Bind(nil, value.MapOf("on", "maybe")); len(errs) == 0 {
 		t.Error("a string that is not a boolean should be refused")
+	}
+}
+
+// YAML resolves `1000.0` to a float, and a whole float is the integer it
+// spells. Everything else a float can be is refused, and refused the same
+// way on every architecture. The binder tested `t == float64(int64(t))`,
+// whose conversion Go leaves undefined out of range: 2^63 came back as
+// MaxInt64 on arm64 (saturating, and float64(MaxInt64) rounds to 2^63) and
+// as an error on amd64. DIVERGENCE 5.743.
+func TestAFloatBindsToAnIntOnlyWhenItIsOne(t *testing.T) {
+	s := Signature{Module: "m", Function: "f", Params: []Param{{Name: "count", Type: Int}}}
+	for _, f := range []float64{1000, -1, math.Ldexp(-1, 63)} {
+		bound, errs := s.Bind(nil, value.MapOf("count", f))
+		if len(errs) > 0 {
+			t.Errorf("%v: %v", f, errs)
+			continue
+		}
+		if v, _ := bound.Get("count"); v != int64(f) {
+			t.Errorf("%v bound as %#v", f, v)
+		}
+	}
+	for _, f := range []float64{1.5, math.NaN(), math.Inf(1), math.Inf(-1), math.Ldexp(1, 63), 1e19} {
+		if bound, errs := s.Bind(nil, value.MapOf("count", f)); len(errs) == 0 {
+			v, _ := bound.Get("count")
+			t.Errorf("the float %v should be refused for an Int parameter, bound as %#v", f, v)
+		}
 	}
 }
 

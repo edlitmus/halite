@@ -31,7 +31,7 @@ Ordering is the reason this package exists rather than a plain Go map. State ord
 
 Positions are carried on mapping entries rather than on every scalar. That is a deliberate limit: every diagnostic the specification calls for anchors on a mapping key — a state ID, a module.function, an argument name, a pillar key — or is a parse error, which carries its own position. Sequence items in an SLS tree are themselves single-key mappings and so carry positions of their own.
 
-**Files:** `duration.go`, `json.go`, `merge.go`, `value.go`; with tests.
+**Files:** `duration.go`, `json.go`, `merge.go`, `number.go`, `value.go`; with tests.
 
 **Exports.**
 
@@ -41,6 +41,7 @@ Positions are carried on mapping entries rather than on every scalar. That is a 
 - `EncodeJSON` (func): EncodeJSON renders a value as JSON, preserving mapping order.
 - `EncodeJSONSpaced` (func): EncodeJSONSpaced renders JSON with Python's separators when spaced is set: `, ` between items and `: ` after a key.
 - `Entry` (type): Entry is one key/value pair in a Map, with the positions of both.
+- `ExactInt64` (func): ExactInt64 converts f to an int64 when it is a whole number int64 can hold, and reports false for everything else: a fraction, NaN, either infinity, or a magnitude beyond int64's range.
 - `FromJSON` (func): FromJSON lifts a value decoded by `encoding/json` into the nine-type model.
 - `KeyString` (func): KeyString renders a key the way a template or a log line should show it.
 - `Kind` (type): Kind names one of the nine types the parser may construct.
