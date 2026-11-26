@@ -36522,6 +36522,52 @@ times under `-race`. **Not verified:** no real identity provider; the key-set
 refresh in `jwks.go` has its own bound (`MinRefreshInterval`) and was not
 looked at for the same race.
 
+#### 5.473.1 The detached fetch left 5.419's cancellation test racing (2026-11-26)
+
+`TestACancelledDiscoveryIsNotHeldAgainstTheNext` (5.419) failed once on the
+`test (freebsd)` leg of PR 873, which does not touch `internal/oidc`, with
+`a cancelled discovery succeeded`. The same commit had passed that job
+before, and PR 874, which contains it, passed it in the same round.
+
+**The cause is the test, and this section made it possible.** The test
+cancels a context and calls `StartAuth`, and expects an error. Since the
+fetch became detached here, the cancelled call still starts a fetch that runs
+to the end, and `discover` then waits on
+
+```go
+select {
+case <-wait:        // the shared fetch finished
+case <-ctx.Done():  // the caller gave up
+}
+```
+
+If the fake issuer on loopback answers before `discover` reaches that select,
+both cases are ready, and Go chooses one at random. In half of those runs
+the cancelled call returned the document. That is harmless: a caller that
+gave up is handed an answer that was already there. But it is not what the
+test asserted. It did not fail in 3000 runs on Ed-PC (Windows 11 Pro 26H2,
+build 26320.10022). With a 50 ms sleep added before the select, so the fetch
+always finishes first, it failed 21 times in 40, which is a random choice.
+
+**The change.** The test now holds the issuer's answer with the fake's
+`discoveryGate` until the cancelled call has returned, so cancellation is
+the only case that can be ready. Then it releases the gate and asserts that
+the next login starts. The release is also a `t.Cleanup`, registered after
+the server's, so a test that stops early does not leave the handler holding
+`Close`. The code is unchanged.
+
+**Shown**, on Ed-PC:
+
+- 200 runs pass.
+- With the 50 ms sleep, 40 of 40 pass, where the old test failed 21.
+- With the fetch given the caller's context in place of
+  `context.WithoutCancel`, which records a cancellation as the provider
+  failing (the defect 5.419 guarded against), 20 of 20 fail with `a
+  cancelled discovery held the next login out: … context canceled`.
+
+**Not verified.** On FreeBSD itself; CI's `test (freebsd)` is where it
+failed. `-race`: this host has no C compiler.
+
 ### 5.474 An OIDC key the provider withdrew stayed trusted until a restart
 
 Found checking what 5.473 left unverified, the key set's concurrency; not an
