@@ -12844,12 +12844,12 @@ win_task.present(name: string, command: string = , arguments: string = , working
 | `name` | string | — | The task, including its folder. Defaults to the state ID. |
 | `command` | string | `` | The program to run. |
 | `arguments` | string | `` | Its arguments. |
-| `working_directory` | string | `` | Where it runs. |
-| `run_as` | string | `` | The account. Empty is SYSTEM. |
-| `run_level` | string | `limited` | Whether it runs elevated. |
+| `working_directory` | string | `` | Where it runs. Left out, an existing task's is not compared. |
+| `run_as` | string | `` | The account. Left out, a new task runs as SYSTEM and an existing task's account is not compared, so one moved to another account stays there. |
+| `run_level` | string | `limited` | Whether it runs elevated. Compared even when left out: an existing task running at `highest` is set back to `limited`. |
 | `enabled` | bool | `true` | Whether the scheduler will run it. |
-| `description` | string | `` | What the console shows. |
-| `trigger` | string | `` | When it runs: `boot`, `logon` or `daily at HH:MM`. A one-time trigger needs `xml`: this vocabulary has no date, and a one-time trigger given only a clock time is accepted and then never runs. |
+| `description` | string | `` | What the console shows. Left out, an existing task's is not compared. |
+| `trigger` | string | `` | When it runs: `boot`, `logon` or `daily at HH:MM`. A one-time trigger needs `xml`: this vocabulary has no date, and a one-time trigger given only a clock time is accepted and then never runs. Left out, a new task has no trigger and an existing task's triggers are not compared. |
 | `xml` | string | `` | The scheduler's own definition, for a task this vocabulary cannot express. |
 
 *changes the system · honours `--test` · SPEC section 15.5*

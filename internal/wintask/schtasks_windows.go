@@ -511,17 +511,18 @@ func escape(s string) string {
 // or not, so a description change made through a state was silently
 // never applied (issue 608 item 5, lead L6).
 //
-// Not fixed here, and worth the owner's attention rather than a unilateral
-// change: GenerateXML gives an omitted RunAs, RunLevel or Triggers list a
-// specific default when it creates a task -- SYSTEM, LeastPrivilege, no
-// trigger -- but this function, by the rule above, does not check an
-// omitted field against anything and so never notices the live task
-// drifting away from that default. Leads L5's two halves. Whether that is
-// the same "only what was declared" rule applied consistently, or a gap
-// in it -- TestOnlyWhatWasDeclaredIsCompared asserts the former for
-// exactly this case -- is a decision, not a parsing bug, and changing it
-// would change what `win_task.present` with no `run_as` or no trigger
-// promises for every estate already relying on today's answer.
+// GenerateXML gives an omitted RunAs, RunLevel or Triggers list a default
+// when it creates a task -- SYSTEM, LeastPrivilege, no trigger -- and this
+// function, by the rule above, does not check an omitted field against
+// that default, so a live task that drifts from it is left alone. That is
+// deliberate: the owner decided to keep it (issue 892, DIVERGENCE
+// 5.631.1), and TestOnlyWhatWasDeclaredIsCompared holds it.
+//
+// RunLevel is never omitted when the call comes from win_task.present,
+// though. The module fills an omitted run_level with "limited" before it
+// gets here, so a state that leaves run_level out does compare it, and a
+// task running at highest is set back. From the state's side, that is held
+// by TestWinTaskPresentEnforcesOnlySomeOmittedFields in internal/builtin.
 func SameDefinition(declared, current Task) bool {
 	if declared.Command != "" && !strings.EqualFold(declared.Command, current.Command) {
 		return false
