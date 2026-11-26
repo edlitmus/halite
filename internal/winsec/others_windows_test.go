@@ -4,6 +4,7 @@ package winsec
 
 import (
 	"encoding/csv"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -263,9 +264,23 @@ func TestEntriesNamesTheAccountOfAnObjectEntry(t *testing.T) {
 // with itself.
 func heldPrivileges(t *testing.T) map[string]bool {
 	t.Helper()
-	out, err := exec.Command("whoami", "/priv", "/fo", "csv", "/nh").Output()
+	// By its full path, from the system directory Windows reports. A bare
+	// "whoami" is whatever PATH finds first, and from Git Bash that is GNU
+	// coreutils' whoami, which answers `extra operand '/priv'` and exits 1
+	// (issue 877).
+	sys, err := windows.GetSystemDirectory()
 	if err != nil {
-		t.Fatalf("whoami /priv: %v", err)
+		t.Fatalf("finding the system directory: %v", err)
+	}
+	whoami := filepath.Join(sys, "whoami.exe")
+	out, err := exec.Command(whoami, "/priv", "/fo", "csv", "/nh").Output()
+	if err != nil {
+		var stderr []byte
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			stderr = exit.Stderr
+		}
+		t.Fatalf("%s /priv: %v: %s", whoami, err, strings.TrimSpace(string(stderr)))
 	}
 	rows, err := csv.NewReader(strings.NewReader(string(out))).ReadAll()
 	if err != nil {
