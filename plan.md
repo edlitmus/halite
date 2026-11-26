@@ -2200,6 +2200,10 @@ down to the machine or the link each one still wants.
     `Start`/`Stop` race a service's own state transitions. Both need a
     service somebody can construct with administrator rights.
 
+    **L23 is fixed** on its own branch (DIVERGENCE 5.746, 2026-11-25),
+    shown on an elevated Windows 11 session with a standard account
+    granted rights by `sc.exe sdset`. L24 is what is left here.
+
 29. **`awsauth`'s three, which need real AWS** (#613). EKS Pod Identity
     cannot be reached through the container-credentials path at all,
     because nothing reads `AWS_CONTAINER_AUTHORIZATION_TOKEN`; an IMDS

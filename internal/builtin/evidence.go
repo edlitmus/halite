@@ -678,8 +678,13 @@ var moduleEvidence = map[string]exec.Evidence{
 	},
 
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
-		"through its API on every Windows run and converges against what it finds, but " +
-		"nothing has watched this module start, stop or re-type a service"},
+		"through its API on every Windows run and converges against what it finds. The " +
+		"client underneath it, `internal/winsvc`, has started, stopped and re-typed a real " +
+		"throwaway service (disabled and manual, each read back with the raw API) as a " +
+		"standard local account granted rights on that service alone, on Windows 11 Pro " +
+		"26H2 build 26320.10022, elevated, on 2026-11-25 (DIVERGENCE 5.746). This module's " +
+		"own `set_start_type` was not called there, and `auto` and `auto_delayed` were not " +
+		"driven, so the level stays here"},
 	"jail": {Level: exec.Hardware, Note: "the shape of `jls --libxo=json` is checked " +
 		"against the real jls on CI's FreeBSD runner, and **the field names inside a jail " +
 		"entry are no longer assumed**: every key this module subscripts out of an entry is " +

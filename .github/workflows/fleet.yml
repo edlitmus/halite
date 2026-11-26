@@ -165,6 +165,10 @@ on:
       # (issue 878).
       - "internal/builtin/service_windows*.go"
       - "internal/builtin/live_service_windows*.go"
+      # The service control manager client both of the above stand on,
+      # whose own live tests create throwaway services, a standard local
+      # account, and a grant to it (issue 608 L23).
+      - "internal/winsvc/**"
       # The RHEL and SUSE rows, which the `rpm` legs drive in containers.
       # The dnf and zypper `pkg` providers are already matched by
       # `pkg*.go` above; `firewalld` is deliberately absent, because no
@@ -1143,6 +1147,17 @@ jobs:
           HALITE_SYSTEM_LIVE: "1"
         run: go test -count=1 -v -timeout 5m -run 'TestLiveServiceDisabledMovesAManualServiceToDisabled$' ./internal/builtin/
 
+      # winsvc's own live tests: each registers this test binary as a
+      # throwaway service, and the delegation test also creates a standard
+      # local account, grants it rights on one service with `sc.exe
+      # sdset`, and drives the write path as that account by
+      # impersonation. They need the elevated token this runner has, and
+      # skip, saying so, without it.
+      - name: drive the service control manager
+        env:
+          HALITE_SYSTEM_LIVE: "1"
+        run: go test -count=1 -v -timeout 10m -run TestLive ./internal/winsvc/
+
       # The task and the service are named after this suite, and the
       # removal path is the half easiest to get wrong -- so the leg says
       # whether anything was left behind rather than trusting that it was
@@ -1162,7 +1177,13 @@ jobs:
           "halitecf* services remaining: $svc"
           if ($svc -ne 0) { throw "the tests left a service behind" }
 
-          $tsvc = (sc.exe query state= all 2>$null |
+          # One count for both suites: the service module's test and winsvc's
+          # own live tests name their throwaway services halitesvctest*.
+          $wsvc = (sc.exe query state= all 2>$null |
             Select-String 'halitesvctest' | Measure-Object).Count
-          "halitesvctest* services remaining: $tsvc"
-          if ($tsvc -ne 0) { throw "the service module's test left a service behind" }
+          "halitesvctest* services remaining: $wsvc"
+          if ($wsvc -ne 0) { throw "a test left a halitesvctest* service behind" }
+
+          $users = @(Get-LocalUser | Where-Object Name -like 'halitesvc*').Count
+          "halitesvc* local accounts remaining: $users"
+          if ($users -ne 0) { throw "winsvc's tests left a local account behind" }
