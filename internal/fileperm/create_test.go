@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/fileperm/permtest"
 )
 
 // The three helpers, each asked the question they exist to answer: after this
@@ -36,6 +38,41 @@ func private(t *testing.T, path, what string) {
 	}
 }
 
+// reachable makes path one another account can reach, and asserts that it
+// is, so that a setup which failed to produce the condition under test fails
+// rather than letting the test pass for the wrong reason.
+//
+// On unix the mode does it: Apply chmods, and the umask that may have taken
+// bits out of os.WriteFile's or os.MkdirAll's mode is put back. On Windows a
+// mode opens nothing -- Apply with a mode that is not private changes no
+// access control list -- so an entry granting Everyone read is added, the
+// way permtest exists to.
+//
+// These setups used to rely on Apply alone and on what the temporary
+// directory happened to grant. On a profile's Temp, which grants SYSTEM,
+// Administrators and the user, that is nobody else at all. They passed from
+// an elevated PowerShell only because an elevated token gives a new file
+// Administrators as its owner, so the user's own inherited entry counted as
+// another account's. From Git Bash, whose processes create files owned by
+// the user, all four failed their own setup check (issue 877).
+func reachable(t *testing.T, path string, mode os.FileMode, what string) {
+	t.Helper()
+	if err := Apply(path, mode); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		permtest.OpenToEveryone(t, path)
+	}
+	before, err := Others(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) == 0 {
+		t.Fatalf("the setup produced %s nobody else can reach, so this test cannot "+
+			"see what it is for: %s", what, path)
+	}
+}
+
 func TestMkdirAllMakesAPrivateDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "store", "segments")
 	if err := MkdirAll(dir, 0o700); err != nil {
@@ -53,18 +90,7 @@ func TestMkdirAllRestrictsADirectoryThatAlreadyExisted(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		t.Fatal(err)
 	}
-	// The umask may have taken bits out of 0777, so the starting condition is
-	// asserted rather than assumed: a setup that did not produce the
-	// condition under test makes the test pass for the wrong reason.
-	if err := Apply(dir, 0o777); err != nil {
-		t.Fatal(err)
-	}
-	if before, err := Others(dir); err != nil {
-		t.Fatal(err)
-	} else if len(before) == 0 {
-		t.Fatalf("the setup produced a directory nobody else can reach, so this test "+
-			"cannot see what it is for: %s", dir)
-	}
+	reachable(t, dir, 0o777, "a directory")
 
 	if err := MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -93,14 +119,7 @@ func TestWriteFileRestrictsAFileThatAlreadyExisted(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old\n"), 0o666); err != nil {
 		t.Fatal(err)
 	}
-	if err := Apply(path, 0o666); err != nil {
-		t.Fatal(err)
-	}
-	if before, err := Others(path); err != nil {
-		t.Fatal(err)
-	} else if len(before) == 0 {
-		t.Fatalf("the setup produced a file nobody else can reach: %s", path)
-	}
+	reachable(t, path, 0o666, "a file")
 
 	if err := WriteFile(path, []byte("new\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -134,14 +153,7 @@ func TestOpenFileRestrictsAFileThatAlreadyExisted(t *testing.T) {
 	if err := os.WriteFile(path, []byte("earlier\n"), 0o666); err != nil {
 		t.Fatal(err)
 	}
-	if err := Apply(path, 0o666); err != nil {
-		t.Fatal(err)
-	}
-	if before, err := Others(path); err != nil {
-		t.Fatal(err)
-	} else if len(before) == 0 {
-		t.Fatalf("the setup produced a file nobody else can reach: %s", path)
-	}
+	reachable(t, path, 0o666, "a file")
 
 	f, err := OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -248,17 +260,7 @@ func TestOpenFileWithoutOCreateDoesNotTouchThePermission(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not a secret\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Apply(path, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Asserted, so that a fixture which failed to make the file reachable
-	// cannot pass this test for the wrong reason.
-	if before, err := Others(path); err != nil {
-		t.Fatal(err)
-	} else if len(before) == 0 {
-		t.Fatalf("the setup produced a file nobody else can reach, so this test cannot "+
-			"see what it is for: %s", path)
-	}
+	reachable(t, path, 0o644, "a file")
 
 	f, err := OpenFile(path, os.O_RDONLY, 0o600)
 	if err != nil {
