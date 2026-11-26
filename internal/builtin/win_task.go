@@ -228,17 +228,25 @@ func registerWinTask(r *Registries) {
 					nameParam(`The task, including its folder. Defaults to the state ID.`),
 					opt("command", signature.String, "", "The program to run."),
 					opt("arguments", signature.String, "", "Its arguments."),
-					opt("working_directory", signature.String, "", "Where it runs."),
-					opt("run_as", signature.String, "", "The account. Empty is SYSTEM."),
-					choice("run_level", "limited", "Whether it runs elevated.",
+					opt("working_directory", signature.String, "",
+						"Where it runs. Left out, an existing task's is not compared."),
+					opt("run_as", signature.String, "",
+						"The account. Left out, a new task runs as SYSTEM and an existing "+
+							"task's account is not compared, so one moved to another account "+
+							"stays there."),
+					choice("run_level", "limited",
+						"Whether it runs elevated. Compared even when left out: an existing "+
+							"task running at `highest` is set back to `limited`.",
 						"limited", "highest"),
 					opt("enabled", signature.Bool, true, "Whether the scheduler will run it."),
-					opt("description", signature.String, "", "What the console shows."),
+					opt("description", signature.String, "",
+						"What the console shows. Left out, an existing task's is not compared."),
 					opt("trigger", signature.String, "",
 						"When it runs: `boot`, `logon` or `daily at HH:MM`. "+
 							"A one-time trigger needs `xml`: this vocabulary has no date, and "+
 							"a one-time trigger given only a clock time is accepted and then "+
-							"never runs."),
+							"never runs. Left out, a new task has no trigger and an existing "+
+							"task's triggers are not compared."),
 					opt("xml", signature.String, "",
 						"The scheduler's own definition, for a task this vocabulary cannot express."),
 				},

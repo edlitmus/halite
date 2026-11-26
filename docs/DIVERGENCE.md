@@ -42775,12 +42775,74 @@ with no `run_as` or no trigger promises today, for every estate already
 relying on the current answer, and that is the owner's call to make, not a
 parsing defect to close. `SameDefinition`'s comment now says so, and the
 case stays open rather than being decided by whoever read it next.
+(Decided since, and the `RunLevel` half corrected: 5.631.1.)
 
 **Not verified.** A domain-joined host, where `canonicalAccount`'s SID
 lookup behaves differently. A host whose OEM code page is not 437 -- this
 fix's byte, `0x82` for 'é', is specific to it. Administrator rights, for a
 task registered to run as SYSTEM or another account, which nothing here
 needed: all three real round trips ran as this account.
+
+### 5.631.1 An omitted `run_as` or trigger is not enforced: decided, and `run_level` never was omitted (2026-11-26)
+
+Lead L5, left open above, is decided. The owner chose on 2026-11-26 (issue
+892) to keep today's rule. A field that a `win_task.present` declaration
+leaves out is not compared on a task that already exists, and the defaults
+apply only when the task is created. A task moved by hand to another
+account, or given a trigger, stays as it is.
+
+**The section above said more than the code does.** It, the comment on
+`SameDefinition` and issue 892 all named `RunLevel` as one of the omitted
+fields. That is true of `SameDefinition` called on its own, which is how
+`TestOnlyWhatWasDeclaredIsCompared` calls it. It is not true of a state:
+`taskFromArgs` fills an omitted `run_level` with `"limited"`, and
+`toWinTask` passes it on, so `SameDefinition` is never given an empty
+`RunLevel` by `win_task.present`. A state that leaves `run_level` out
+therefore compares it, and a task running at `highest` is set back to
+`limited`. Two paths that were supposed to agree: the rule as tested in
+`internal/wintask`, and the arguments the module hands it. It was found by
+reading `taskFromArgs` while writing this entry.
+
+So, from a state, this is what is enforced when a field is left out:
+
+| Field | Left out, on an existing task |
+|---|---|
+| `run_as` | not compared |
+| trigger | not compared |
+| `working_directory` | not compared |
+| `description` | not compared |
+| `run_level` | compared as `limited` |
+| `enabled` | compared as `true` |
+| `arguments` | compared as empty |
+
+The decision was "keep today's behaviour", and the table is today's
+behaviour, so nothing changes in the code. The `run_level` row stays.
+`TestWinTaskPresentEnforcesOnlySomeOmittedFields` (`internal/builtin`)
+now holds the table's first five rows through `taskFromArgs`, `toWinTask`
+and `SameDefinition`, the path a state takes. Each of two breaks made it
+fail in the case it should: removing the `"limited"` default failed the
+`run_level` case ("SameDefinition = true, want false"), and comparing
+`RunAs` even when it was omitted failed the not-enforced case. The
+parameter text that `docs/modules.md` is generated from now says, for each
+of these fields, what happens when it is left out. Before, it said only
+"Empty is SYSTEM" for `run_as`, which is true only at creation.
+
+**How Salt handles it**, read in Salt 3007.1's source (tag `v3007.1`,
+`salt/states/win_task.py` and `salt/modules/win_task.py`), not run. Salt's
+`task.present` has no comparison at all. With `force: False`, the default,
+every run after the first fails with "force=True will allow the new task
+to replace the old one". With `force: True`, every run recreates the task,
+which resets an omitted `user_name` to `System`. The changes it reports
+compare actions, triggers, conditions and settings, never the account.
+`trigger_type` is required, so Salt has no omitted trigger to compare.
+halite's rule is Salt without `force`, without the failure on every run.
+
+**Not covered.** The test compares structs. It does not register a task,
+so it does not show the scheduler rewriting a `highest` task to `limited`:
+that rewrite is the same `Create` path 5.631's real round trips ran. A
+declaration given as `xml`, which is compared by `SameXML` and not by this
+table. How SPEC 15.5 maps halite's `win_task.present` arguments to Salt's
+`task.present`.
 
 ### 5.632 Four rows of 5.2 described a build that had moved on
 
