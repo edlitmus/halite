@@ -52491,9 +52491,13 @@ names the grant. With `openManager` put back, the test fails as above.
 
 **Where it runs.** The fleet `windows` leg (windows-2022, elevated) now runs
 `-run TestLive ./internal/winsvc/`, and its last step counts `halitesvctest*`
-services and `halitesvc*` local accounts left behind. That leg has not yet
-run this test: whether `net user /add` and an interactive `LogonUser` work
-on a GitHub runner is not known until it does. Without `HALITE_SYSTEM_LIVE=1`
+services and `halitesvc*` local accounts left behind. It has run this test
+once, on this branch's PR (873, commit 8c61259a, 2026-11-26), on a
+GitHub-hosted Windows Server 2022 Datacenter (10.0.20348) runner: the test
+passed rather than skipped, so `net user /add` and an interactive
+`LogonUser` work there, and the last step counted no service and no account
+left. That run was of the fixed code only; the failure on the unchanged
+code was watched on the Windows 11 host alone. Without `HALITE_SYSTEM_LIVE=1`
 and an elevated token the test skips and says which was missing; the
 non-elevated skip was not watched on this host.
 
