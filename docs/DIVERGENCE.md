@@ -59,6 +59,26 @@ loader is in the migration path.
 **Where:** `internal/yaml/scalar.go`, `bool11`. Pinned by
 `TestSingleLetterYNStayStrings`.
 
+### 1.1.1 Two handbook chapters still listed `y` and `n` as booleans (2026-11-26)
+
+This section, `docs/configuration.md` (`yaml_bool_11`) and the lint all say
+the single letters stay strings. Handbook chapter 5's table of YAML
+booleans listed them as booleans, and chapter 41's list of what a Salt
+tree may rely on did the same. Both said the opposite of the code, and
+chapter 41 is the page a person reads before migrating a tree. The review
+that found it read the lint's boolean warning, which names `yes` and does
+not name the single letters, and `docs/configuration.md`, which says they
+are not booleans. It did not run a tree with `name: y` through the lint.
+
+Both chapters now say the single letters are strings. Nothing in the code
+changed. This is
+the same pair that 1.1 records, between the specification and PyYAML,
+and the handbook was a third copy of the wrong half.
+
+**Not covered.** No audit holds the handbook's list of boolean spellings
+to `bool11`. The two chapters were corrected by hand, so a third page that
+copies the wrong half would not be caught.
+
 ### 1.2 Include cycles are a warning, not an error
 
 **Spec:** Section 11.2's pipeline step 3 says the compiler "reports the cycle
@@ -52631,6 +52651,79 @@ were used), a dependency on a group, and a dependent that fails to start
 again after a restart. `Restart` or `Stop` as a delegated account. Windows
 Server. The race detector: this host has no C compiler, so `-race` did not
 run.
+
+### 5.748 The handbook said things the code does not, in fourteen places (2026-11-26)
+
+Every handbook chapter was read against the code on `main` at `f926c1fa`,
+and where a command could be run on this FreeBSD host it was run against
+the built binaries. The audits of `internal/docsaudit` held the handbook's
+structure, links, generated chapters and quoted examples, and all passed
+before the review began. They do not compare a sentence of prose with what
+the code does, so these survived them. Each was corrected in the handbook;
+**nothing in the code changed.**
+
+| Chapter | The handbook said | The code does |
+|---|---|---|
+| 22 | `mine_interval` is in seconds; the example set `30` | Minutes, default 60 (`cmd/halite-node/mine.go`, `internal/config/keys.go`). A node set to `30` published every half hour. |
+| 23, and the receiver example | The webhook returner's `X-Halite-Nonce` is random | The first 16 bytes of the SHA-256 of the timestamp and the body, in hex (`postOnce`, `internal/returner/webhook.go`). A retry within the same second repeats it. The API's hook ingress does not check it (5.684 records that `X-Halite-Nonce` is neither signed nor checked). The comment in `contrib/examples/handbook/automation/webhook-receiver.py` said the same wrong thing and was changed with it. |
+| 34 | `halite-hub keys` at a terminal publishes no event | It publishes `halite/key/<node>/<action>` with `via: terminal`. `revoke` and `delete` were run. |
+| 7 | The render runs in an unprivileged subprocess with no network and read access to the cached tree only | `render_sandbox` is off by default. The network is denied only on Linux when the node is root, and no platform limits file reads (`internal/rendersandbox/confine_*.go`). |
+| 28 | A node that checks the state tree itself is issue 764, not yet built | Built: `require_state_signature` (`552095ba`). |
+| 10 | `halite-hub runner fileserver.clear_cache` works | Registered as pending (`internal/hub/runners_tree.go`). `lock`, `clear_lock` and `versions` are not built either. |
+| 8 | The node ID is tried from the config, then the instance ID of a cloud | There is no cloud step. `resolveNodeID` starts with `--id`, and `node_id_source` has no effect (5.94). |
+| 9 | A node writes pillar to disk only if `pillar_cache_disk` is set | The default is `true` (`internal/config/keys.go`). The chapter contradicted its own Refreshing section. |
+| 5 | State-level `runas` and `umask` have no effect | They work on a state that runs a command: `umask: '077'` on `cmd.run` gave a mode-0600 file. They do nothing on a state that runs none (4.3). |
+| 1 | Nothing on a managed machine listens; the hub never calls out | A node serves metrics when `metrics_listen` is set, and `halite-hub ssh` connects out in agentless mode. |
+| 23 | `run_job` and `add` are the arbitrary-code scheduler functions | `schedule.modify` is too, so no wildcard grants it. |
+| 24 | Four scenarios | Five. The abstract listed four. |
+| 26 | A runner-only role can do "nothing else" | Orchestration steps are dispatched as the principal and judged against its fleet rules (`dispatchFor`, `internal/hub/orch_steps.go`), so it cannot run a step that sends jobs. |
+| 40 | Listen on `halite/audit/**` | halite never emits that prefix; it is a convention for user events. Playbook D now says `halite/reactor/**`. |
+
+Chapters 11 to 20, 21 to 41 and 45 to 52 also had additions that were
+stale rather than wrong, such as event tags, exit codes, doctor check
+counts, `orch plan` flags, the `partial` job state and the P-384 default.
+They are in the diff of the commit that carries this entry, and not
+listed here.
+
+**One citation in that work was wrong and caught by `ledger cites`.** Chapter
+37 gave the eight-serial renewal cap as 5.568, a section about a language
+package manager run as root. The cap is 5.573. The number came from a
+commit message.
+
+**Not covered.** Nothing was run against a live hub or fleet except where
+the table says so; the rest was read from the code. The webhook behaviour
+is `postOnce` read, not a delivery captured. The corrected chapters are
+not held to the code by any audit, so they can drift again in the same
+way. A test that compared each chapter's stated defaults with
+`docs/configuration.md` would have caught the `mine_interval` unit.
+
+### 5.749 The test-layer and scale rows of 5.2 and 5.57 named versions and gaps that had moved (2026-11-26)
+
+5.2 and 5.57 are tables that were true when written and have been read
+since as if current. Two rows no longer say what is so:
+
+- **Salt versions.** 5.2's differential row says the trees run against
+  Salt 3006.25 and 3008.2. `ci.yml` runs the differential against 3006.28,
+  3007.1 and 3008.3, and `internal/saltdiff` names 3006, 3007 and 3008. A
+  reader citing the row for what has been compared with Salt is off by a
+  release and a major.
+- **Scale.** 5.2's scale row says eleven rows are unmeasured, and 5.57's
+  title says two are measured and eleven tracked. `internal/perf` now
+  records runs at 20,000 simulated nodes for the rows that ask for a
+  hub's connection count, dispatch time, memory and event rate, with the
+  results in 5.279, 5.660, 5.661, 5.668.1 and 5.670. It also says what is
+  still not shown: a FreeBSD hub on UFS for the dispatch row, a link
+  that can saturate for the fileserver row, a node left running for two
+  rows, and the relay tiers.
+
+Neither row was edited. They are history, and this entry is where the
+current state is written down. The rows that are met, and on what, are
+in `internal/perf/perf_test.go`, which `TestTheTableIsSpecsOwn` holds to
+SPEC's table; read that rather than this entry for the tally.
+
+**Not covered.** The perf figures here are the ones `internal/perf` quotes
+from those entries. None was re-run for this entry, and `make perf` repeats
+only the two benchmarks.
 
 ## 6. Everything else not started
 
