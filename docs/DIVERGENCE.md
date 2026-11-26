@@ -16295,6 +16295,81 @@ record than a line in an unenforced document. Retrofitting the file to match
 the claim would also be the wrong direction of fix: the claim was untrue when
 it was made, and that is the thing worth writing down.
 
+#### 5.164.2 The tests for a path that already existed never opened it on Windows (2026-11-26)
+
+Issue 877. Four of this section's tests (`internal/fileperm/create_test.go`)
+check that a helper restricts a path that was already reachable by another
+account:
+
+- `TestMkdirAllRestrictsADirectoryThatAlreadyExisted`
+- `TestWriteFileRestrictsAFileThatAlreadyExisted`
+- `TestOpenFileRestrictsAFileThatAlreadyExisted`
+- `TestOpenFileWithoutOCreateDoesNotTouchThePermission`
+
+Each made the path with a loose mode, ran `Apply` with the same mode, and
+asserted that `Others` was not empty before it went on. On unix that is
+right: the chmod opens the path. On Windows `Apply` with a mode that is not
+private changes no access control list. So the setup relied on what the
+temporary directory gave a new file, and nothing in the test chose it.
+
+**What that was, measured.** On Ed-PC (Windows 11 Pro 26H2, build
+26320.10022), the profile's Temp grants SYSTEM, Administrators and the user
+`ed`, and nobody else. I read the security descriptors of the test's own
+directories from both shells, with the same account, the same elevated
+token and the same `TMP`:
+
+- **From an elevated PowerShell**, a new directory's owner was
+  `BUILTIN\Administrators` (`O:BA`), which is the default owner an elevated
+  administrator's token gives. `ed`'s inherited entry is then not the owner's,
+  and `Others` reported `[ED-PC\ed]`. The four tests passed, but only because
+  the user counted as another account.
+- **From Git Bash**, the owner was `ed` (`O:S-1-5-21-…-1001`), so every
+  inherited entry belonged to the owner, SYSTEM or Administrators, and
+  `Others` was empty. The four tests failed their own setup check: "the setup
+  produced a … nobody else can reach". I did not find why a process started
+  from Git Bash has a different default owner; that it does is what was
+  measured.
+
+The setups now go through a helper, `reachable`. It applies the mode and, on
+Windows, grants Everyone read with `permtest.OpenToEveryone`, which exists
+for this. Then it asserts that `Others` is not empty, as before. The path is
+now open because the test opened it.
+
+**Shown**, from both shells, with each break made on its own:
+
+- With the helpers' handling of an existing path removed in `restrict`, the
+  `MkdirAll` and `WriteFile` tests fail.
+- With it removed in `OpenFile`, the `OpenFile` test fails.
+- With `OpenFile`'s rule for an open that cannot create the file removed,
+  `TestOpenFileWithoutOCreateDoesNotTouchThePermission` fails.
+- With the code restored, all four pass.
+
+Before the change, none of these breaks could be seen from Git Bash, because
+the tests stopped at the setup.
+
+**The same issue, in `winsec`.** `TestEnablePrivilegeSaysNoForAPrivilegeTheTokenLacks`
+ran a bare `whoami /priv`. Git Bash puts GNU coreutils' `whoami` first on
+`PATH`, and it answered `extra operand '/priv'` and exited 1. It now runs
+`whoami.exe` from the directory `GetSystemDirectory` names, and its failure
+message includes stderr. Shown from Git Bash: it fails on the unchanged
+file and passes on the changed one. No other test or production code on
+Windows runs a program by a name Git Bash shadows (`bash`, `expand`, `find`,
+`mount`, `reset`, `sort`, `tar`, `timeout`, `umount`, `whoami`). I checked
+those names against the Windows code.
+
+**Not fixed, the same assumption elsewhere.** `internal/pki/store_perm_test.go`
+asserts that its directory starts out reachable on unix only. The Windows
+tests in `internal/builtin/mode_windows_test.go` do not check the starting
+state at all. Both pass on Windows whether or not the restriction did
+anything, depending on who owns a new file. Neither fails from Git Bash.
+
+**Not verified.** A token that is not elevated. I expect it to behave like
+Git Bash, since the default owner is then the user, but I did not run it.
+The GitHub `windows-2022` runners are elevated: the fleet `windows` leg's
+live tests need that, and they passed there. I did not check the ordinary
+`test (windows-2022)` job's token, but if it is elevated too, it behaves like
+PowerShell here and would not see this.
+
 ### 5.165 Eight renames, and a judgement that turned out to be one judgement
 
 plan.md 19f listed eight direct `os.Rename` calls outside `internal/atomicfile`
