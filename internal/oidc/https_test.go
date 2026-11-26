@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -145,14 +146,33 @@ func TestAFailedDiscoveryIsNotRepeatedAtOnce(t *testing.T) {
 
 // A caller that gave up is not the provider failing, so a cancelled
 // discovery does not hold everybody else out.
+//
+// The provider's answer is held until the cancelled call has returned.
+// Without that, the test raced: the shared fetch runs without the
+// caller's cancellation (5.473), so a fake issuer on loopback could answer
+// before discover reached its select, both of the select's cases were then
+// ready, and Go picks one at random. The cancelled call then returned the
+// document, and the first assertion failed. That happened once on the
+// `test (freebsd)` leg, and a 50ms sleep before the select made it fail 21
+// times in 40. Holding the answer leaves the cancellation as the only way
+// out, which is the case this test is about.
 func TestACancelledDiscoveryIsNotHeldAgainstTheNext(t *testing.T) {
 	f := newFakeIssuer(t)
+	f.discoveryGate = make(chan struct{})
+	release := sync.OnceFunc(func() { close(f.discoveryGate) })
+	// Registered after the fake issuer's own cleanup, so it runs first: a
+	// test that stops early must not leave the handler holding the
+	// server's Close.
+	t.Cleanup(release)
 	p := providerFor(t, f, nil)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := p.StartAuth(ctx); err == nil {
-		t.Fatal("a cancelled discovery succeeded")
+		t.Fatal("a cancelled discovery succeeded while the provider had not answered")
 	}
+
+	release()
 	if _, err := p.StartAuth(context.Background()); err != nil {
 		t.Fatalf("a cancelled discovery held the next login out: %v", err)
 	}
