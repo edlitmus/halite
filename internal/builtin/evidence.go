@@ -686,7 +686,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"test passed on the fleet `windows` leg's Windows Server 2022 (10.0.20348) runner " +
 		"on 2026-11-26; and on the Windows 11 host started and stopped services held in " +
 		"START_PENDING and STOP_PENDING, and restarted one with a chain of running " +
-		"dependents (5.747). This module's " +
+		"dependents (5.747), which the fleet leg's runner also passed. This module's " +
 		"own `set_start_type` was not called there, and `auto` and `auto_delayed` were not " +
 		"driven, so the level stays here"},
 	"jail": {Level: exec.Hardware, Note: "the shape of `jls --libxo=json` is checked " +

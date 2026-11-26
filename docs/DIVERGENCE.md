@@ -52617,8 +52617,12 @@ behaviours above. Each failed on the unchanged code with the messages above,
 and each was broken again separately -- `ALREADY_RUNNING` trusted, 1052 not
 retried, 1061 not retried, dependents stopped in reverse, dependents not
 stopped, the refusal without names -- and the matching tests failed. They
-run in the fleet `windows` leg with 5.746's test; that leg has not run them
-yet.
+run in the fleet `windows` leg with 5.746's test. That leg ran all six on
+this branch's PR (874, commit fa4a74fa, 2026-11-26) on a GitHub-hosted
+Windows Server 2022 Datacenter (10.0.20348) runner, and all six passed
+rather than skipped, with no service left behind. That run was of the fixed
+code only; the failures on the unchanged code were watched on the Windows 11
+host alone.
 
 **Not covered.** A service that never leaves a pending state, so the
 90-second bound was not reached. `PAUSE_PENDING`, `CONTINUE_PENDING` and
