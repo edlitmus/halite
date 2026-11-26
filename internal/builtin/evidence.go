@@ -453,8 +453,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"build 26320.10022, elevated) on 2026-11-26 against a throwaway manual service the " +
 		"test creates with `sc create`, moving it to disabled, checked by `sc qc`; with the " +
 		"manual-is-not-disabled check removed it reported no change and left the service " +
-		"manual (DIVERGENCE 5.628.1). Not covered there: `service.dead`'s `enable: False`, " +
-		"Windows Server, and a domain-joined host"},
+		"manual (DIVERGENCE 5.628.1); the same test passed on the fleet `windows` leg's " +
+		"Windows Server 2022 (10.0.20348) runner the same day. Not covered: " +
+		"`service.dead`'s `enable: False`, and a domain-joined host"},
 
 	// `openssl_cert` is the one module here whose *mutating* path costs
 	// nothing to demonstrate: it writes a file it is told to write, in a

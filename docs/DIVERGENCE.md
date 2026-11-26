@@ -42347,11 +42347,14 @@ its full path, because a bare name finds Git Bash's tools first (issue 877).
 bare `TestLiveService*` filter also matches the Unix service tests, whose gate fails
 on purpose when `HALITE_SYSTEM_LIVE` is set and the process is not root, and
 on Windows it never is. The leg's "machine was put back" step counts
-`halitesvctest*` services.
+`halitesvctest*` services. It ran the test on this change's PR (879,
+2026-11-26) on a GitHub-hosted Windows Server 2022 Datacenter (10.0.20348)
+runner: it passed rather than skipped, and the leg counted no
+`halitesvctest*` service left. That run was of the fixed code only; the
+failure with 5.628's check undone was watched on Ed-PC alone.
 
 **Not verified.** The skip on a token that is not elevated. That path was not
-run here, because this session had only an elevated token. The leg itself,
-which has not yet run this step. `service.dead` with `enable: False`, which
+run here, because this session had only an elevated token. `service.dead` with `enable: False`, which
 goes through the same check but is not driven.
 
 ### 5.629 A return too large for the hub was lost without trace
