@@ -41246,6 +41246,71 @@ Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/policy.go`, new
 
 **Not verified.** Nothing beyond the command itself. `run` and the hub were not involved, because `policy test` evaluates locally.
 
+### 5.607.1 `policy test --kwarg` read `true` as a string, and `run` reads it as a boolean (2026-11-26)
+
+Issue 881, found by the handbook review. `halite-hub policy test --kwarg
+test=true` was denied by a rule with `require_kwargs: {test: true}`, with
+`state.apply requires test=true from this role, and the call has test=true`,
+which reads as a contradiction. The call `run` sends for `test=true` carries the
+boolean and is allowed (5.493's table shows it). So a policy tested in CI
+disagreed with the hub it was written for.
+
+**The pair.** `run` reads a keyword's value with `cli.Parse`, and `policy test`
+split `--kwarg` itself and kept every value a string. 5.493 recorded this as
+a choice ("its `--kwarg` values are all strings", with `--test` for the one
+keyword that is not), and 5.607 repeated it ("values are still strings, as
+before"). `require_kwargs` compares by type, so the choice was a disagreement
+for every rule that names a boolean.
+
+**Shown.** `TestPolicyTestReadsAKeywordValueAsRunDoes` and
+`TestPolicyTestAndRunBuildTheSameKeywordValue`, in `cmd/halite-hub`, run on
+`main` before the change. The first failed for `--kwarg test=true` and
+`--kwarg test=True`, each exiting 1 with the message above. The second, which
+builds the value both ways with no policy in the way, failed for `true`,
+`True`, `false`, `False`, `null`, `None` and a JSON object: `policy test` read
+each as a string, and `run` as a boolean, null or a mapping. Plain strings and
+numbers (`yes`, `1`, `1.0`, `5`, `text`) already agreed. All pass after the
+change, and `TestPolicyTestRefusesAKeywordItCannotRead` (5.607) still passes.
+
+By hand, on the shipped `drift-reporter-policy.yaml`, with `halite-hub`
+built from `main` and from this branch (FreeBSD 15.1):
+
+| `policy test cert:CN=reporter rk-node state.apply` | before | after |
+|---|---|---|
+| `--kwarg test=true` | `denied: ... requires test=true ..., and the call has test=true` | `allowed by role "reporter" rule 0` |
+| `--kwarg test=false` | denied (`the call has test=false`) | denied (`the call has test=false`) |
+| `--kwarg test=yes` | denied (`the call has test=yes`) | denied (`the call has test=yes`) |
+| `--test` | allowed | allowed |
+| no keyword | denied (`does not carry it`) | denied (`does not carry it`) |
+
+**The change.** `cli.ParseKwargValue` is exported, and `policyTestKwargs` calls
+it for each value, so `run` and `policy test` have one parser and cannot read
+the same text two ways. A value that `run` would refuse (`[` or `{` that is not
+JSON) is refused by `--kwarg` too, naming the key. The usage text and handbook
+chapter 26 now say so. `--test` still works and is the same keyword.
+
+The rules that judge a keyword's name, `allow_*` and `deny_kwargs`, do not read
+its type, so only `require_kwargs` changes. A policy test that relied on
+`--kwarg x=true` being denied by a rule requiring `x: true` was testing the
+disagreement, and now passes where the hub does.
+
+**Not covered.**
+- **The message.** A string `"true"` and a boolean `true` still print the same
+  way, so a call that sends the string through the API reads
+  `requires test=true ... and the call has test=true` and is still a
+  contradiction to a reader. Nothing was run for it, and this change does not
+  touch the message.
+- **Numbers.** `run` leaves `5` a string, as `parseKwargValue` always did, so
+  `require_kwargs: {n: 5}` can be met by neither `run n=5` nor `policy test
+  --kwarg n=5`. They agree. This is read from the parser and 5.493's
+  by-type comparison, not run.
+- **Commas.** `--kwarg` still refuses a value with a comma, because the comma
+  separates pairs (5.607), and `run` takes one. The pairing test skips those
+  inputs and says so.
+- **A hub.** `run` was not run against a hub with this policy for this change
+  (5.493 did that on 2026-10-31). The `run` side here is `cli.Parse`, which
+  `run` calls. One host and no other platform.
+
 ### 5.608 `runner` and `orch` made the call, then refused an `--out` they could not read
 
 Issue 612, from the issue 321 second-pass audit (`cmd/halite-hub/runner.go`, `cmd/halite-hub/orch.go`).

@@ -27,7 +27,9 @@ policy flags:
   --target-kind <k>    read the target as this kind (L, C, G, E, ... or
                        list, compound, ...), as the job would be sent;
                        the default is a glob
-  --kwarg <k=v>        an argument to include, repeatable as a comma list
+  --kwarg <k=v>        a keyword argument to include, repeatable as a comma
+                       list; the value is read as run reads one, so true
+                       and false are booleans and anything else a string
   --env <name>         the environment (saltenv) the job would be sent
                        with; an orchestration runner reads its own
                        env= keyword instead
@@ -185,9 +187,15 @@ func runPolicy(args *cli.Args) int {
 // for a `key=value` written as an argument, the way `run` takes one:
 // `policy test` read it as nothing at all. Both are refused now, before
 // the policy is read. A pair needs a key and an `=`; a key given twice
-// is refused, not settled by whichever came last; and the values stay
-// strings, as they always were here (`--test` is the flag for the one
-// keyword that is not, DIVERGENCE 5.493). DIVERGENCE 5.607.
+// is refused, not settled by whichever came last. DIVERGENCE 5.607.
+//
+// A value is read as `run` reads one (cli.ParseKwargValue): `true` and
+// `false` are booleans, `null` is null, JSON written as JSON is structured,
+// and anything else is a string. These stayed strings here, with `--test`
+// as the flag for the one keyword that is not (DIVERGENCE 5.493), and a rule
+// that requires `test: true` -- compared by type -- then denied what `run`
+// sends: the test and the call disagreed, and the refusal read "requires
+// test=true ... and the call has test=true" (issue 881, DIVERGENCE 5.607.1).
 func policyTestKwargs(args *cli.Args) (map[string]any, error) {
 	if args.Kwargs.Len() > 0 {
 		return nil, fmt.Errorf("policy test takes keyword arguments as --kwarg key=value, "+
@@ -210,7 +218,11 @@ func policyTestKwargs(args *cli.Args) (map[string]any, error) {
 		case twice:
 			return nil, fmt.Errorf("--kwarg gives %s twice", k)
 		}
-		kwargs[k] = v
+		parsed, err := cli.ParseKwargValue(v)
+		if err != nil {
+			return nil, fmt.Errorf("--kwarg %s: %w", k, err)
+		}
+		kwargs[k] = parsed
 	}
 	return kwargs, nil
 }

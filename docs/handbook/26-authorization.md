@@ -379,9 +379,13 @@ can be tested in CI. Each of these was run against the policy above:
 an argument. `--target-kind` reads the target as the kind a job would be sent
 with (`L`, `C`, `E`, `G`, … or `list`, `compound`, …). Without it, the target
 is a glob. `--env <name>` gives the environment (`saltenv`) that the job would
-be sent with, so that `allow_env` and `deny_env` can judge it. `policy test` sends each `--kwarg` value as a string. So `--kwarg test=true` does not
-meet `require_kwargs: {test: true}`, and the test says denied. Use `--test` to
-test a rehearsal. A test suite for your policy is a shell script of these lines
+be sent with, so that `allow_env` and `deny_env` can judge it. `policy test`
+reads a `--kwarg` value as `run` reads a keyword. `true` and `false` are
+booleans, and `null` is null. A value in JSON form, such as `'{"k":"v"}'`, is
+structured. Any other value, a number too, is a string. So `--kwarg test=true`
+meets `require_kwargs: {test: true}`, and `--kwarg test=yes` does not. `--test`
+tests a rehearsal in the same way. A test suite for
+your policy is a shell script of these lines
 with the expected exit status: write it when you write the policy and run
 it on every change.
 

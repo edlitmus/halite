@@ -35,6 +35,7 @@ Package cli holds what the three binaries share: argument parsing in Salt's conv
 - `ListenMayRecover` (func): ListenMayRecover reports whether a service's listener failed for a reason that a restart a few seconds later can fix, and so should exit 1 (with Exitf) rather than ExitConfig.
 - `Parse` (func): Parse splits an argument vector.
 - `ParseFormat` (func): ParseFormat reads an --out value.
+- `ParseKwargValue` (func): ParseKwargValue reads a command line value.
 - `ParseOut` (func): ParseOut reads an `--out` value for a command that prints a report it formats itself when the operator asks for nothing.
 - `RejectUnknownFlags` (func): RejectUnknownFlags stops the program when a flag was given that no usage text describes.
 - `UnknownFlags` (func): UnknownFlags reports the flags given on the command line that none of the usage texts documents, in order.
