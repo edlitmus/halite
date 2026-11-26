@@ -448,7 +448,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"43761946179), so it is held continuously rather than once. Not covered: a hub or API " +
 		"restarting itself from a state applied by a co-located node, which does not arise on " +
 		"either host; and openrc, sysvinit, launchd and Windows, where the guard is silent by " +
-		"construction because those providers do not implement the interface"},
+		"construction because those providers do not implement the interface. " +
+		"The Windows provider's `service.disabled` was driven on Ed-PC (Windows 11 Pro 26H2, " +
+		"build 26320.10022, elevated) on 2026-11-26 against a throwaway manual service the " +
+		"test creates with `sc create`, moving it to disabled, checked by `sc qc`; with the " +
+		"manual-is-not-disabled check removed it reported no change and left the service " +
+		"manual (DIVERGENCE 5.628.1). Not covered there: `service.dead`'s `enable: False`, " +
+		"Windows Server, and a domain-joined host"},
 
 	// `openssl_cert` is the one module here whose *mutating* path costs
 	// nothing to demonstrate: it writes a file it is told to write, in a
