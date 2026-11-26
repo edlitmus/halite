@@ -39,6 +39,8 @@ a record of what changed, and a rehearsed way back.
   | A **newer hub** and **older nodes** | A message type an old node does not know reaches a branch that logs it and carries on; the stream stays open. |
   | A **newer node** and an **older hub** | Nothing rejects unknown fields; a request carrying fields the hub never heard of is accepted and the fields ignored. |
   | **The transport identifier** (ALPN `halite/1`) | The one place skew is fatal. A change to it breaks both directions at once. Expect it to be called out in the release notes as a breaking change. |
+  | A **newer API** (or `halite-hub runner`) and an **older hub** | A hub older than DIVERGENCE 5.713 refuses the `async` argument that `runner state.orchestrate` and `POST /v1/orch` now send. Every orchestration then fails before it runs. Upgrade the hub first (DIVERGENCE 5.717). |
+  | **P-256 and P-384 keys**, mixed | A new key is P-384 by default (DIVERGENCE 5.724). The hub accepts both curves. An existing CA, and a node that renews, keep their algorithm. |
   | A **hub rolled back** over data a newer hub wrote | Records stamped with a schema the old hub does not know are **readable but not writable**: `jobs list` still works, and writes are refused (`ErrForeignRecord`) rather than truncating the record. |
 
   So **neither upgrade order is forced**, and a rolled-back hub does not

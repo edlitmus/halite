@@ -46,7 +46,7 @@ index is `genindex.html`, and `handbook.html` is the whole book on one page.
 - 21. [Orchestration](21-orchestration.md) — Multi-step, multi-machine procedures that run on the hub: step types, ordering and rollback with requisites, batches, waiting for events, rehearsal, and resuming a failed run.
 - 22. [Runners and the mine](22-runners-and-mine.md) — Functions that run on the hub rather than on a node, every runner this build ships, and the mine: how nodes publish facts for other nodes to read.
 - 23. [The scheduler and returners](23-scheduler-and-returners.md) — Work on a timetable, run by the node itself; and where results and events go: local files, syslog, mail and signed webhooks with a durable spool.
-- 24. [Scenarios: putting it together](24-scenarios.md) — Whole procedures built from the parts: a file that repairs itself, a node that onboards itself, a certificate that raises its own alarm, a rollout that waits for a human.
+- 24. [Scenarios: putting it together](24-scenarios.md) — Whole procedures built from the parts: a file that repairs itself, a node that onboards itself, a certificate that raises its own alarm, a rollout that waits for a human, a fleet that reports its own drift.
 
 ## Security and identity
 

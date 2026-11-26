@@ -31,9 +31,10 @@ everything else in git.
 
 Know your **recovery objectives**. A hub outage does not stop the fleet doing
 what it already does ([chapter 12](12-hub-and-nodes.md)): nodes keep running,
-retry the connection, and a scheduled highstate in `node.yaml` keeps working
-. What stops is dispatch,
-new enrolment and reactions. How long that may last is your decision.
+retry the connection, and a scheduled highstate in `node.yaml` keeps working.
+By default (`pillar_cache_disk`), the node uses the last pillar it received
+from `state_dir/pillar-cache`. What stops is dispatch, new enrolment and
+reactions. How long that may last is your decision.
 
 ## Procedure
 
@@ -89,6 +90,9 @@ A node needs very little:
   minute, and a restored copy of a key is a second copy of a secret.
 - `state_dir/evidence`, if your obligations include the node's own audit
   record.
+- `state_dir/tree-revisions`, if the node sets `require_state_signature`. It
+  holds the newest signed revision that the node accepted. Without it, the node
+  has no record of an older revision to refuse.
 - Custom grains (`grains`, `grains.d/`), if they are not written by a state.
 - Anything your states do not rebuild.
 

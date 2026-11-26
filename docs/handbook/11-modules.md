@@ -54,7 +54,7 @@ A signature reads like this:
 ```
 cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = ,
         umask: string = , env: map, stdin: string = , timeout: duration,
-        ignore_retcode: bool = false, bg: bool = false)
+        max_output: int = 67108864, ignore_retcode: bool = false, bg: bool = false)
   Run a command and return its stdout.
   - changes the system
   - runs arbitrary code; must be granted by name
@@ -91,13 +91,14 @@ Some modules have one name everywhere and several implementations. You write
 
 | Module | Providers |
 |---|---|
-| `pkg` | `aptpkg` (Debian, Ubuntu), `dnfpkg` and `yumpkg` (RHEL family, Amazon Linux), `zypperpkg` (SUSE), `pkgng` (FreeBSD), `mac_brew_pkg` (macOS), `chocolatey` (Windows) |
-| `service` | `systemd_service` (Linux), `freebsd_service` (rc.d), `mac_service` (launchd) |
+| `pkg` | `aptpkg` (Debian, Ubuntu), `dnfpkg` and `yumpkg` (RHEL family, Amazon Linux), `zypperpkg` (SUSE), `apkpkg` (Alpine), `pkgng` (FreeBSD), `mac_brew_pkg` (macOS), `chocolatey` (Windows) |
+| `service` | `systemd_service` (Linux), `openrc_service` (Alpine), `sysvinit_service` (older Linux), `freebsd_service` (rc.d), `mac_service` (launchd), and the Windows service manager |
 | `firewall` | `pf` (BSD), `ufw` (Ubuntu) |
 | `sysctl` | Linux and FreeBSD variants |
 
-The provider-specific names are also valid and mean "this module, and the
-platform must match":
+Most provider-specific names are also valid and mean "this module, and the
+platform must match". `apkpkg`, `openrc_service` and `sysvinit_service` have
+no such name: write `pkg` or `service`.
 
 ```sh
 halite-node call aptpkg.version curl          # works on a Debian node
@@ -155,7 +156,9 @@ manager's own binary in non-interactive mode, never a library.
 
 **`service`** starts, stops, enables and disables. `service.running` with
 `enable: True` is two guarantees in one. With `watch`, it restarts when a
-dependency changes ([chapter 6](06-requisites.md)).
+dependency changes ([chapter 6](06-requisites.md)). A restart of the
+service that runs the node itself fails with a message that names the
+detached recipe ([chapter 33](33-configuration.md)).
 
 **`user` and `group`** create and reconcile accounts. One behaviour to know:
 `groups:` on a user means *these groups the account must be in*, and
@@ -192,6 +195,10 @@ shell is logged as such.
 
 `runas` changes user with `setuid` and the target's full group set, never
 `su -c`.
+
+`cmd.run` stops a command that writes more than `max_output` bytes to
+stdout, or to stderr, and the call fails. The default is 64 MiB. A value
+of `0` removes the limit.
 
 Anything in the `cmd` family can run arbitrary code, so it is a
 separate permission that a wildcard never grants

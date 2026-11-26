@@ -42,10 +42,11 @@ halite-api doctor
 Each runs the checks that apply to it, prints `pass`, `warn`, `fail` or `skip`
 (with the reason), and gives a remediation line for anything not a pass. It
 exits non-zero **only on a failure, not a warning**, so it is safe in a
-monitoring probe and in a cron job. A node runs thirteen checks (configuration,
+monitoring probe and in a cron job. A node runs fourteen checks (configuration,
 certificate expiry, connectivity, clock skew against the hub, file server,
-pillar compilation, quiesce, disk space, extension signatures, module verification,
-evidence chain, FIPS consistency, render isolation); a hub eight; the API four. A warning is a
+state signatures, pillar compilation, quiesce, disk space, extension signatures,
+module verification, evidence chain, FIPS consistency, render isolation). A hub
+runs nine, and the API runs four. A warning is a
 thing to do this month, not a reason to page anybody.
 
 ## Procedure
@@ -117,6 +118,7 @@ In the order they usually help:
 | `halite_auth_attempts_total{result="throttled"}` | Sustained = somebody guessing at a name or spraying names from one address | Yes |
 | `halite_returns_foreign_schema_total` | A node newer than the hub | Non-zero during an upgrade, zero after |
 | `halite_api_hub_scrape_failures_total` | While this climbs, every `halite_hub_*` panel is empty because the API could not read the hub's half | Yes |
+| `process_open_fds` against `process_max_fds` | A hub holds at least one descriptor for each connected node. A process at the limit cannot open new connections | Yes: ratio > 0.8 |
 | `up` | The scrape itself | Yes |
 
 Every bounded queue and every drop path in the design has a counter behind
@@ -148,7 +150,7 @@ promtool check rules halite.rules.yml
 `examples/grafana-dashboard.json`) is a Grafana dashboard over these families:
 fleet health, certificates and enrolment, jobs, states and orchestration,
 pillar, events and reactions, file server, authentication and policy, evidence
-anchors, the hub's and API's own service metrics, collapsed rows for node
+anchors, the hub's and API's own service metrics, their process memory and descriptors, collapsed rows for node
 agents and relays, and the build. In Grafana: **Dashboards → New → Import →
 Upload JSON file**, and pick the Prometheus that scrapes the API. Every panel
 carries a description saying what a reading means. To pick up a new version,
@@ -187,7 +189,7 @@ worth an alert in itself; send them through `event_return`
 |---|---|
 | `halite/reactor/error`, `halite/reactor/overflow`, `halite/reactor/loop` | A reaction failed, the queue overflowed, a causality chain was broken |
 | `halite/node/*/evidence/conflict` | A node's evidence head contradicts the hub's |
-| `halite/key/**` | Accepting, rejecting, revoking or deleting a key through the hub's runners (`key.accept` and the rest), and renewals: an audit trail of those. A `halite-hub keys` command run at a terminal is another process and publishes nothing |
+| `halite/key/**` | Accepting, rejecting, revoking or deleting a key through the hub's runners (`key.accept` and the rest), and renewals: an audit trail of those. A `halite-hub keys` command run at a terminal publishes the same event, with `via: terminal` in its data (run on `main` at `f926c1fa` for `revoke` and `delete`) |
 | `halite/beacon/**` | Whatever your beacons were set to notice |
 | `halite/error/**` | A structured error worth reacting to |
 

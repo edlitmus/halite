@@ -14,7 +14,7 @@ from the source, follows the three walkthroughs in this part.
 ```
 cmd/             the programs: halite-node, halite-hub, halite-api, and three reference extensions
 ext/             the public package an extension author imports (the only non-internal package)
-internal/        everything else: some seventy packages
+internal/        everything else: some eighty packages
 tools/           release and documentation machinery that ships in no binary
 contrib/         what ships beside the binaries: service files, man pages, examples, the lab (tofu)
 docs/            the documentation, including this handbook (docs/handbook)
@@ -24,8 +24,8 @@ plan.md          the ranked list of what is worth doing next, with reasons
 CHANGELOG.md     what an operator sees change
 ```
 
-At the time of writing that is roughly 175,000 lines of Go in the product
-and tools and 140,000 lines of tests, in about 1,070 files. The proportion of
+At the time of writing that is roughly 210,000 lines of Go in the product
+and tools and 206,000 lines of tests, in about 1,560 files. The proportion of
 test to product code is the first thing to know about how this project is built.
 
 ## The rules the code lives under
@@ -81,6 +81,7 @@ them is the quickest way to learn the design.
 | `make dist` | Cross-builds every platform, assembles reproducible archives, SBOMs and the checksum manifest |
 | `make handbook` | Builds the HTML edition of this handbook |
 | `make perf`, `make chaos`, `make fuzz`, `make simfleet` | The scale, failure, fuzz and simulated-fleet layers |
+| `make hooks` | Points `core.hooksPath` at `.githooks`. The `pre-push` hook then runs `ledger cites --require`. Run it once per clone |
 | `make lab-up` … `make lab-down` | Throwaway cloud instances for live tests (they bill until torn down) |
 
 The `Makefile` is **BSD make**: no `$(shell …)`, use `!=`; recipe lines are
@@ -137,7 +138,7 @@ produced by `go run ./tools/gendocs docs` and `go run ./tools/handbook gen`.
 
 ## Key ideas
 
-- Some seventy internal packages, three programs, one dependency, no cgo; **tests are
+- Some eighty internal packages, three programs, one dependency, no cgo; **tests are
   about as large as the product**.
 - Read in data order: `value`, `yaml`, `template`, `state`, `runner`,
   `builtin`, `transport`, `hub`, `policy`.

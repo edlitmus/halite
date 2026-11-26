@@ -23,6 +23,12 @@ same thing. A runner that then reaches the fleet (`saltutil.refresh_pillar`
 does) is authorized a second time as the job it sends, so a runner grant
 cannot quietly become fleet-wide execution.
 
+A runner rule also has a `target`. The target limits the nodes that the
+runner can reach. A runner rule with no target reaches no node, so
+`manage.status` lists nothing. A runner that acts on every node, such as
+`cache.clear_all`, needs `target: '*'`. [Chapter 26](26-authorization.md)
+has the table.
+
 Every runner call gets a JID, is recorded in the job cache with the
 principal who asked, and emits `halite/run/<jid>/new` and
 `halite/run/<jid>/ret` on the event bus. Reactors and orchestrations call
@@ -89,7 +95,7 @@ odd ones out.
 | Runner | Does |
 |---|---|
 | `key.list` | Every key request, grouped by lifecycle state. |
-| `key.accept`, `key.reject`, `key.revoke`, `key.delete` | The lifecycle ([chapter 25](25-trust-and-identity.md)). `delete` revokes an accepted node first, so deleting a record can never leave a live certificate behind. |
+| `key.accept`, `key.reject`, `key.revoke`, `key.delete` | The lifecycle ([chapter 25](25-trust-and-identity.md)). `delete` revokes an accepted node first, so deleting a record can never leave a live certificate behind. `delete` also clears the mine data and the cached grains of the node. Each of these runners publishes its `halite/key/<node>/...` event, and `key.revoke` ends the stream of the node. |
 | `key.finger` | One node's key fingerprint. |
 | `key.gen_signature`, `key.token` | **Not built** (the pinning is `--hub-fingerprint`; mint tokens with `halite-hub keys token create`). |
 | `manage.safe_accept`, `manage.bootstrap` | **Not built.** |
@@ -172,7 +178,7 @@ outward to the hub.
 In the publishing node's `node.yaml`:
 
 ```yaml
-mine_interval: 30          # seconds between publications
+mine_interval: 30          # minutes between publications; the default is 60
 mine_functions:
   ips:
     mine_function: network.ip_addrs
@@ -186,7 +192,9 @@ Each key under `mine_functions` is the name readers will ask for. The
 value is either a plain function name (`network.ip_addrs: []`), or a
 mapping with `mine_function:` naming an execution function, its arguments
 as sibling keys, and optionally `allow_tgt`, a target expression of the
-nodes allowed to read this entry.
+nodes allowed to read this entry. `allow_tgt_type` sets the kind of that
+target. The node publishes once when it starts, and then every
+`mine_interval` minutes.
 
 Publishing is under the identity on the node's own certificate and no
 other. A node cannot publish on another's behalf, and that is what makes

@@ -51,9 +51,13 @@ release.
 - Raw HTML.
 
 Tests in `internal/docsaudit/handbook_test.go` add the checks that need the
-code: the generated chapters equal what `gen` writes now, every package is
-described, and every command, beacon, runner, requisite and event tag the
-build knows is mentioned somewhere in the book.
+code. The generated chapters must equal what `gen` writes now. Every package
+must be described in the code part. Every command must appear in some chapter.
+Every beacon must appear in [chapter 19](19-beacons.md), and every runner in
+[chapter 22](22-runners-and-mine.md). Every requisite must appear in
+[chapter 6](06-requisites.md). Every event tag must appear in the
+[event reference](45-event-reference.md). A last test builds the HTML twice
+and compares the output.
 
 ## Directives
 

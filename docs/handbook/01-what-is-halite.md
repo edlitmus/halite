@@ -111,9 +111,12 @@ ever changes.
 
 **Machines call in; the hub never calls out.** Each managed machine opens
 one connection to the central server and holds it open. The server
-listens on exactly one port. Nothing on a managed machine listens for
-anyone. A machine behind NAT or a firewall that blocks inbound traffic
-needs no special arrangement.
+listens on exactly one port. By default, nothing on a managed machine
+listens for anyone. A node can serve metrics on its own port, but only if
+you set `metrics_listen`. A machine behind NAT or a firewall that blocks
+inbound traffic needs no special arrangement. The one exception to "the
+hub never calls out" is agentless mode, where the `halite-hub ssh`
+command connects to a machine over SSH ([chapter 17](17-agentless.md)).
 
 **Everything is mutually authenticated.** Every connection is TLS 1.3
 with certificates on both ends. A node's certificate is issued by an

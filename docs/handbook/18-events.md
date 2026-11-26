@@ -63,7 +63,10 @@ Others you will see in practice:
 | Tag | When | Data |
 |---|---|---|
 | `halite/job/<jid>/queued/<node>` | A held job is delivered to a node that came back | `fun`, `jid` |
-| `halite/run/<jid>/new`, `halite/run/<jid>/ret` | A runner (a hub-side function) or an orchestration starts and finishes | `fun`, `principal`, `success`, `error` |
+| `halite/job/<jid>/expired` | A held job expired before its node connected | `jid`, `fun`, `expires`, `reason` |
+| `halite/job/<jid>/kill` | An operator killed the job | `jid`, `principal`, `told`, `unqueued` |
+| `halite/run/<jid>/new`, `halite/run/<jid>/ret` | A runner (a hub-side function) starts and finishes | `fun`, `principal`, `success`, `error` |
+| `halite/run/<jid>/orch/new`, `halite/run/<jid>/orch/step/<step>`, `halite/run/<jid>/orch/ret` | An orchestration starts, dispatches a step, and finishes ([chapter 21](21-orchestration.md)) | see [chapter 45](45-event-reference.md) |
 | `halite/state/<jid>/<node>/ok` | A state run finished; the last segment is the result | `jid`, `retcode` (`0` changed, `2` converged) |
 | `halite/beacon/<node>/<beacon>/…` | A beacon fired ([chapter 19](19-beacons.md)) | the beacon's data |
 | `halite/node/<node>/evidence/conflict` | A node's reported evidence head contradicts the hub's record ([chapter 28](28-hardening.md)) | |

@@ -10,7 +10,7 @@
 #     X-Halite-Timestamp   when it was signed
 #     X-Halite-Signature   hex HMAC-SHA-256, keyed with the shared secret, of
 #                          the timestamp, a ".", and the raw body
-#     X-Halite-Nonce       random, for replay detection
+#     X-Halite-Nonce       a digest of the timestamp and body, not random
 #     X-Halite-Node, X-Halite-Kind   which node, and what kind of record
 #
 # Verify BEFORE parsing the body, with a constant-time comparison, and refuse

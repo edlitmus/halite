@@ -56,10 +56,10 @@ tools use, so the traps are real. halite either removes them or says so:
 | Trap | What happens in halite |
 |---|---|
 | `mode: 0644` is the *number* 420 (octal), not a mode | **Refused** with an explanation. Write `mode: '0644'`. |
-| `yes`, `no`, `on`, `off`, `y`, `n` are booleans, so `name: no` is `false` | Accepted, because existing trees depend on it, but **every use is a warning** naming file and line (`"yes" resolves to the boolean true under YAML 1.1; quote it to keep the string`). Quote it. |
+| `yes`, `no`, `on`, `off` are booleans, so `name: no` is `false` (the single letters `y` and `n` stay strings) | Accepted, because existing trees depend on it, but **every use is a warning** naming file and line (`"yes" resolves to the boolean true under YAML 1.1; quote it to keep the string`). Quote it. |
 | A key repeated in one mapping silently keeps the last | **An error**: `duplicate mapping key "a"`, with both lines shown. |
 | A tab for indentation | **An error**: `tab character used for indentation; YAML permits only spaces`. |
-| `1:30` read as 90 (sexagesimal) | Read as the string `1:30`. |
+| `1:30` read as 90 (sexagesimal) | Read as the string `1:30`, with a warning that names file and line. |
 | `2026-08-19` read as a date object | Read as the string. |
 | `!!python/object` tags that construct code | Not supported; the parser can build nine plain types and nothing else. |
 
@@ -168,7 +168,7 @@ halite-node call sys.state_doc file.managed --local
 
 ```
 file.managed(name: path, source: string = , source_hash: string = ,
-  skip_verify: bool = false, contents: any, template: string = ,
+  skip_verify: bool = false, keep_source: any, contents: any, template: string = ,
   context: map, defaults: map, mode: mode = , user: string = ,
   group: string = , makedirs: bool = false, dir_mode: mode = ,
   create: bool = true, replace: bool = true, backup: string = ,
@@ -187,9 +187,7 @@ shipped the handbook.
 A typo is caught for you. A misspelt function lists the real ones:
 
 ```
-b: the file state module has no function "managd"; it provides absent,
-   append, blockreplace, comment, copy, directory, line, managed,
-   prepend, recurse, rename, replace, serialize, symlink, touch, uncomment
+states/a.sls:2:3 [b]: the file state module has no function "managd"; it provides absent, append, blockreplace, comment, copy, directory, line, managed, prepend, recurse, rename, replace, serialize, symlink, touch, uncomment
 ```
 
 and a misspelt module is refused by name. All such errors in a tree are
@@ -324,10 +322,11 @@ A skipped state reports `result: True`, no changes, and says why
 converged.
 
 > **Not built:** the state options `runas` and `umask` on a *state*
-> (as opposed to the `runas` argument of a function that has one, such
-> as `cmd.run`) are accepted and have no effect, and `parallel: True` runs
-> states in order with a warning. These are recorded in the
-> [ledger](../DIVERGENCE.md) (sections 4.3 and 4.4).
+> apply only to a state that runs a command, such as `cmd.run`. On a
+> state that runs no command, such as `file.managed`, halite accepts them
+> and they have no effect. Also, `parallel: True` runs states in order
+> with a warning. The [ledger](../DIVERGENCE.md) records both (sections
+> 4.3 and 4.4).
 
 ## The `test` module: states for learning and plumbing
 

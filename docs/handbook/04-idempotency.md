@@ -228,11 +228,11 @@ guarded_onlyif:
     - onlyif: test -d /nonexistent
 ```
 
-| Guard | Runs the command when | Skipped with the comment |
+| Guard | Runs the command when | Comment when skipped |
 |---|---|---|
-| `creates: <path>` | the path does **not** exist | `skipped because /tmp/halite-guard/built already exists.` |
-| `unless: <command>` | the guard command **fails** (non-zero) | `skipped because its unless condition was met.` |
-| `onlyif: <command>` | the guard command **succeeds** (zero) | `skipped because its onlyif condition was not met.` |
+| `creates: <path>` | the path does **not** exist | `This state was skipped because /tmp/halite-guard/built already exists.` |
+| `unless: <command>` | the guard command **fails** (non-zero) | `This state was skipped because its unless condition was met.` |
+| `onlyif: <command>` | the guard command **succeeds** (zero) | `This state was skipped because its onlyif condition was not met.` |
 
 The wording is easy to mix up, so: `unless` and `onlyif` take a command and
 test its exit status; `unless: X` means "run this *unless* X is true".

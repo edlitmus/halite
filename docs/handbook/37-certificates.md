@@ -114,12 +114,20 @@ The cases that need you:
   node never stopped answering. The old key is kept beside the new one in case
   the new identity turns out to be bad, and removed after the *next*
   successful renewal; so a node holds one at a time. `--key-algorithm` changes
-  the algorithm.
+  the algorithm. A new key is P-384 by default, and a renewal keeps the
+  algorithm of the key the node already has. The hub refuses a renewal when the
+  node's record holds 8 live serials that renewals replaced (DIVERGENCE
+  5.573). Until the oldest of them expires, a node cannot rotate its key again.
 - **A node's identity must be replaced** (the machine was cloned, restored
   from an old image, or its key leaked): `halite-hub keys revoke` it, then
   enrol again from a fresh key (`halite-node enroll --force` moves the old key
   aside as `node.key.<UTC time>`, which is never removed: re-enrolling was an
-  operator's decision).
+  operator's decision). **If the old certificate is revoked, move `node.crt`
+  aside first.** `enroll` presents the certificate that is in `pki_dir`, and the
+  hub ends that handshake. On a revoked node, `enroll --force` printed `tls: bad
+  certificate` until `node.crt` was moved away (run on `main` at `f926c1fa`). An
+  expired certificate was not run. The log line that says `enroll --force` does
+  not mention this.
 
 A node on a build before the automatic-renewal change does not renew itself.
 If any of yours are that old, upgrade them
@@ -221,7 +229,7 @@ is in [chapter 40](40-incidents.md).
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| A node cannot reconnect after a restart: `certificate has expired` | It was not renewed (stopped, or an old build) and the connection that kept it alive ended | `renew --force` needs the old certificate to still be valid; if it is not, revoke, delete, and re-enrol |
+| A node cannot reconnect after a restart: `certificate has expired` | It was not renewed (stopped, or an old build) and the connection that kept it alive ended | `renew --force` needs the old certificate to still be valid. If it is not, revoke the node and delete its record. Then move `node.crt` aside and enrol again |
 | `halite-hub run` fails: certificate rejected | Your operator certificate expired | Re-issue it |
 | The API answers `readyz: not ready` after 30 days | Its operator certificate to the hub expired | Re-issue `api`; no restart |
 | Browsers or scrapers reject the API | The serving certificate expired or lacks the name | Re-issue from your PKI; check `subjectAltName` |

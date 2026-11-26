@@ -166,6 +166,12 @@ check_{{ id }}:
 
 For `runner`, `args` (or `kwarg`) are the runner's parameters.
 
+The reactor refuses two mistakes and names the fix. A `caller` reaction
+runs on the node that fired the event, and a `runner` or `wheel` reaction
+runs on the hub. So `tgt` and `tgt_type` are refused on these three types.
+A mapping or a list in a positional `arg` is also refused. Put structured
+values in `kwarg`.
+
 A `local` or `caller` reaction can add `run_parallel: true`. The job it
 sends may then run beside other jobs on the node, as `halite-hub run
 --parallel` does ([chapter 12](12-hub-and-nodes.md)); without it, the job

@@ -108,7 +108,7 @@ Defaults here are the build's, verified; the reference has the rest.
 | Setting | Default | Change it to… |
 |---|---|---|
 | `listen` | `:4510` | Another port or interface |
-| `file_roots`, `pillar_roots` | none on a hub (a node with no configuration at all reads `/srv/halite/states` and `/srv/salt`) | Where your tree is. **Set these on a hub.** |
+| `file_roots`, `pillar_roots` | none on a hub (a node with no configuration at all reads `<config root>/state`, `/srv/halite/states` and `/srv/salt`) | Where your tree is. **Set these on a hub.** |
 | `fileserver_backend`, `gitfs_*` | `roots` | `[roots, git]` to serve from git ([chapter 10](10-top-and-files.md)) |
 | `pillar_trusted_grains` | the eight safe grains | Add a grain only deliberately |
 | `pillar_source_merging_strategy` | `smart` | `aggregate` if you want lists concatenated |
@@ -294,8 +294,13 @@ tree applies nothing.
    not reuse the job key:
 
    ```sh
+   mkdir signer
    halite-hub keys signer create tree-ci --out signer/tree-ci
    ```
+
+   The directory must exist. If it does not, the command stops with `open
+   signer/tree-ci.key: no such file or directory`. The command prints a line
+   for `job_signer_keys`. For a tree, put the same line in `state_signer_keys`.
 
    Keep `signer/tree-ci.key` where CI can use it and the hub cannot. Or keep
    the key in AWS KMS behind `halite-ext-signer-kms`, as for jobs, so that
@@ -332,7 +337,7 @@ tree applies nothing.
    ```yaml
    require_state_signature: warn
    state_signer_keys:
-     - 'tree-ci MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE…'
+     - 'tree-ci MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE…'
    ```
 
    Restart the agent. Watch `halite_node_tree_refusals_total` over a week of

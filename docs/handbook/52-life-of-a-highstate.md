@@ -126,7 +126,8 @@ error stops only itself (and what depends on it), unless `failhard`.
 people read, and `--out json|yaml|quiet` use the structured results. The exit status
 is the one of [chapter 46](46-returns-and-exit-codes.md): `1` if any state failed,
 `0` if something changed, `2` if nothing did. In a hub-dispatched run the same
-`RunResult` becomes the job return, and the node emits the run's events.
+`RunResult` becomes the job return. The hub then emits the run's events
+(`halite/state/<jid>/<node>/ok` or `failed`) when the return arrives.
 
 ## What to notice
 

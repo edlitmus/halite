@@ -438,7 +438,10 @@ halite: state compilation failed with 1 error(s):
 
 YAML reads an unquoted `0644` as an octal number — decimal 420 — and
 older tools then write the wrong permissions. halite refuses and
-explains.
+explains. It also prints a warning on stderr before the error. The
+warning names the leading zero. The file names in the output are the
+paths that you gave in `$T2`, so they are absolute and longer than the
+paths shown here.
 
 ```sh
 # 2. A misspelt pillar key.

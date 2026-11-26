@@ -78,7 +78,7 @@ not defeat the others:
 | Decision | Where it lives |
 |---|---|
 | **Whose signature do I accept?** | `extension_trust_keys` in `hub.yaml` and `node.yaml`: the public keys. |
-| **Exactly which build may run?** | `extension_pins`: `{name: {version, root}}`. The `root` covers every file and every field of the manifest, including `declares` and `executables`. A version is a label the publisher controls; a digest is not, so **both halves of the pin matter**. |
+| **Exactly which build may run?** | `extension_pins`: `{name: {version, root}}`. The `root` covers every file and every field of the manifest, including `declares` and `executables`. A version is a label the publisher controls; a digest is not, so **both halves of the pin matter**. A pin with an unknown key, or with neither `version` nor `root`, stops the hub or node at start. |
 | **What if there is no signature?** | `extension_require_signature` (on in production). `false` permits an *absent* signature for development and warns on every load; a signature that is present and **wrong** is refused whatever it says. |
 
 and one rule of placement: **the signing key lives on a machine that is not
@@ -87,6 +87,11 @@ verifying its own signatures; a compromise of the hub would then let an
 attacker sign anything every node will run. The example tree signs on a
 dedicated "signer" node and publishes into the git repository the hub
 serves.
+
+A bundle loads only from the directory that matches its signed manifest. The
+cache keeps it at `<name>/<version>`. If the name or version in the manifest
+differs from that path, the host refuses the bundle. So you cannot copy a
+signed bundle to another name to avoid its pin.
 
 Fetching is not loading. `halite-hub extensions sync` (and
 `saltutil.sync_all` on a node) copies bundles from `_ext/` into the cache;
@@ -125,7 +130,8 @@ halite-hub extensions verify — contrib/extensions/python/example_pillar.py
   pass  lifecycle/shutdown-ends-it                     a shutdown frame ends the process
   pass  protocol/refuses-another-version               it refuses a protocol version it does not speak
   skip  protocol/refuses-another-kind                  it refuses a kind it does not provide
-        no --kind was given, so there is no kind to ask for other than the right one
+        no --kind was given, so there is no kind to ask for other than the
+        right one
   pass  protocol/ignores-an-unknown-field              it ignores a field it does not recognise
 
   13 pass, 0 fail, 1 skip
@@ -154,6 +160,9 @@ halite-hub extensions sign ./build --name aws_secrets_manager \
   --ext-version 1.3.0 --kind pillar --exe aws-secrets --declares network \
   --key release --publish /srv/halite/states
 ```
+
+`--platform <os/arch>` is checked against the executable. If you omit it,
+`sign` reads the platform from the executable.
 
 This writes `manifest.json` (a digest of every file) and `manifest.sig` (a
 signature over a root that covers those files and every field of the

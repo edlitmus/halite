@@ -44,7 +44,7 @@ clause: it names the setting, the command or the file.
 | Handshake error naming a host | The hub's certificate lacks the name the node dialled | Hub: `--names` |
 | `x509: certificate signed by unknown authority` repeated in the node log | The hub has a different CA than the node pinned (restored wrongly, or rebuilt) | [Chapter 35](35-backup-and-recovery.md) |
 | `this node's enrollment has been revoked reason=…`; the agent exits | Someone revoked it | Intended, or re-enrol it |
-| `the hub refused this node's certificate, so this node will not retry`; the agent exits `1` at start | It was revoked while it was not connected, or the hub will never accept its certificate | Intended, or `halite-node enroll --force` |
+| `the hub refused this node's certificate, so this node will not retry`; the agent exits `1` at start | It was revoked while it was not connected, or the hub will never accept its certificate | Intended. To keep the node, delete its record on the hub, move `node.crt` aside, and run `halite-node enroll --force` ([chapter 37](37-certificates.md)) |
 | The node connects, then `not yet valid` / `expired` | Clock skew or an expired certificate | NTP; `renew --force`; `doctor` |
 | A node connects and disconnects repeatedly | Two machines share one identity | Revoke both and re-enrol each |
 
@@ -60,6 +60,7 @@ clause: it names the setting, the command or the file.
 | `web1: not connected` / `no answer` (exit `3`) | The node is off or disconnected | `--offline queue` if the job can wait; `manage.down` |
 | `refused: this node requires a signature for fn (every job)` | The node enforces signed jobs | `--sign-key`, or the fleet's signing flow |
 | `"x.y" is not a function this build ships; see the tier table in SPEC section 15` | Typo, or a function not built | `sys.list_functions <module>`; the message lists neighbours |
+| `halite: /v1/jobs: x.y is not a function this build ships, so it is an extension's or a newer build's and may run anything; a wildcard never grants it, so name it in the role's functions (SPEC 23.5)` | The hub refuses a function that its build does not ship, under a rule that matches it only by a pattern | A typo: `sys.list_functions`. An extension's function: name it in the role |
 | `<module>.<fn>: argument "p": is required` / `is not a parameter of this function` | A wrong or missing argument | `sys.doc module.fn` |
 | `command exited N:` and exit `1` | The command ran and failed on the node | Run it there; add `stderr` with `cmd.run_all` |
 | `freebsdpkg.version: this is the pkgng spelling of pkg … call pkg instead` | A provider-specific name on the wrong platform | Use `pkg.*` |

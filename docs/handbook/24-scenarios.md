@@ -1,11 +1,11 @@
 # Scenarios: putting it together
 
-<!-- abstract: Whole procedures built from the parts: a file that repairs itself, a node that onboards itself, a certificate that raises its own alarm, a rollout that waits for a human. -->
+<!-- abstract: Whole procedures built from the parts: a file that repairs itself, a node that onboards itself, a certificate that raises its own alarm, a rollout that waits for a human, a fleet that reports its own drift. -->
 <!-- kind: tutorial -->
 <!-- index: self-healing; onboarding; certificate expiry alert; approval gate; scenario; end to end; beacon reactor orchestration; loop prevention; debounce; audit event -->
 
 The parts of the last six chapters are small and each is easy to
-understand. Their value is in how they combine. This chapter builds four
+understand. Their value is in how they combine. This chapter builds five
 whole procedures from them. Each was **run on a small lab fleet** (a hub and
 three nodes) and what you see is what happened; where something was not run
 the text says so.

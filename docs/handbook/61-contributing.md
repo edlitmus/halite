@@ -16,7 +16,9 @@ code, comments, documentation and the report you write at the end of a task.
 3. Subjects are imperative, under 72 characters, prefixed `feat:`, `fix:`,
    `docs:`, `test:`, `ci:` or `chore:`. The body explains why and names what
    was measured rather than what was intended.
-4. Open a pull request, wait for CI to be green, then merge.
+4. Before you push, pull `main`. Other sessions land work on `main` while you
+   work.
+5. Open a pull request, wait for CI to be green, then merge.
 
 ## Gates
 
@@ -53,6 +55,12 @@ When you fix a defect, add a ledger entry; when you change what an operator
 sees, add a changelog entry. Two branches grab the same ledger number, so run
 `go run ./tools/ledger next` for the next free one and
 `go run ./tools/ledger renumber` just before merging.
+
+Before you push, run `go run ./tools/ledger cites`. It prints each ledger
+reference that your branch added, beside the heading of the section that the
+number names. Read the list. The audits show that a cited number exists. They do
+not show that the section says what your sentence claims. Run `make hooks` once
+per clone, and the `pre-push` hook then runs `ledger cites --require` for you.
 
 ## Evidence
 

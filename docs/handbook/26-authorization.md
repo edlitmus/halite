@@ -48,7 +48,7 @@ people in your organisation already authenticate.
 Authorization Code and PKCE for people and Client Credentials for
 automation. Tokens are verified against the provider's published keys;
 `none` and symmetric algorithms are refused; issuer, audience, expiry and
-nonce are all checked. Configure `oidc_issuer`, `oidc_client_id` and
+nonce are all checked. Every provider endpoint and every redirect must use `https`. Configure `oidc_issuer`, `oidc_client_id` and
 `oidc_role_map` (a group with no entry in the map grants nothing, and an
 issuer with no map is refused at start).
 
@@ -370,7 +370,7 @@ can be tested in CI. Each of these was run against the policy above:
 | `… web1.prod state.apply webserver.nginx --kwarg pillar=x` | denied: `state.apply` may not be called with "pillar" by this role |
 | `… db1.prod test.ping` | allowed by role "readonly" rule 0 |
 | `… web1.prod service.restart nginx` | allowed by role "webops" rule 0 |
-| `cert:CN=ci-pipeline '' state.orchestrate deploy.web --runner` | allowed by role "deployer" rule 0 |
+| `cert:CN=ci-pipeline '' state.orchestrate deploy.web --runner` | allowed by role "deployer" rule 0, then a second line: `it reaches no node: no rule granting it names a target` |
 | `cert:CN=ci-pipeline '' state.orchestrate other.thing --runner` | denied: `other.thing` is not in the modules this role may orchestrate (`deploy.*`) |
 | `node:lb1.prod web1.prod ips` | allowed by role "lb_peer" rule 0 |
 | `node:lb1.prod web1.prod pillar.items` | denied: no rule in [lb_peer] permits pillar.items against "web1.prod" |
@@ -379,7 +379,9 @@ can be tested in CI. Each of these was run against the policy above:
 an argument. `--target-kind` reads the target as the kind a job would be sent
 with (`L`, `C`, `E`, `G`, … or `list`, `compound`, …). Without it, the target
 is a glob. `--env <name>` gives the environment (`saltenv`) that the job would
-be sent with, so that `allow_env` and `deny_env` can judge it. A test suite for your policy is a shell script of these lines
+be sent with, so that `allow_env` and `deny_env` can judge it. `policy test` sends each `--kwarg` value as a string. So `--kwarg test=true` does not
+meet `require_kwargs: {test: true}`, and the test says denied. Use `--test` to
+test a rehearsal. A test suite for your policy is a shell script of these lines
 with the expected exit status: write it when you write the policy and run
 it on every change.
 
@@ -481,7 +483,7 @@ allows it.
 |---|---|---|
 | `readonly` | `test.ping`, `grains.*`, `sys.*`, `state.show_*` on `*` | Anyone who needs to look. Everybody should hold this one. |
 | `webops` | `state.apply` limited by `allow_sls`, `service.*`, on `web*.prod` | A team that owns a tier. |
-| `deployer` | the `state.orchestrate` runner with `allow_mods` | A pipeline. It can run named orchestrations and nothing else. |
+| `deployer` | the `state.orchestrate` runner with `allow_mods` | A pipeline. It can start named orchestrations. Each step that sends a job is also judged against the fleet rules of the pipeline, so give it those too. |
 | `api-service` | what the API's operators collectively need | The API's own certificate. |
 | `reactor:<name>` roles | exactly the functions one reaction dispatches | Every reactor entry ([chapter 20](20-reactors.md)). |
 | `lb_peer` | read specific mine entries | Nodes that read the mine ([chapter 22](22-runners-and-mine.md)). |

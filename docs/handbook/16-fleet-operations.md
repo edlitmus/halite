@@ -335,9 +335,11 @@ The agent's own configuration is a file like any other. The example tree
 extension publishing from pillar, restarting the agent a little after a
 change so it does not stop the very job that is changing it. It compiles
 for FreeBSD and Linux on every change to the project. Its README says
-what has and has not been run: the restart mechanism, the hub restarting on
-a configuration change and the signer's push are compiled, not yet
-exercised. Copy it as a starting point and read that README first.
+what has and has not been run. The deferred restart of the node was run on
+FreeBSD, with this tree's `halite/node.sls`, and on Alpine and Debian with a
+similar state. `halite/node.sls` was not applied on Linux. The hub and API
+restarts, the renewed certificates and the signer's push are compiled, not
+yet exercised. Copy the tree as a starting point and read that README first.
 
 ## Key ideas
 

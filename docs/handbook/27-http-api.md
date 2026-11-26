@@ -40,6 +40,7 @@ token_idle: 4h
 | `accounts` | The local accounts file. |
 | `token_lifetime`, `token_idle` | Absolute and idle expiry of tokens (defaults `12h` and `4h`). |
 | `hooks` | Webhook ingress, below. |
+| `hook_client_ca` | The CA bundle for the senders of `auth: mtls` hooks, below. |
 | `ldap_*`, `oidc_*` | Directory and identity-provider login ([chapter 26](26-authorization.md)). |
 
 Create the operator certificate the API presents (`halite-hub keys operator
@@ -100,7 +101,9 @@ An account with a second factor sends its current TOTP code too, as
 `"code":"123456"` ([chapter 32](32-install-api.md)).
 
 `eauth` chooses the method: `local`, `ldap`, or (for OIDC, which is a
-redirect flow) `POST /v1/login/oidc` and `/v1/login/oidc/callback`. A failed
+redirect flow) `POST /v1/login/oidc` and `/v1/login/oidc/callback`. A caller that
+already holds a token from the provider, such as a CI job, sends it to
+`POST /v1/login/oidc/token`. A failed
 login returns one message however it failed:
 
 ```
@@ -306,7 +309,8 @@ hooks:
 
 The sender signs the **raw body**: an HMAC-SHA-256 over the timestamp, a `.`
 and the body, keyed with the shared secret, sent as `X-Halite-Signature`,
-with `X-Halite-Timestamp` (RFC 3339) and a random `X-Halite-Nonce`. This is
+with `X-Halite-Timestamp` (RFC 3339) and an `X-Halite-Nonce`. The API does not
+check the nonce. This is
 the same construction as the webhook returner
 ([chapter 23](23-scheduler-and-returners.md)), so one verifier serves both.
 Signing and sending, with `openssl` and `curl`:

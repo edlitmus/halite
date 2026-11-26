@@ -304,7 +304,7 @@ at_the_end:
 
 ```
           ID: at_the_end
-     Comment: Listening reaction, run at the end of the state run. This state reported a synthetic change.
+     Comment: Listening reaction, run at the end of the state run. Watch statement fired.
 ```
 
 The point is *one* restart. If twenty files each change a service's
@@ -316,8 +316,8 @@ change. Use `listen` for services you do not want flapping.
 
 Sometimes you cannot, or do not want to, edit the state that needs the
 requisite — it is in a shared file, or you are generating states in a
-loop. `require_in`, `watch_in`, `onchanges_in`, `onfail_in`, `prereq_in`
-and `listen_in` add the requisite *to the target*:
+loop. `require_in`, `watch_in`, `onchanges_in`, `onfail_in`, `prereq_in`,
+`listen_in` and `use_in` add the requisite *to the target*:
 
 ```yaml
 declared_first:
