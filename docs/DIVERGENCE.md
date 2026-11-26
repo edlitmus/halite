@@ -51705,7 +51705,84 @@ binary test skips there). The `403` that a revoked node gets on a reused
 connection is still retried, as before; no run showed a node reaching it
 after the revoke message failed to arrive.
 
-### 5.731 `renumber` pasted a moved section with no blank line before it (2026-11-23)
+### 5.730.1 `enroll --force` presented the certificate the hub had refused, and the hint left out the delete (2026-11-26)
+
+Issue 880, found by the handbook review. The log line 5.730 added tells an
+operator whose node was revoked to run `halite-node enroll --force`. On a
+revoked node that command died with `remote error: tls: bad certificate`,
+and on a node whose certificate had expired with `remote error: tls: expired
+certificate`. The line that sent the operator there could not be followed.
+
+**Why.** `Client.client` builds its TLS configuration from the node's
+certificate when it holds one, and `Enroll` made its request through it. So
+`enroll --force` on a node that still had its `node.crt` presented that
+certificate to `/v1/enroll`, and `verifyNotRevoked` ended the handshake.
+`/v1/enroll` is reachable without a certificate (`ServerConfig` asks for one
+with `VerifyClientCertIfGiven`, and `EnrollConfig` exists for exactly this),
+so presenting one could only add a way to be refused. A node that has to
+enroll again is, by definition, one whose certificate the hub no longer
+accepts. This is the pair of 5.730's table and `Enroll`: the table says what
+the hub sends a revoked or expired certificate, and the one command meant for
+that node sent the certificate anyway.
+
+**Shown.** `TestEnrollReachesTheHubWhateverCertificateTheNodeStillHolds`, in
+`internal/transport`, run on the code before the change, failed in three
+cases: a revoked certificate with `tls: bad certificate`, an expired one with
+`tls: expired certificate`, and a certificate the hub accepts, which the
+request carried (the hub saw one client certificate on `/v1/enroll`). It
+passes after. `TestARevokedNodeEnrollsAgainOnceItsRecordIsDeleted`, in
+`cmd/halite-node`, runs real binaries through the operator's sequence and
+fails without the change for the same reason (`enroll --force presented the
+revoked certificate to the hub`).
+
+Run by hand against a real hub and node (FreeBSD 15.1, go1.27.4, loopback,
+manual enrolment), before and after:
+
+| | before | after |
+|---|---|---|
+| `enroll --force` on a revoked node | `/v1/enroll: Post "https://localhost:14510/v1/enroll": remote error: tls: bad certificate`, exit 1 | `/v1/enroll: enrollment refused; the hub's log says why`, exit 1 |
+| the hub's log | `TLS handshake error ...: the certificate for lab880.example (serial 3ac1...) is revoked` | `enrollment refused: lab880.example is already known by a different key (f4:d0:42:...); delete the record first if the node was rebuilt` |
+| the same on a node whose certificate had expired (`certificate_lifetime: 60s`) | `remote error: tls: expired certificate`, exit 1 | `enrollment refused; the hub's log says why`, exit 1 |
+
+**The second half.** The hub refuses a request for a name it holds under
+another key, and a revoked or expired record is still held. So after the
+change `enroll --force` reaches the hub and is refused, and the hint was
+still wrong: it did not say the record must go first. What works, run end to
+end on the revoked node: `halite-hub keys delete <node>`, then `halite-node
+enroll --force` (the pending block, exit 2), `halite-hub keys accept <node>`,
+`halite-node enroll` (`enrolled: .../node.crt`, exit 0, the old key kept as
+`node.key.<time>`), and the node connects, `manage.status` shows it up and
+`test.ping` returns `True`. The expired node did the same through `keys
+delete`, `enroll --force`, `keys accept` and `enroll`, and connected on the
+new certificate. The hub's refusal is unchanged; this entry does not argue
+with it.
+
+**The change.** `Enroll` sends its request through a client that holds no
+certificate (`Client.anonymous`) and closes it afterwards. Every other request
+still presents the node's certificate, which
+`TestAClientThatEnrolledStillPresentsItsCertificateElsewhere` holds. The log
+line 5.730 added now reads `delete its record on the hub: halite-hub keys
+delete <node>, then enrol it again here: halite-node enroll --force`. Handbook
+chapters 31, 37 and 39 said to move `node.crt` aside, which is no longer
+needed, and that the expired case was not run.
+
+**Why the doctor's remedy needed no change.** `CertificateRemedy` already
+said an expired node certificate is revoked and deleted on the hub and then
+enrolled again with `enroll --force`, and so does the table in 5.711. That was
+the right sequence, and it could not be followed until now, because the
+`enroll --force` at the end failed at the handshake while `node.crt` was in
+place.
+
+**Not covered.** The node still prints only `enrollment refused; the hub's
+log says why`: the reason is in the hub's log, and the operator has to look
+there. That is the node's message for every refusal and this change leaves it.
+A node that is *connecting*, not enrolling, on an expired certificate still
+retries (5.730). `--wait`, token mode and `hub_tries` above 1 were not run in
+the lab, and nothing was run on a native Linux or a second platform: both
+runs were loopback on one FreeBSD host. The binary test skips on Windows. The
+exit code of a running node at the moment of its revocation was asserted by
+the test and not captured in the hand run.
+
 
 Issue 844, `tools/ledger`. When `renumber` moved a section to the end of its
 chapter, it put the heading directly after the last line of the chapter, with
