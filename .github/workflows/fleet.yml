@@ -1151,7 +1151,9 @@ jobs:
       # throwaway service, and the delegation test also creates a standard
       # local account, grants it rights on one service with `sc.exe
       # sdset`, and drives the write path as that account by
-      # impersonation. They need the elevated token this runner has, and
+      # impersonation; the pending-state and dependency tests (5.747) hold
+      # services in START_PENDING and STOP_PENDING and restart a chain of
+      # three. They need the elevated token this runner has, and
       # skip, saying so, without it.
       - name: drive the service control manager
         env:

@@ -684,7 +684,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"standard local account granted rights on that service alone, on Windows 11 Pro " +
 		"26H2 build 26320.10022, elevated, on 2026-11-25 (DIVERGENCE 5.746), and the same " +
 		"test passed on the fleet `windows` leg's Windows Server 2022 (10.0.20348) runner " +
-		"on 2026-11-26. This module's " +
+		"on 2026-11-26; and on the Windows 11 host started and stopped services held in " +
+		"START_PENDING and STOP_PENDING, and restarted one with a chain of running " +
+		"dependents (5.747). This module's " +
 		"own `set_start_type` was not called there, and `auto` and `auto_delayed` were not " +
 		"driven, so the level stays here"},
 	"jail": {Level: exec.Hardware, Note: "the shape of `jls --libxo=json` is checked " +

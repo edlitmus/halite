@@ -52557,6 +52557,77 @@ its arguments to `SetStartType` unchanged, which is why its evidence note
 now names this run and its level stays `captured`. The race detector: this host has
 no C compiler, so `-race` did not run.
 
+### 5.747 Start believed a service that was still starting, and Stop could not stop one that was (2026-11-25)
+
+Issue 608 item 5, lead L24 (`internal/winsvc/winsvc_windows.go`). Found by
+reading; it waited, like L23 (5.746), for an elevated session, because it
+needs a service whose pending states last long enough to land a call in.
+Nothing that ships with Windows can be told to sit in `START_PENDING`, so
+the tests register the test binary as a service that reports
+`START_PENDING` or `STOP_PENDING` for four seconds, accepting no controls
+meanwhile, as a real service does.
+
+**Shown.** On Ed-PC, Windows 11 Pro 26H2, build 26320.10022, elevated, go
+1.27.4, each against the code before this change:
+
+- **Start believed `ERROR_SERVICE_ALREADY_RUNNING`.** The manager gives that
+  answer for a service in `START_PENDING` or `STOP_PENDING` as well as for a
+  running one, and `Start` returned success on it. Started by somebody else
+  and still starting, a service was reported running
+  (`Start returned while the service was starting`); one still stopping was
+  reported started, and then stopped
+  (`Start returned while the service was stopping`).
+- **Stop failed on a service that was starting.** The refusal was not the
+  one expected: a stop sent during `START_PENDING` comes back
+  `ERROR_INVALID_SERVICE_CONTROL` (1052, "The requested control is not valid
+  for this service") -- the same code a service that can never be stopped
+  gets -- not `ERROR_SERVICE_CANNOT_ACCEPT_CTRL`.
+- **Stop failed on a service that was already stopping**, with
+  `ERROR_SERVICE_CANNOT_ACCEPT_CTRL` (1061).
+- **Restart failed on any service another running service depends on.**
+  `ControlService` refuses with `ERROR_DEPENDENT_SERVICES_RUNNING` (1051),
+  and `Restart` was `Stop` then `Start`, so a `watch` on such a service
+  failed every time it fired. The manager's message names no dependent.
+
+**The change.** `Start` reads the state when the manager says the service is
+already running: a start in progress is waited for, a stop in progress is
+waited out and the start asked for again, and a running or paused service
+is left as before. `Stop` reads the state on 1052 or 1061: a stop in
+progress is waited for, any other pending state is waited out and the stop
+sent again, and a settled service that still refuses is an error as before.
+Both are bounded by the existing 90-second `settleTimeout`.
+
+`Restart` stops the running dependents first, in the order
+`EnumDependentServices` gives, restarts the service, and starts them again
+in the reverse order. That is what the services console's restart does. A
+chain of three holds the order: stopping the dependents the other way round
+is refused by the manager with 1051, and the test fails.
+
+**`Stop` does not stop dependents.** It refuses as before, but names them:
+`(running: <names>; stop those first, or restart "<name>", which stops and
+starts them with it)`. `service.dead` asks for one service to be stopped;
+stopping others that depend on it is a separate decision, and this change
+does not make it. Naming the dependents needs `SERVICE_ENUMERATE_DEPENDENTS`;
+an account delegated only start and stop (5.746) gets the manager's message
+without names, and a restart by it stops only what it can list. That choice
+is open for the owner to change.
+
+Six live tests in `internal/winsvc/live_windows_test.go` hold the six
+behaviours above. Each failed on the unchanged code with the messages above,
+and each was broken again separately -- `ALREADY_RUNNING` trusted, 1052 not
+retried, 1061 not retried, dependents stopped in reverse, dependents not
+stopped, the refusal without names -- and the matching tests failed. They
+run in the fleet `windows` leg with 5.746's test; that leg has not run them
+yet.
+
+**Not covered.** A service that never leaves a pending state, so the
+90-second bound was not reached. `PAUSE_PENDING`, `CONTINUE_PENDING` and
+`PAUSED`. A real Windows service with dependents (only the test services
+were used), a dependency on a group, and a dependent that fails to start
+again after a restart. `Restart` or `Stop` as a delegated account. Windows
+Server. The race detector: this host has no C compiler, so `-race` did not
+run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
