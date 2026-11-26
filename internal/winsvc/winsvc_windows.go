@@ -349,6 +349,15 @@ func Exists(name string) bool {
 // launched the process, and a state that reported success there would
 // report a database as running while it was still opening its files —
 // and the state after it, which requires it, would fail.
+//
+// The manager answers ERROR_SERVICE_ALREADY_RUNNING for a service that
+// is starting or stopping, not only for one that is running, and this
+// used to take that answer as success in all three (issue 608 item 5,
+// L24). A service somebody else had started was reported running while
+// it was still in START_PENDING; one on its way down was reported
+// started, and then stopped. So the answer is checked against the state:
+// a start in progress is waited for, a stop in progress is waited out
+// and the start is asked for again.
 func Start(name string) error {
 	m, err := openManager()
 	if err != nil {
@@ -362,37 +371,160 @@ func Start(name string) error {
 	}
 	defer windows.CloseServiceHandle(h)
 
-	if err := windows.StartService(h, 0, nil); err != nil {
-		if err == windows.ERROR_SERVICE_ALREADY_RUNNING {
+	deadline := time.Now().Add(settleTimeout)
+	for {
+		err := windows.StartService(h, 0, nil)
+		if err == nil {
+			return settle(name, h, windows.SERVICE_RUNNING)
+		}
+		if err != windows.ERROR_SERVICE_ALREADY_RUNNING {
+			return fmt.Errorf("starting %q: %w%s", name, err, adminHint(err))
+		}
+		state, err := currentState(name, h)
+		if err != nil {
+			return err
+		}
+		switch state {
+		case windows.SERVICE_START_PENDING, windows.SERVICE_CONTINUE_PENDING:
+			return settle(name, h, windows.SERVICE_RUNNING)
+		case windows.SERVICE_STOP_PENDING, windows.SERVICE_STOPPED:
+			// Stopping, or stopped between the two calls: wait for the
+			// stop to finish and ask again.
+		default:
+			// Running, or paused, which is not stopped and which a start
+			// cannot change; that was the answer before too.
 			return nil
 		}
-		return fmt.Errorf("starting %q: %w%s", name, err, adminHint(err))
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%q was still %s after %s, so it could not be started",
+				name, stateName(state), settleTimeout)
+		}
+		time.Sleep(pollInterval)
 	}
-	return settle(name, h, windows.SERVICE_RUNNING)
 }
 
 // Stop stops a service and waits for it to have stopped.
+//
+// A service that is starting, stopping, pausing or resuming takes no
+// controls, and the manager refuses a stop sent then: with
+// ERROR_SERVICE_CANNOT_ACCEPT_CTRL while it is stopping, and -- measured,
+// not documented -- with ERROR_INVALID_SERVICE_CONTROL while it is still
+// in START_PENDING, the same code a service that can never be stopped
+// gets. Both used to be Stop's failure, so `service.dead` failed on a
+// node that had just booted, and a second stop failed while the first
+// was still finishing (L24). Now a refusal is read against the state: a
+// stop in progress is waited for, any other pending state is waited out
+// and the stop is sent again, and only a service that is settled and
+// still refuses is an error.
 func Stop(name string) error {
 	m, err := openManager()
 	if err != nil {
 		return err
 	}
 	defer m.close()
+	return m.stop(name)
+}
 
+func (m *manager) stop(name string) error {
 	h, err := m.openService(name, windows.SERVICE_STOP|windows.SERVICE_QUERY_STATUS)
 	if err != nil {
 		return err
 	}
 	defer windows.CloseServiceHandle(h)
 
-	var status windows.SERVICE_STATUS
-	if err := windows.ControlService(h, windows.SERVICE_CONTROL_STOP, &status); err != nil {
-		if err == windows.ERROR_SERVICE_NOT_ACTIVE {
+	deadline := time.Now().Add(settleTimeout)
+	for {
+		var status windows.SERVICE_STATUS
+		err := windows.ControlService(h, windows.SERVICE_CONTROL_STOP, &status)
+		switch err {
+		case nil:
+			return settle(name, h, windows.SERVICE_STOPPED)
+		case windows.ERROR_SERVICE_NOT_ACTIVE:
 			return nil
+		case windows.ERROR_DEPENDENT_SERVICES_RUNNING:
+			return m.dependentsInTheWay(name, err)
+		case windows.ERROR_SERVICE_CANNOT_ACCEPT_CTRL, windows.ERROR_INVALID_SERVICE_CONTROL:
+		default:
+			return fmt.Errorf("stopping %q: %w%s", name, err, adminHint(err))
 		}
-		return fmt.Errorf("stopping %q: %w%s", name, err, adminHint(err))
+		state, qerr := currentState(name, h)
+		if qerr != nil {
+			return qerr
+		}
+		switch {
+		case state == windows.SERVICE_STOPPED:
+			return nil
+		case state == windows.SERVICE_STOP_PENDING:
+			return settle(name, h, windows.SERVICE_STOPPED)
+		case !isPending(state):
+			// Settled, and it still refuses: a service that does not
+			// accept a stop at all.
+			return fmt.Errorf("stopping %q: %w", name, err)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%q was still %s after %s, so it could not be stopped",
+				name, stateName(state), settleTimeout)
+		}
+		time.Sleep(pollInterval)
 	}
-	return settle(name, h, windows.SERVICE_STOPPED)
+}
+
+// dependentsInTheWay turns the manager's refusal to stop a service other
+// running services need into one that names them.
+//
+// Stop does not stop them itself. A state asking for one service to be
+// dead has said nothing about the services that depend on it, and taking
+// them down because it was convenient is a decision about other services
+// the state did not make; the manager's own message names none of them,
+// so the operator would have to go and find out which they were.
+//
+// Best effort: naming them needs SERVICE_ENUMERATE_DEPENDENTS, which an
+// account delegated only start and stop may not have, and then the
+// manager's message is all there is.
+func (m *manager) dependentsInTheWay(name string, err error) error {
+	deps, derr := m.runningDependents(name)
+	if derr != nil || len(deps) == 0 {
+		return fmt.Errorf("stopping %q: %w", name, err)
+	}
+	return fmt.Errorf("stopping %q: %w (running: %s; stop those first, or restart %q, "+
+		"which stops and starts them with it)", name, err, strings.Join(deps, ", "), name)
+}
+
+// runningDependents names the services that depend on name, directly or
+// not, and are not stopped, in the order they can be stopped in.
+//
+// That order is the manager's: EnumDependentServices returns active
+// dependents in the reverse of their start order, so stopping them in
+// the order given never asks one to stop while something it is needed by
+// still runs. TestLiveRestartRestartsRunningDependentsToo holds this with
+// a chain of three, where the wrong order is refused.
+func (m *manager) runningDependents(name string) ([]string, error) {
+	h, err := m.openService(name, windows.SERVICE_ENUMERATE_DEPENDENTS)
+	if err != nil {
+		return nil, err
+	}
+	defer windows.CloseServiceHandle(h)
+
+	var needed, count uint32
+	err = windows.EnumDependentServices(h, windows.SERVICE_ACTIVE, nil, 0, &needed, &count)
+	if err == nil || needed == 0 {
+		return nil, nil
+	}
+	if err != windows.ERROR_MORE_DATA {
+		return nil, fmt.Errorf("listing the services that depend on %q: %w", name, err)
+	}
+	buf := make([]byte, needed)
+	err = windows.EnumDependentServices(h, windows.SERVICE_ACTIVE,
+		(*windows.ENUM_SERVICE_STATUS)(unsafe.Pointer(&buf[0])), needed, &needed, &count)
+	if err != nil {
+		return nil, fmt.Errorf("listing the services that depend on %q: %w", name, err)
+	}
+	entries := unsafe.Slice((*windows.ENUM_SERVICE_STATUS)(unsafe.Pointer(&buf[0])), int(count))
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, windows.UTF16PtrToString(e.ServiceName))
+	}
+	return out, nil
 }
 
 // Restart stops a service and starts it again.
@@ -401,11 +533,66 @@ func Stop(name string) error {
 // the services console does the same thing. A service that was not
 // running is started, which is what `service.running` with a watch
 // expects of a restart.
+//
+// The services that depend on it and are running are stopped first and
+// started again after it, which is also what the console's restart does.
+// Without that the manager refuses the stop, and a watch on any service
+// something depended on failed every time it fired (L24). Unlike Stop,
+// this leaves the machine as it found it: every dependent that was
+// running is running again, as a new process.
 func Restart(name string) error {
-	if err := Stop(name); err != nil {
+	m, err := openManager()
+	if err != nil {
 		return err
 	}
-	return Start(name)
+	defer m.close()
+
+	// Not being able to list them -- a delegated account without
+	// SERVICE_ENUMERATE_DEPENDENTS -- is not a reason to refuse: with no
+	// running dependents the restart works, and with some the stop below
+	// says so.
+	deps, _ := m.runningDependents(name)
+	for _, d := range deps {
+		if err := m.stop(d); err != nil {
+			return fmt.Errorf("restarting %q needs its dependent %q stopped first: %w", name, d, err)
+		}
+	}
+	if err := m.stop(name); err != nil {
+		return err
+	}
+	if err := Start(name); err != nil {
+		return err
+	}
+	for i := len(deps) - 1; i >= 0; i-- {
+		if err := Start(deps[i]); err != nil {
+			return fmt.Errorf("restarted %q, but %q, which depends on it and was stopped "+
+				"for the restart, did not start again: %w", name, deps[i], err)
+		}
+	}
+	return nil
+}
+
+// currentState reads a service's state once.
+func currentState(name string, h windows.Handle) (uint32, error) {
+	var raw windows.SERVICE_STATUS_PROCESS
+	var needed uint32
+	err := windows.QueryServiceStatusEx(h, windows.SC_STATUS_PROCESS_INFO,
+		(*byte)(unsafe.Pointer(&raw)), uint32(unsafe.Sizeof(raw)), &needed)
+	if err != nil {
+		return 0, fmt.Errorf("reading the status of %q: %w", name, err)
+	}
+	return raw.CurrentState, nil
+}
+
+// isPending reports whether a state is one the service is on its way out
+// of.
+func isPending(state uint32) bool {
+	switch state {
+	case windows.SERVICE_START_PENDING, windows.SERVICE_STOP_PENDING,
+		windows.SERVICE_CONTINUE_PENDING, windows.SERVICE_PAUSE_PENDING:
+		return true
+	}
+	return false
 }
 
 // settle waits for a service to reach a state.

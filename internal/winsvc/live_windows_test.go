@@ -515,3 +515,229 @@ func TestLiveADelegatedAccountCanUseItsRightsOnOneService(t *testing.T) {
 		t.Errorf("the service that granted nothing is %s", stateName(got))
 	}
 }
+
+// rawHandle opens a test service with full access, for setup that must
+// not go through the code under test.
+func rawHandle(t *testing.T, name string) windows.Handle {
+	t.Helper()
+	m, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseServiceHandle(m)
+	h, err := windows.OpenService(m, u16(t, name), windows.SERVICE_ALL_ACCESS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { windows.CloseServiceHandle(h) })
+	return h
+}
+
+// rawStart asks the manager to start a service and returns as soon as
+// it has: StartService comes back once the process has connected,
+// which for these services is while they still report START_PENDING.
+func rawStart(t *testing.T, name string) {
+	t.Helper()
+	if err := windows.StartService(rawHandle(t, name), 0, nil); err != nil {
+		t.Fatalf("starting %s for the test: %v", name, err)
+	}
+}
+
+// rawStop sends a stop and returns without waiting.
+func rawStop(t *testing.T, name string) {
+	t.Helper()
+	var st windows.SERVICE_STATUS
+	if err := windows.ControlService(rawHandle(t, name), windows.SERVICE_CONTROL_STOP, &st); err != nil {
+		t.Fatalf("stopping %s for the test: %v", name, err)
+	}
+}
+
+// waitRaw waits until a service reports a state, read with the API.
+func waitRaw(t *testing.T, name string, want uint32) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for rawState(t, name) != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s did not reach %s; it is %s", name, stateName(want), stateName(rawState(t, name)))
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func rawPID(t *testing.T, name string) uint32 {
+	t.Helper()
+	var raw windows.SERVICE_STATUS_PROCESS
+	var needed uint32
+	if err := windows.QueryServiceStatusEx(rawHandle(t, name), windows.SC_STATUS_PROCESS_INFO,
+		(*byte)(unsafe.Pointer(&raw)), uint32(unsafe.Sizeof(raw)), &needed); err != nil {
+		t.Fatal(err)
+	}
+	return raw.ProcessId
+}
+
+// The pending states below last four seconds, which is long enough that
+// a call returning inside one is not a matter of luck, and a real
+// database opening its files takes longer.
+const pendingFor = 4 * time.Second
+
+// Starting a service somebody else has already started, while it is
+// still starting, waits for it to run.
+//
+// StartService answers ERROR_SERVICE_ALREADY_RUNNING for a service in
+// START_PENDING, not only for one that is running, and Start took that
+// answer as success. So a state that started a service the boot was
+// still bringing up reported it running while it was not, and the state
+// after it that required it ran against nothing (issue 608 item 5, L24).
+func TestLiveStartWaitsForAServiceThatIsAlreadyStarting(t *testing.T) {
+	requireLive(t)
+	name := createService(t, testService{startDelay: pendingFor})
+	rawStart(t, name)
+	if got := rawState(t, name); got != windows.SERVICE_START_PENDING {
+		t.Fatalf("the fixture is %s, not starting; the test proves nothing", stateName(got))
+	}
+	if err := Start(name); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got := rawState(t, name); got != windows.SERVICE_RUNNING {
+		t.Errorf("Start returned while the service was %s", stateName(got))
+	}
+}
+
+// Starting a service that is still stopping waits for it to stop and
+// then starts it.
+//
+// The same ERROR_SERVICE_ALREADY_RUNNING comes back for STOP_PENDING,
+// and success there meant a service on its way down was reported as
+// started -- and then stopped.
+func TestLiveStartWaitsOutAStopInProgress(t *testing.T) {
+	requireLive(t)
+	name := createService(t, testService{stopDelay: pendingFor})
+	rawStart(t, name)
+	waitRaw(t, name, windows.SERVICE_RUNNING)
+	before := rawPID(t, name)
+	rawStop(t, name)
+	if got := rawState(t, name); got != windows.SERVICE_STOP_PENDING {
+		t.Fatalf("the fixture is %s, not stopping; the test proves nothing", stateName(got))
+	}
+	if err := Start(name); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got := rawState(t, name); got != windows.SERVICE_RUNNING {
+		t.Fatalf("Start returned while the service was %s", stateName(got))
+	}
+	if after := rawPID(t, name); after == before {
+		t.Errorf("the service is the process that was stopping (pid %d), not a new one", before)
+	}
+}
+
+// Stopping a service that is still starting waits for the start to
+// finish and then stops it.
+//
+// A starting service accepts no controls, so ControlService answers
+// ERROR_SERVICE_CANNOT_ACCEPT_CTRL, and Stop returned that as its
+// failure. `service.dead` on a node that had just booted failed for no
+// reason an operator could act on.
+func TestLiveStopWaitsOutAStartInProgress(t *testing.T) {
+	requireLive(t)
+	name := createService(t, testService{startDelay: pendingFor})
+	rawStart(t, name)
+	if got := rawState(t, name); got != windows.SERVICE_START_PENDING {
+		t.Fatalf("the fixture is %s, not starting; the test proves nothing", stateName(got))
+	}
+	if err := Stop(name); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := rawState(t, name); got != windows.SERVICE_STOPPED {
+		t.Errorf("Stop returned while the service was %s", stateName(got))
+	}
+}
+
+// Stopping a service that is already stopping waits for it to stop.
+func TestLiveStopWaitsForAStopInProgress(t *testing.T) {
+	requireLive(t)
+	name := createService(t, testService{stopDelay: pendingFor})
+	rawStart(t, name)
+	waitRaw(t, name, windows.SERVICE_RUNNING)
+	rawStop(t, name)
+	if got := rawState(t, name); got != windows.SERVICE_STOP_PENDING {
+		t.Fatalf("the fixture is %s, not stopping; the test proves nothing", stateName(got))
+	}
+	if err := Stop(name); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := rawState(t, name); got != windows.SERVICE_STOPPED {
+		t.Errorf("Stop returned while the service was %s", stateName(got))
+	}
+}
+
+// dependencyChain makes three services, each depending on the one
+// before, and starts all three. Three rather than two because the order
+// they are stopped in matters, and with one dependent there is no order.
+func dependencyChain(t *testing.T) (base, middle, top string) {
+	t.Helper()
+	base = createService(t, testService{})
+	middle = createService(t, testService{dependsOn: []string{base}})
+	top = createService(t, testService{dependsOn: []string{middle}})
+	// Starting the top starts the other two: the manager does that.
+	rawStart(t, top)
+	for _, n := range []string{base, middle, top} {
+		waitRaw(t, n, windows.SERVICE_RUNNING)
+	}
+	return base, middle, top
+}
+
+// Restarting a service that others depend on restarts them too, and
+// leaves every one of them running.
+//
+// ControlService refuses to stop a service with running dependents
+// (ERROR_DEPENDENT_SERVICES_RUNNING), and Restart is Stop then Start, so
+// a watch on any service something depended on failed every time it
+// fired. The services console's own restart stops the dependents first
+// and starts them again after, and that is what this does.
+func TestLiveRestartRestartsRunningDependentsToo(t *testing.T) {
+	requireLive(t)
+	base, middle, top := dependencyChain(t)
+	pids := map[string]uint32{}
+	for _, n := range []string{base, middle, top} {
+		pids[n] = rawPID(t, n)
+	}
+	if err := Restart(base); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	for _, n := range []string{base, middle, top} {
+		if got := rawState(t, n); got != windows.SERVICE_RUNNING {
+			t.Errorf("after the restart %s is %s", n, stateName(got))
+			continue
+		}
+		if rawPID(t, n) == pids[n] {
+			t.Errorf("%s is still process %d; it was not restarted", n, pids[n])
+		}
+	}
+}
+
+// Stopping a service that others depend on is refused, naming them, and
+// stops nothing.
+//
+// `service.dead` on such a service is a request about one service, and
+// taking down the ones that depend on it is a decision about others
+// that the state did not make. So it is not done silently; the error
+// says which services are in the way, where the manager's own message
+// names none of them.
+func TestLiveStopNamesTheDependentsInTheWay(t *testing.T) {
+	requireLive(t)
+	base, middle, top := dependencyChain(t)
+	err := Stop(base)
+	if err == nil {
+		t.Fatal("Stop succeeded on a service with running dependents")
+	}
+	for _, n := range []string{middle, top} {
+		if !strings.Contains(err.Error(), n) {
+			t.Errorf("the refusal does not name the dependent %s: %v", n, err)
+		}
+	}
+	for _, n := range []string{base, middle, top} {
+		if got := rawState(t, n); got != windows.SERVICE_RUNNING {
+			t.Errorf("the refused stop left %s %s", n, stateName(got))
+		}
+	}
+}

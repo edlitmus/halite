@@ -2202,7 +2202,11 @@ down to the machine or the link each one still wants.
 
     **L23 is fixed** on its own branch (DIVERGENCE 5.746, 2026-11-25),
     shown on an elevated Windows 11 session with a standard account
-    granted rights by `sc.exe sdset`. L24 is what is left here.
+    granted rights by `sc.exe sdset`. **L24 is fixed** on a branch
+    stacked on it (DIVERGENCE 5.747): `Start` and `Stop` wait out a
+    pending state, and `Restart` takes running dependents with it.
+    Left open by 5.747 for the owner: whether `service.dead` should stop
+    a service's dependents rather than refuse, naming them.
 
 29. **`awsauth`'s three, which need real AWS** (#613). EKS Pod Identity
     cannot be reached through the container-credentials path at all,
