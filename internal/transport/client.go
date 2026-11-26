@@ -240,6 +240,21 @@ func (c *Client) Reset() {
 	c.http = nil
 }
 
+// anonymous is a client for the same hub, trusting the same CA, that holds no
+// certificate. It copies the fields that say where the hub is and how to
+// time and count a request, and none of the ones that say who is asking: Cert
+// and CertFiles stay empty, which is what makes the connection an anonymous
+// one (client picks EnrollConfig for a client with no certificate).
+func (c *Client) anonymous() *Client {
+	return &Client{
+		HubURL:     c.HubURL,
+		CA:         c.CA,
+		ServerName: c.ServerName,
+		Timeout:    c.Timeout,
+		Observe:    c.Observe,
+	}
+}
+
 func (c *Client) url(path string) string {
 	return c.HubURL + path
 }
@@ -509,8 +524,20 @@ func (c *Client) Enroll(ctx context.Context, key crypto.Signer, nodeID, token st
 		return nil, err
 	}
 
+	// Over a connection that presents no certificate, whatever this client
+	// holds. A node that has to enroll again is a node whose certificate
+	// the hub no longer accepts -- revoked, or expired -- and the hub ends
+	// a handshake that presents one: `enroll --force` failed with `tls: bad
+	// certificate` on a revoked node, and the node's own log told the
+	// operator to run it (issue 880). `/v1/enroll` is reachable without a
+	// certificate (ServerConfig), so presenting one could only add a way
+	// to be refused. The connection is closed afterwards rather than kept:
+	// it is not one this client would use for anything else.
+	enrolling := c.anonymous()
+	defer enrolling.CloseIdleConnections()
+
 	var res EnrollResponse
-	status, err := c.post(ctx, PathEnroll, EnrollRequest{CSR: string(csrPEM), Token: token}, &res)
+	status, err := enrolling.post(ctx, PathEnroll, EnrollRequest{CSR: string(csrPEM), Token: token}, &res)
 	if err != nil {
 		return nil, err
 	}

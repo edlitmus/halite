@@ -122,12 +122,38 @@ The cases that need you:
   from an old image, or its key leaked): `halite-hub keys revoke` it, then
   enrol again from a fresh key (`halite-node enroll --force` moves the old key
   aside as `node.key.<UTC time>`, which is never removed: re-enrolling was an
-  operator's decision). **If the old certificate is revoked, move `node.crt`
-  aside first.** `enroll` presents the certificate that is in `pki_dir`, and the
-  hub ends that handshake. On a revoked node, `enroll --force` printed `tls: bad
-  certificate` until `node.crt` was moved away (run on `main` at `f926c1fa`). An
-  expired certificate was not run. The log line that says `enroll --force` does
-  not mention this.
+  operator's decision). `enroll` sends its request without a client
+  certificate, so you do not move `node.crt` aside. The certificate can be
+  revoked or expired.
+
+  The hub still holds the record of the node, and it refuses a new key for
+  that name. Delete the record first. If you do not, the node prints
+  `halite: /v1/enroll: enrollment refused; the hub's log says why` and
+  `the new key was discarded; this node keeps the certificate and key it had`.
+  The node exits `1`. Only the hub log gives the reason:
+  `enrollment refused: <node> is already known by a different key
+  (<fingerprint>); delete the record first if the node was rebuilt`.
+
+  1. On the hub, run `halite-hub keys delete <node>`. It prints `deleted <node>`
+     and `serial <…> stays denied until it expires at <time>`.
+  2. On the node, run `halite-node enroll --force`. It prints the pending block
+     and exits `2`.
+  3. On the hub, run `halite-hub keys accept <node>`.
+  4. On the node, run `halite-node enroll`. It prints
+     `enrolled: <pki_dir>/node.crt` and exits `0`. The old key stays as
+     `node.key.<UTC time>`.
+  5. Start `halite-node connect`.
+
+  This sequence ran on FreeBSD 15.1 (go1.27.4, loopback, manual enrolment),
+  against a revoked certificate and against an expired one
+  (`certificate_lifetime: 60s`). Both cases are the same. After step 5,
+  `halite-hub runner manage.status` showed the node up and `test.ping`
+  returned `True`. Before the fix, `enroll --force` sent the held `node.crt`.
+  The hub then ended the handshake with `tls: bad certificate` (revoked) or
+  `tls: expired certificate` (expired). The log line of the node now says:
+  `if this node should be in the fleet, delete its record on the hub:
+  halite-hub keys delete <node>, then enrol it again here: halite-node enroll
+  --force`.
 
 A node on a build before the automatic-renewal change does not renew itself.
 If any of yours are that old, upgrade them
@@ -229,7 +255,7 @@ is in [chapter 40](40-incidents.md).
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| A node cannot reconnect after a restart: `certificate has expired` | It was not renewed (stopped, or an old build) and the connection that kept it alive ended | `renew --force` needs the old certificate to still be valid. If it is not, revoke the node and delete its record. Then move `node.crt` aside and enrol again |
+| A node cannot reconnect after a restart: `certificate has expired` | It was not renewed (stopped, or an old build) and the connection that kept it alive ended | `renew --force` needs the old certificate to still be valid. If it is not, delete the record of the node on the hub. Then run `halite-node enroll --force` on the node, and accept it on the hub |
 | `halite-hub run` fails: certificate rejected | Your operator certificate expired | Re-issue it |
 | The API answers `readyz: not ready` after 30 days | Its operator certificate to the hub expired | Re-issue `api`; no restart |
 | Browsers or scrapers reject the API | The serving certificate expired or lacks the name | Re-issue from your PKI; check `subjectAltName` |

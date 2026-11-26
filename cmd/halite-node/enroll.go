@@ -592,10 +592,16 @@ func runConnect(args *cli.Args) int {
 			// that the connection could not be established; that attempt
 			// is retried like an outage, and the next one reads the alert
 			// (DIVERGENCE 5.730).
+			//
+			// The fix names the hub's `keys delete` before `enroll --force`:
+			// the hub refuses a request for a name it holds under another
+			// key, deliberately, so `enroll --force` on its own is refused
+			// until the record is gone (issue 880).
 			n.log.Error("the hub refused this node's certificate, so this node will not retry: "+
 				"its enrollment was revoked, or the hub will not accept this certificate",
 				"hub", client.HubURL, "error", err.Error(),
-				"fix", "if this node should be in the fleet, enrol it again: halite-node enroll --force")
+				"fix", "if this node should be in the fleet, delete its record on the hub: "+
+					"halite-hub keys delete "+n.nodeID+", then enrol it again here: halite-node enroll --force")
 			n.clearPillarStore()
 			return 1
 		}

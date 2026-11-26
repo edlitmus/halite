@@ -44,7 +44,7 @@ clause: it names the setting, the command or the file.
 | Handshake error naming a host | The hub's certificate lacks the name the node dialled | Hub: `--names` |
 | `x509: certificate signed by unknown authority` repeated in the node log | The hub has a different CA than the node pinned (restored wrongly, or rebuilt) | [Chapter 35](35-backup-and-recovery.md) |
 | `this node's enrollment has been revoked reason=…`; the agent exits | Someone revoked it | Intended, or re-enrol it |
-| `the hub refused this node's certificate, so this node will not retry`; the agent exits `1` at start | It was revoked while it was not connected, or the hub will never accept its certificate | Intended. To keep the node, delete its record on the hub, move `node.crt` aside, and run `halite-node enroll --force` ([chapter 37](37-certificates.md)) |
+| `the hub refused this node's certificate, so this node will not retry`; the agent exits `1` at start | It was revoked while it was not connected, or the hub will never accept its certificate | Intended. To keep the node, delete its record on the hub with `halite-hub keys delete <node>`, then run `halite-node enroll --force` on the node. Do not move `node.crt` ([chapter 37](37-certificates.md)) |
 | The node connects, then `not yet valid` / `expired` | Clock skew or an expired certificate | NTP; `renew --force`; `doctor` |
 | A node connects and disconnects repeatedly | Two machines share one identity | Revoke both and re-enrol each |
 

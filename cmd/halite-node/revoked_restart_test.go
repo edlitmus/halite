@@ -41,7 +41,11 @@ func TestARevokedNodeStartedAgainExitsOneAndSaysToReEnroll(t *testing.T) {
 		t.Fatalf("a revoked node started again exited %d, want 1\n%s", code, restartedLog.String())
 	}
 	log := restartedLog.String()
-	for _, want := range []string{"refused this node's certificate", "halite-node enroll"} {
+	// The hint must be the whole of what works: the hub refuses a request
+	// for a name it already knows under another key, so `enroll --force`
+	// alone is refused and the operator has to delete the record first
+	// (issue 880; TestARevokedNodeEnrollsAgainOnceItsRecordIsDeleted).
+	for _, want := range []string{"refused this node's certificate", "halite-hub keys delete revoked1", "halite-node enroll --force"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the log does not say %q:\n%s", want, log)
 		}
@@ -53,6 +57,49 @@ func TestARevokedNodeStartedAgainExitsOneAndSaysToReEnroll(t *testing.T) {
 	// still failing the retry for ever this test was written for.
 	if n := strings.Count(log, `"msg":"connecting"`); n > 3 {
 		t.Errorf("the revoked node tried %d times, want at most 3:\n%s", n, log)
+	}
+}
+
+// What an operator has to do to bring a revoked node back, run end to end: the
+// node's log says to enrol again, and `enroll --force` on its own died with
+// `tls: bad certificate`, because it presented the revoked node.crt to a hub
+// that ends such a handshake (issue 880). It now reaches the hub, and the hub
+// refuses a request for a name it holds under another key -- on purpose, so
+// that nobody can claim a node's name -- until the record is deleted. The
+// sequence is the one the log line and handbook chapter 37 give, and it ends
+// with the node connected on its new certificate.
+func TestARevokedNodeEnrollsAgainOnceItsRecordIsDeleted(t *testing.T) {
+	lab := newRevokeLab(t, "revoked3")
+	lab.startHub()
+	lab.enroll()
+
+	running, runningLog := lab.startNode()
+	lab.waitHubLog(`"msg":"node connected","node_id":"revoked3"`)
+	lab.hubCommand("keys", "revoke", "revoked3", "--reason", "decommissioned")
+	if code := waitExit(t, running, 30*time.Second, runningLog); code != 1 {
+		t.Fatalf("the running node exited %d on its revocation, want 1\n%s", code, runningLog.String())
+	}
+
+	forced := &syncBuffer{}
+	flags := append([]string{"enroll", "--force", "--hub-fingerprint", lab.hubFingerprint()}, lab.nodeArgs...)
+	code := waitExit(t, lab.start(forced, lab.nodeBin, flags...), 30*time.Second, forced)
+	if strings.Contains(forced.String(), "bad certificate") {
+		t.Errorf("enroll --force presented the revoked certificate to the hub:\n%s", forced.String())
+	}
+	if !strings.Contains(forced.String(), "enrollment refused") {
+		t.Errorf("enroll --force did not reach the hub's decision on the request:\n%s", forced.String())
+	}
+	if code != 1 {
+		t.Errorf("enroll --force on a name the hub still holds exited %d, want 1\n%s", code, forced.String())
+	}
+
+	lab.hubCommand("keys", "delete", "revoked3")
+	lab.enrollWith("--force")
+
+	_, againLog := lab.startNode()
+	lab.waitHubLogTimes(`"msg":"node connected","node_id":"revoked3"`, 2)
+	if strings.Contains(againLog.String(), "refused this node's certificate") {
+		t.Errorf("the node was refused on the certificate it was just issued:\n%s", againLog.String())
 	}
 }
 
@@ -197,14 +244,25 @@ func (l *revokeLab) hubCommand(args ...string) string {
 	return string(out)
 }
 
-func (l *revokeLab) enroll() {
+func (l *revokeLab) enroll() { l.enrollWith() }
+
+// hubFingerprint is the pin a node enrolling against this hub is given.
+func (l *revokeLab) hubFingerprint() string {
 	l.t.Helper()
 	fields := strings.Fields(l.hubCommand("keys", "fingerprint"))
 	if len(fields) == 0 {
 		l.t.Fatal("the hub printed no fingerprint")
 	}
+	return fields[len(fields)-1]
+}
+
+// enrollWith enrolls the node and has the hub accept it, with extra flags for
+// `halite-node enroll` such as --force.
+func (l *revokeLab) enrollWith(extra ...string) {
+	l.t.Helper()
 	log := &syncBuffer{}
-	p := l.start(log, l.nodeBin, append([]string{"enroll", "--wait", "--hub-fingerprint", fields[len(fields)-1]}, l.nodeArgs...)...)
+	flags := append([]string{"enroll", "--wait", "--hub-fingerprint", l.hubFingerprint()}, extra...)
+	p := l.start(log, l.nodeBin, append(flags, l.nodeArgs...)...)
 	for i := 0; i < 200; i++ {
 		select {
 		case err := <-p.done:
@@ -229,13 +287,17 @@ func (l *revokeLab) startNode() (*runningProcess, *syncBuffer) {
 }
 
 // waitHubLog waits for the most recently started hub to log want.
-func (l *revokeLab) waitHubLog(want string) {
+func (l *revokeLab) waitHubLog(want string) { l.waitHubLogTimes(want, 1) }
+
+// waitHubLogTimes waits for the most recently started hub to have logged want
+// at least times times, for an event that has already happened once.
+func (l *revokeLab) waitHubLogTimes(want string, times int) {
 	l.t.Helper()
 	log := l.hubLogs[len(l.hubLogs)-1]
 	deadline := time.Now().Add(30 * time.Second)
-	for !strings.Contains(log.String(), want) {
+	for strings.Count(log.String(), want) < times {
 		if time.Now().After(deadline) {
-			l.t.Fatalf("the hub never logged %q\n%s", want, log.String())
+			l.t.Fatalf("the hub logged %q %d time(s), want %d\n%s", want, strings.Count(log.String(), want), times, log.String())
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
