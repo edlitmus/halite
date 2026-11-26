@@ -52630,7 +52630,7 @@ stopping others that depend on it is a separate decision, and this change
 does not make it. Naming the dependents needs `SERVICE_ENUMERATE_DEPENDENTS`;
 an account delegated only start and stop (5.746) gets the manager's message
 without names, and a restart by it stops only what it can list. That choice
-is open for the owner to change.
+is open for the owner to change. (Decided since: 5.747.1.)
 
 Six live tests in `internal/winsvc/live_windows_test.go` hold the six
 behaviours above. Each failed on the unchanged code with the messages above,
@@ -52651,6 +52651,48 @@ were used), a dependency on a group, and a dependent that fails to start
 again after a restart. `Restart` or `Stop` as a delegated account. Windows
 Server. The race detector: this host has no C compiler, so `-race` did not
 run.
+
+### 5.747.1 `service.dead` does not stop the services that depend on it: decided (2026-11-26)
+
+5.747 left one choice open: whether stopping a service should also stop the
+running services that depend on it. The owner decided on 2026-11-26 (issue
+893) that it should not. `service.dead`, and `winsvc`'s `Stop` under it, keep
+refusing with the manager's 1051 and name the dependents still running.
+`TestLiveStopNamesTheDependentsInTheWay` holds that refusal, so the decision
+is held by a test, not only by this text. No code changed.
+
+The reason is that one state should change one service. A `service.dead`
+that also stopped its dependents would leave services dead that no state
+declared. The next run would then need a rule for whether they come back,
+and who brings them back. An operator who wants the dependents down declares
+them, in order, or uses a restart, which stops them and starts them again.
+
+**Salt does the same, and says less.** This was read in Salt 3007.1's source
+(tag `v3007.1`, the version `contrib/docker/saltdiff` pins), not run:
+Docker was not running on the Windows host, so the saltdiff container was
+not used.
+
+- The `dead` state in `salt/states/service.py` takes no option for
+  dependents. It calls `service.stop` and fails with "Service X failed to
+  die" when that does not succeed.
+- On Windows, `salt/modules/win_service.py`'s `stop` calls pywin32's
+  `win32serviceutil.StopService`, which is one
+  `ControlService(SERVICE_CONTROL_STOP)`. Salt accepts only 1062 ("not
+  running") as success, so 1051 becomes `Failed To Stop X` with the
+  manager's message, which names no dependent. pywin32 also has a
+  `StopServiceWithDeps`, read at its tag `b306`, and Salt does not call it.
+
+So a Salt state that stops a service with running dependents fails on both,
+and halite's message is the more useful one. The two differ only on a
+restart: Salt's Windows `restart` is `stop` and then `start`, so it fails the
+same way, while halite's `Restart` stops and restarts the dependents (5.747).
+That difference is deliberate, because a restart leaves every service it
+touched running again.
+
+**Not covered.** The systemd side. `systemctl stop` may itself stop units
+that have `Requires=` on the stopped one, and that was not checked. It also
+was not checked which pywin32 build Salt 3007.1's onedir bundle ships.
+`StopService` has the same shape in the `b306` source that was read.
 
 ### 5.748 The handbook said things the code does not, in fourteen places (2026-11-26)
 
