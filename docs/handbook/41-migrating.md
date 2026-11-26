@@ -136,7 +136,7 @@ The report also tells you what to prepare for:
   ([chapter 29](29-extensions.md)). Two are special: `_grains/metadata.py` is
   `cloud_grains: true`, and `_pillar/aws_secrets_manager.py` is the
   `aws_secrets_manager` source.
-- **Blackout.** Salt reads `minion_blackout` and `minion_blackout_whitelist`
+- **Blackout.** Salt reads `minion_blackout` and `minion_blackout_whitelist` <!-- lexicon:allow -->
   from pillar and from grains. A node reads them from its pillar, so the audit
   lists a pillar key as a note. A node does not read grains for this. The audit
   lists a key under the `grains:` mapping of a Salt configuration as a review
