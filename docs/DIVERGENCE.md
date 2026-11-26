@@ -52487,6 +52487,76 @@ signing error recorded before. The check reads files and decides; nothing
 in it is platform-specific, but that is a judgement. Windows was not run.
 A destination that is a symbolic link is followed, as it was before.
 
+### 5.746 A grant on one service could not be used, because every write asked for the whole manager (2026-11-25)
+
+Issue 608 item 5, lead L23 (`internal/winsvc/winsvc_windows.go`). Found by
+reading; it waited for an elevated session because showing it means making a
+service and an account, which needs one.
+
+**The defect.** `openManager(true)`, which `Start`, `Stop` and `SetStartType`
+all used, asked the service control manager for `SC_MANAGER_ALL_ACCESS`. That
+is the right to create services, lock the database and change the manager's
+own descriptor, and only an administrator holds it. None of the three uses
+any of it: the right to start, stop or reconfigure one service is checked
+against that service's own access list when `OpenService` opens it. So an
+account given `start`, `stop` and `change config` on one service -- the
+delegation Windows has offered since NT, and what `sc.exe sdset` writes -- was
+refused at the manager before its grant was looked at. 5.628 records the
+same demand as the reason a test skipped without elevation; that was the code
+before this change.
+
+**Shown.** On Ed-PC, Windows 11 Pro 26H2, build 26320.10022, elevated, go
+1.27.4. `TestLiveADelegatedAccountCanUseItsRightsOnOneService`
+(`internal/winsvc/live_windows_test.go`) registers the test binary as two
+throwaway services, creates a standard local account (in Users only, checked
+by its token), and grants it `RPWPDCLCCCLOSWRC` on one service with
+`sc.exe sdset`. It then logs that account on with `LogonUser` and runs the
+write path on a thread impersonating it, so the manager checks that
+account's token and not this process's. On the unchanged code every call
+failed the same way:
+
+```
+Start as halitesvc94853c: connecting to the service control manager: Access is denied. (this needs administrator rights, and this process does not have them)
+```
+
+and the service's state and start type, read back with the API rather than
+through `winsvc`, had not moved.
+
+**The change.** `openManager` takes no argument and asks for
+`SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE` for every caller. The
+manager's default descriptor grants both to every authenticated user, and
+the service's access list then decides. The access-denied hint now names a
+grant on the service as well as administrator rights, because the old text
+sent an operator to the worse of the two fixes.
+
+With the change, the same test starts the service, sets it to `disabled` and
+back to `manual`, and stops it, all as the standard account, each checked
+with the raw API. The same account is still refused on the second service,
+which granted it nothing, and the refusal now comes from `OpenService` and
+names the grant. With `openManager` put back, the test fails as above.
+
+**Where it runs.** The fleet `windows` leg (windows-2022, elevated) now runs
+`-run TestLive ./internal/winsvc/`, and its last step counts `halitesvctest*`
+services and `halitesvc*` local accounts left behind. It has run this test
+once, on this branch's PR (873, commit 8c61259a, 2026-11-26), on a
+GitHub-hosted Windows Server 2022 Datacenter (10.0.20348) runner: the test
+passed rather than skipped, so `net user /add` and an interactive
+`LogonUser` work there, and the last step counted no service and no account
+left. That run was of the fixed code only; the failure on the unchanged
+code was watched on the Windows 11 host alone. Without `HALITE_SYSTEM_LIVE=1`
+and an elevated token the test skips and says which was missing; the
+non-elevated skip was not watched on this host.
+
+**Not covered.** A domain account, a grant to a group rather than an
+account, or a change to the manager's own descriptor. A real separate process running
+as the account: impersonation was used instead, which is the same token
+check. `Restart` as the delegated account, and the
+`auto` and `auto_delayed` start types, which write a second configuration
+block. The `win_service` module's own entry point was not called: it passes
+its arguments to `SetStartType` unchanged, which is why its evidence note
+now names this run and its level stays `captured`. The race detector: this host has
+no C compiler, so `-race` did not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

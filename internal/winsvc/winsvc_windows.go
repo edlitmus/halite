@@ -59,16 +59,23 @@ type Status struct {
 // manager is an open handle to the service control manager.
 type manager struct{ handle windows.Handle }
 
-// openManager connects to the local manager with the access asked for.
+// openManager connects to the local manager.
 //
-// Read access is separated from write access on purpose: `service.status`
-// on a node that is not running as an administrator should answer, and it
-// does, because querying needs only SC_MANAGER_CONNECT.
-func openManager(write bool) (*manager, error) {
+// It asks for SC_MANAGER_CONNECT and SC_MANAGER_ENUMERATE_SERVICE and
+// nothing more, for writes as well as reads. The manager's own rights
+// are about the manager -- creating a service, locking the database,
+// listing -- and starting, stopping or reconfiguring one service is
+// decided by that service's access list when it is opened, not here.
+//
+// Writes used to add SC_MANAGER_ALL_ACCESS, which nothing below uses and
+// which only an administrator holds, so an account granted start and
+// stop on one service by that service's access list -- the delegation
+// Windows has offered since NT, and what `sc.exe sdset` writes -- was
+// refused at this call before the grant was ever looked at (issue 608
+// item 5, lead L23). The two rights asked for here are granted to every
+// authenticated user by the manager's default descriptor.
+func openManager() (*manager, error) {
 	access := uint32(windows.SC_MANAGER_CONNECT | windows.SC_MANAGER_ENUMERATE_SERVICE)
-	if write {
-		access |= windows.SC_MANAGER_ALL_ACCESS
-	}
 	h, err := windows.OpenSCManager(nil, nil, access)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to the service control manager: %w%s", err, adminHint(err))
@@ -79,9 +86,16 @@ func openManager(write bool) (*manager, error) {
 func (m *manager) close() { _ = windows.CloseServiceHandle(m.handle) }
 
 // adminHint explains the one failure an operator will meet most.
+//
+// It names both ways past it. Saying only "this needs administrator
+// rights" was true while openManager demanded them; now that a grant on
+// the service itself is enough, a message that sends an operator to make
+// a service account an administrator would be advice to do the worse of
+// two things.
 func adminHint(err error) string {
 	if err == windows.ERROR_ACCESS_DENIED {
-		return " (this needs administrator rights, and this process does not have them)"
+		return " (this needs administrator rights, or a grant to this account on the " +
+			"service's own access list, and this process has neither)"
 	}
 	return ""
 }
@@ -175,7 +189,7 @@ func StartTypeCode(name string) (code uint32, delayed bool, err error) {
 
 // Query reports what the manager knows about one service.
 func Query(name string) (Status, error) {
-	m, err := openManager(false)
+	m, err := openManager()
 	if err != nil {
 		return Status{}, err
 	}
@@ -316,7 +330,7 @@ func Enabled(name string) (bool, error) {
 
 // Exists reports whether the manager knows a service at all.
 func Exists(name string) bool {
-	m, err := openManager(false)
+	m, err := openManager()
 	if err != nil {
 		return false
 	}
@@ -336,7 +350,7 @@ func Exists(name string) bool {
 // report a database as running while it was still opening its files —
 // and the state after it, which requires it, would fail.
 func Start(name string) error {
-	m, err := openManager(true)
+	m, err := openManager()
 	if err != nil {
 		return err
 	}
@@ -359,7 +373,7 @@ func Start(name string) error {
 
 // Stop stops a service and waits for it to have stopped.
 func Stop(name string) error {
-	m, err := openManager(true)
+	m, err := openManager()
 	if err != nil {
 		return err
 	}
@@ -441,7 +455,7 @@ func SetStartType(name, startType string) error {
 	if err != nil {
 		return err
 	}
-	m, err := openManager(true)
+	m, err := openManager()
 	if err != nil {
 		return err
 	}
@@ -496,7 +510,7 @@ func List() ([]string, error) {
 // ListStatus enumerates every service with its state, which is one call
 // rather than one call per service.
 func ListStatus() ([]Status, error) {
-	m, err := openManager(false)
+	m, err := openManager()
 	if err != nil {
 		return nil, err
 	}
