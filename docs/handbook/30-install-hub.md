@@ -119,7 +119,8 @@ ls
 EVIDENCE.md  LICENSE  bin/  examples/  handbook/  man/  service/
 ```
 
-That is the layout of every release after v0.1.0. **v0.1.0 itself holds only
+That is the layout of every release after v0.1.0. The `service/` directory
+holds `systemd/`, `rc.d/`, `openrc/` and `sysvinit/`. **v0.1.0 itself holds only
 `bin/`, `examples/` and `man/man8/`** (checked by listing the published
 archive): it was built before the handbook and the service files were added to
 the archives. With it, take the service files from `contrib/systemd/` and
@@ -201,14 +202,14 @@ event_retention: 720h
 metrics: true
 ```
 
-**Linux: delete the `pki_dir`, `state_dir` and `policy` lines from the copy.**
-In the archives built up to and including those before DIVERGENCE 5.624,
-`examples/hub.yaml` sets these three keys to FreeBSD paths. This is also true
-of the Linux archive. If you keep them on Linux, the hub stops at once. On
-`host-a` the log said `halite: creating /usr/local/etc/halite/pki: mkdir
-/usr/local/etc/halite: read-only file system`, and systemd reported
-`status=78/CONFIG`. After the three lines were deleted, the hub started and
-made its CA in `/etc/halite/pki`. On FreeBSD the paths are correct. Keep them.
+**Linux, with an archive built before DIVERGENCE 5.624: delete the `pki_dir`,
+`state_dir` and `policy` lines from the copy.** Those archives set the three
+keys to FreeBSD paths in `examples/hub.yaml`, also in the Linux archive. If you
+keep them on Linux, the hub stops at once. On `host-a` the log said `halite:
+creating /usr/local/etc/halite/pki: mkdir /usr/local/etc/halite: read-only file
+system`, and systemd reported `status=78/CONFIG`. After the three lines were
+deleted, the hub started and made its CA in `/etc/halite/pki`. Newer archives
+and checkouts have these three lines as comments, so you delete nothing.
 
 (`pki_dir`, `state_dir`, `cache_dir` and `policy` have correct platform
 defaults, the last being `policy.yaml` beside `hub.yaml`: do not set them
@@ -320,7 +321,11 @@ That output is from a hub built before DIVERGENCE 5.724. A hub now makes a
 P-384 CA unless `key_algorithm` says otherwise. A fresh hub built from the
 change (on macOS, unprivileged, on loopback) logged `created a new enrollment
 CA algorithm=ecdsa-p384`, and its `ca.crt` and `hub.crt` were both on
-`secp384r1`, signed `ecdsa-with-SHA384`.
+`secp384r1`, signed `ecdsa-with-SHA384`. A hub built from `main` on FreeBSD
+logged the same, with a configuration that did not set `key_algorithm`.
+
+`examples/hub.yaml` sets `key_algorithm: ecdsa-p256`. If you keep that line,
+the CA is P-256. Delete the line to get the default.
 
 **Open the port in the host's own firewall** if it runs one. Nodes connect to
 TCP 4510, and a firewall in front of the host does not cover a firewall on it.
@@ -391,21 +396,23 @@ halite-hub doctor — /etc/halite/hub.yaml
   pass  configuration validity           /etc/halite/hub.yaml loads; not compared with what the service is running: the running hub records nothing to compare it with
   pass  certificate validity and expiry  operator ed: 29 days left; the enrollment CA: 3649 days left; this hub's certificate: 89 days left
   pass  file server reachability         file_roots for base: 1 root(s)
+  pass  state signatures                 1 environment(s) served; no _halite/ holds anything but a manifest and its signature. Whether they are signed is for halite-hub tree verify.
   pass  pillar compilation               compiles, 2 top-level key(s)
   pass  disk space                       …: 135.4 GiB free
   skip  queue depths                     nothing on this hub keeps a bounded queue
   pass  module verification              every module that changes this machine as root has been run against its tool; 24 unprivileged ones have not
   pass  FIPS mode consistency            neither the kernel nor this build is in FIPS mode
 
-  7 pass, 1 skip
+  8 pass, 1 skip
 ```
 
 Without `--config` the heading names the configuration *directory*
 (`/etc/halite`, or `/usr/local/etc/halite` on FreeBSD) and not `hub.yaml`; pass
-`--config /etc/halite/hub.yaml` to see the file named. On Linux the totals were
-`7 pass, 1 skip`. On FreeBSD the output differs once more: the FIPS line is
-`skip  FIPS mode consistency  freebsd has no kernel FIPS mode, and this is not a
-FIPS build`, giving `6 pass, 2 skip`.
+`--config /etc/halite/hub.yaml` to see the file named. A hub built before
+the `state signatures` line printed `7 pass, 1 skip` on Linux. On FreeBSD the
+output differs once more: the FIPS line is `skip  FIPS mode consistency  freebsd
+has no kernel FIPS mode, and this is not a FIPS build`, giving `7 pass, 2 skip`
+(run on `main` at `f926c1fa`).
 
 Then check the three claims you care about:
 
@@ -448,7 +455,7 @@ hub no node has joined is untested.
 | FreeBSD: `install: /usr/local/etc/rc.d: No such file or directory` | The host has no packages, so `/usr/local/etc/rc.d` does not exist | `sudo install -d -m 0755 /usr/local/etc/rc.d`, then install the script again (step 6) |
 | Linux: the hub stops at once with `mkdir /usr/local/etc/halite: read-only file system`, and systemd shows `status=78/CONFIG` | The example `hub.yaml` sets `pki_dir`, `state_dir` and `policy` to FreeBSD paths | Delete those three lines from `hub.yaml` (step 4), then start the hub |
 | FreeBSD: `service halite_hub restart` waits at `Waiting for PIDS: <pid>` and does not return | The cause is not known. It happened twice in a jail. The hub had already logged `the hub stopped`, and the process did not exist. A new `pwait <pid>` returned at once. | Stop the waiting `pwait` process. The restart then finishes and starts the hub. Ten more restarts in a row took about one second each. |
-| Linux, with a specific `listen:` address: `halite-hub runner manage.status` says `dial tcp 127.0.0.1:4510: connect: connection refused` | The command dials `localhost`, and the hub listens on the one address only | Add `--hub ADDRESS:PORT` after the subcommand, for example `--hub 10.0.0.10:4510` |
+| Linux, with a specific `listen:` address: `halite-hub runner manage.status` says `dial tcp 127.0.0.1:4510: connect: connection refused` | A hub built before DIVERGENCE 5.725 dials `localhost`, and the hub listens on the one address only | Add `--hub ADDRESS:PORT` after the subcommand, for example `--hub 10.0.0.10:4510`. A newer hub dials the host of `listen`. |
 | Nothing listens on 4510 | Firewall, or another service has the port | `listen:` in `hub.yaml`, or free the port |
 | `doctor` warns about the pillar | A pillar file does not compile | Run `halite-node pillar items --local --pillar-root …` against it |
 

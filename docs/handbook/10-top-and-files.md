@@ -298,7 +298,9 @@ metadata service or a web-identity token. Prefer a role to a key.
 | `halite-hub runner fileserver.file_list` | List files served for an environment. |
 | `halite-hub runner fileserver.dir_list` | List directories. |
 | `halite-hub runner fileserver.envs` | List environments. |
-| `halite-hub runner fileserver.clear_cache` | Drop the hub's cache. |
+
+`fileserver.clear_cache`, `lock`, `clear_lock` and `versions` are not built.
+`halite-hub runner list` shows them as not built.
 
 A node never lists the hub's files itself: it asks for a path and gets
 that file, so there is no `cp` module to browse with. (The `cp.*`

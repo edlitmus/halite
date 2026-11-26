@@ -225,6 +225,11 @@ Properties of a token, all deliberate:
 > correctly. A hub from 5.674 on mints tokens that begin with `hbt_`,
 > which are read either way. Both are in the ledger.
 
+`--token` puts the secret in the process table, where every account on the
+node can read it. `halite-node enroll --token-file <path>` reads the token
+from a file instead. It warns if other accounts can read that file. Give one
+of the two, not both.
+
 Prefer `keys token revoke <id>` to `keys token delete <id>`: a revoked token
 admits nothing and keeps the record of what it already admitted, which
 answers "what did this token let in?" after a leak. `delete` is for fleets
@@ -331,11 +336,12 @@ Related commands:
 
 | Command | Does |
 |---|---|
-| `keys list [--state <state>]` | Every node the hub has heard from, by state: pending, accepted, rejected, revoked. |
+| `keys list [--state <state>]` | Every node the hub has heard from, by state: pending, accepted, rejected, revoked, expired. |
 | `keys show <node>` | One node's record: state, source (manual or token), fingerprint, serial, expiry, first seen, and the certificate. |
 | `keys accept <node>... \| --all` | Issue to pending requests. (`--all` is for when you have verified a batch; use it knowingly.) |
 | `keys reject <node>... --reason` | Refuse a request and **keep it**, for the record. |
 | `keys revoke <node>... --reason` | Withdraw an issued certificate. |
+| `keys token create\|list\|revoke\|delete` | Mint, list, withdraw or forget a bootstrap token. `--uses`, `--comment` and `--cidr` also limit a token. |
 | `keys delete <node>...` | Forget a node entirely. Its certificates stay refused until they expire, kept under `keys/deleted/` in the key store, so deleting a record can never leave a live certificate. |
 | `keys export-crl [--out <path>]` | Write a signed revocation list for anything outside halite that wants one. It lists every certificate the hub refuses (revoked, replaced by a renewal, or belonging to a deleted node), and its number only rises. |
 

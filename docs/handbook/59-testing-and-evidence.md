@@ -28,20 +28,22 @@ ledger tells), so a module's captured output comes from the real tool.
 ## The layers
 
 SPEC 31 names fourteen layers. The ledger (section 5.2) states each one's real
-status; in outline:
+status. The table below groups them and adds the live layer, which SPEC does not
+name. In outline:
 
 | Layer | What it does | Where |
 |---|---|---|
 | **Unit** | The default `go test`: every package, with the race detector in `make race` | everywhere |
 | **Conformance, YAML** | The standard YAML test suite's 402 cases, vendored, each checked three ways; every disagreement has a row with a reason, enforced both directions | `internal/yaml/testdata` |
 | **Conformance, templates** | Two corpora: cases mechanically extracted from Jinja's own tests, and cases written for Salt's added filters, strict undefined and the limits | `internal/template/testdata` |
-| **Differential against Salt** | Ten trees compiled by both implementations; the low state compared chunk by chunk, against three Salt releases | `internal/saltdiff` |
+| **Differential against Salt** | Ten trees compiled by both implementations; the low state compared chunk by chunk, against more than one Salt major | `internal/saltdiff` |
+| **Differential, version comparison** | `pkg.version_cmp` against the real `dpkg`, `rpm` and `pkg` orderings | `internal/builtin`, live tests |
 | **Conformance, state modules** | A shared harness every state function must pass: test mode changes nothing, reports `None` exactly when a change would be made, and a second run changes nothing | `internal/states/conformance.go` |
 | **Property** | Path containment never escapes a root; the topological sort is stable; requisite resolution terminates; the YAML parser never panics; targeting is monotonic under grain addition | `*/property_test.go` |
 | **Fuzz** | The YAML parser and encoder, the template lexer and parser, the compound target parser (`make fuzz`) | |
-| **Chaos** | Registered failure scenarios: hub restart mid-job, network partition, disk full, clock skew, certificate expiry mid-run, extension hang, event bus at its retention limit, reactor queue overflow | `internal/chaos`, `make chaos` |
+| **Chaos** | Registered failure scenarios: hub restart mid-job, network partition, disk full, clock skew, certificate expiry mid-run, extension hang, event bus at its retention limit, reactor queue overflow, and a ninth that SPEC does not name: two correct operations that arrive together | `internal/chaos`, `make chaos` |
 | **Upgrade** | Skew between versions; a record from a newer hub is read but not rewritten | `internal/specaudit/upgrade_test.go` |
-| **Scale** | The thirteen performance rows, two measured, the rest waiting on a harness (`tools/simfleet`) | `internal/perf`, `make perf` |
+| **Scale** | The thirteen performance rows of SPEC 30. `make perf` repeats two of them. The simulated-fleet harness `tools/simfleet` has met several hub rows at 20,000 nodes on AWS, and the ledger records each run. The other rows wait on a harness, a soak or the integration matrix | `internal/perf`, `tools/simfleet`, `make perf`, `make simfleet` |
 | **Security** | The dependency graph assertion; `make vuln` | `internal/buildpolicy` |
 | **Reproducibility** | Every binary built twice from different paths; digests compared; the release workflow compares two builders | `make repro`, `release.yml` |
 | **Integration** | A hub-and-nodes matrix across the tier-1 platforms. **Absent**: the last layer with nothing behind it | |
@@ -63,8 +65,8 @@ and a module that mutates the machine needs a machine.
   **They skip with a message saying why**, and a test that skips is not a test
   that ran: when you rely on one, prove it executed.
 - `.github/workflows/fleet.yml` runs the live legs on a schedule, on dispatch and
-  on changes to the modules they cover: Debian and RPM-family containers, a
-  Linux VM, an emulated **FreeBSD** machine, and macOS. If you add a live test, add
+  on changes to the modules they cover: a Debian container, RPM-family
+  containers, a Linux host, an emulated **FreeBSD** machine, macOS and Windows. If you add a live test, add
   it to the leg's `-run` filter and the trigger paths, or it will never run again.
 - `contrib/tofu` raises throwaway cloud instances (seven Linux distributions and
   FreeBSD 14 and 15): `make lab-up`, `lab-wait`, `lab-facts`, `lab-test`,
@@ -99,7 +101,8 @@ at three in the morning, and the notes here are long for that reason.
 ### The release gate
 
 `make release-gate` refuses a release while any module that changes the system as
-root is still `assumed`. It runs once, where the decision is made, behind a build tag
+root is still `assumed`. It also refuses a release when the changelog does not
+name the tag. It runs once, where the decision is made, behind a build tag
 so ordinary development is not blocked by it: a new module arrives `assumed`, which
 is correct, and closing it means finding a machine. There are two honest ways past
 it: demonstrate the module, or take it out of the build. Raising the level without

@@ -370,8 +370,10 @@ push. So rendering is bounded: output at most 64 MiB, loop iterations at
 most 10 million per render, recursion at most 100 deep, includes at most
 25 deep, and 60 seconds of wall clock. Exceeding any gives a named error
 with a position, not a hang. All parsing and rendering also happens in an
-unprivileged subprocess of the node, with no network and read access to
-the cached tree only ([chapter 28](28-hardening.md)).
+unprivileged subprocess of the node when you set `render_sandbox: true`.
+That setting is off by default. A root node on Linux also denies the
+child the network. No platform restricts the files that the child can
+read ([chapter 28](28-hardening.md)).
 
 ## Key ideas
 

@@ -18,8 +18,8 @@ measured only some of them:
 
 | SPEC 30 target | Status |
 |---|---|
-| Highstate compile, 500 states over 50 SLS files, heavy Jinja: under 2 s | **Measured.** `make perf` on a development workstation: **26 ms** |
-| Pillar compile, 200 pillar SLS: under 500 ms cold | **Measured: 45 ms** |
+| Highstate compile, 500 states over 50 SLS files, heavy Jinja: under 2 s | **Measured.** `make perf` on the FreeBSD development host, `main` at `f926c1fa`: **79 ms** (14 runs). An earlier workstation gave 26 ms |
+| Pillar compile, 200 pillar SLS: under 500 ms cold | **Measured: 130 ms** (8 runs, same host and commit). An earlier workstation gave 45 ms |
 | Pillar compile, cached: under 5 ms | Not measured: the hub has no pillar cache; it compiles on each request |
 | 20,000 connected nodes per hub (25,000 hard limit); 100,000 with relays | **Measured at 20,000 on Linux.** 20,000 simulated nodes (`tools/simfleet`) connected to a 16-core hub, answered twelve 20,000-node jobs, and came back within 27 s of a clean restart (ledger 5.279). Its memory is the 4 GiB row below. On FreeBSD 15.1 the same 20,000 connected and answered every job, on UFS and on ZFS, and came back within 46 s of a restart on ZFS (134 s on UFS). The 25,000 limit and 100,000 with relays have not been run |
 | `test.ping` to 10,000 nodes: 95% of returns in 10 s | **Measured: met on Linux and on FreeBSD with ZFS.** 10,000 of 10,000 returned, p95 3.86 s, on a 16-core Linux hub with simulated nodes; at 20,000, p95 7.85 s. On a 16-core FreeBSD hub with ZFS, p95 2.34 s at 20,000 once a job's returns were spread over subdirectories (ledger 5.660). **Not met on FreeBSD with UFS:** p95 1 m 55 s at 20,000 before either fix, and about 37 s after them, because each return waits for a synchronous directory write. Keep a FreeBSD hub's `state/` on ZFS (ledger 5.279, 5.660.1) |
@@ -46,7 +46,7 @@ measured in tens of seconds. The targets are set to be a clear improvement.
 | Load | Driven by | Scales with |
 |---|---|---|
 | **Connections** | One long-lived subscribe stream per node, at most `max_node_connections` (default 25,000) per hub; a relay counts as one | node count |
-| **Returns** | A node files each return as it completes; each opens a new request | jobs × nodes |
+| **Returns** | A node files each return as it completes, as a request on one kept connection to the hub (DIVERGENCE 5.641) | jobs × nodes |
 | **Pillar compilation** | Each node asks at every highstate; compiled on the hub, per node, **on every request** | highstates/hour × nodes × pillar size |
 | **File server** | Each node fetches a manifest then only changed files | nodes × tree churn |
 | **Events** | Job and return events, beacon events, node events | activity |
@@ -71,8 +71,9 @@ time halite-node state show_lowstate --local --file-root … --pillar-root … >
 
 Multiply the first by (nodes ÷ the interval between highstates) to get the
 hub's pillar load per second, and compare with its cores. A 200-SLS pillar
-compiled in 45 ms on one core means one core serves ~20 compilations a second;
-10,000 nodes each converging every 30 minutes is about 5.5 a second.
+compiled in 130 ms on one core means one core serves about 8 compilations a
+second. 10,000 nodes that each converge every 30 minutes make about 5.5 a
+second.
 
 ### 3. Flatten the spikes (these are all free)
 
@@ -155,7 +156,7 @@ Watch, in the order that matters ([chapter 34](34-monitoring.md)):
 | `event_retention`, `event_max_size` | 720 h, 4 GiB | Same; also how long a consumer may be down |
 | `evidence_anchor_rate`, `evidence_anchor_burst` | | A node running many short jobs reaches the limit in passing |
 | `hub_alive_interval` (node) | 30 s | Longer cuts keepalive traffic; shorter detects loss faster |
-| `max_body` | 64 MiB | Request size limit |
+| `max_body` (API) | 64 MiB | The largest request body that the API reads |
 | `relay_max_depth` | 2 | Relay nesting |
 
 Every limit is enforced before allocation, so a malformed or oversized request
@@ -292,7 +293,7 @@ away from the last known good pillar and the cached tree.
 
 ## Key ideas
 
-- The targets are **targets**: compile (26 ms) and pillar (45 ms) are
+- The targets are **targets**: compile (79 ms) and pillar (130 ms) are
   measured; hub capacity at scale is **not yet**.
 - The node compiles its own states, so the hub's load is pillar, files,
   returns and events. **Measure your pillar compile first.**

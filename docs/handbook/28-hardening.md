@@ -16,7 +16,7 @@ establishes and, just as importantly, what it does not.
 |---|---|---|
 | **A network attacker** | The ability to send bytes to the hub's port | TLS 1.3 in the standard library; one port; every endpoint refuses a caller without a certificate except two: a health check that returns the hub's version, and enrollment, which reads a bounded request and at most leaves a pending request for you to decide |
 | **One node** | That node's key, its grains, its pillar | Hub-side targeting (it sees only its own jobs); trusted-grain allowlist for pillar; events confined to its own prefix; deny-by-default mine access; short-lived, revocable certificate; evidence chain anchored at the hub |
-| **The hub** | The hub's process and files, including its CA key | Optional **detached job signing** with a key the hub does not hold; node-side expiry and replay caches; signed and pinned extensions; node-local evidence the hub cannot rewrite. Signed git refs are not on this row: the hub checks them, so a hub that has been taken over need not. A node that checks the state tree itself is issue 764, not yet built |
+| **The hub** | The hub's process and files, including its CA key | Optional **detached job signing** with a key the hub does not hold; node-side expiry and replay caches; signed and pinned extensions; node-local evidence the hub cannot rewrite. Signed git refs are not on this row: the hub checks them, so a hub that has been taken over need not. For that, a node with `require_state_signature` checks the signed state tree itself ([Signing the state content](#signing-the-state-content)) |
 | **A state tree** (someone who can push to it) | The ability to put states, templates and files in front of every node | Signature verification on git refs; strict undefined names; render sandbox and limits; no YAML object construction; `cmd.run` as a distinct permission |
 | **An insider with an operator credential** | Whatever that credential's policy allows | Deny-by-default policy with target, function and argument limits; arbitrary-code functions never wildcarded; every decision logged |
 | **A local unprivileged user on a node** | A shell | Modes on every path; pillar not written to disk in plaintext; no secret in a command line or a child's environment |
@@ -45,18 +45,20 @@ public    signer/ops.pub
 
 Put this line in job_signer_keys on every node that should accept it:
 
-  ops MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHgSQtrImk8pEquJUGa2s…
+  ops MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE5l8h8mPzSK+7HYI6nDBr6KrWI…
 
 Sign with `halite-hub run --sign-key signer/ops.key`, and keep the private
 half off the hub: a signature the hub can produce protects nobody from a hub.
 ```
+
+The key is ECDSA P-384 by default. `--key-algorithm ecdsa-p256` makes a P-256 key.
 
 On each node that should enforce it, in `node.yaml`:
 
 ```yaml
 require_job_signature: true
 job_signer_keys:
-  - 'ops MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEHgSQtrImk8pEquJUGa2s…'
+  - 'ops MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE5l8h8mPzSK+7HYI6nDBr6KrWI…'
 ```
 
 Run in the lab, against a node that requires signatures:
@@ -229,7 +231,7 @@ To make it a requirement rather than a hope, list the controls in
 
 ```yaml
 render_sandbox: true
-render_sandbox_user: halite-render
+render_sandbox_user: halite-render      # render_sandbox_group sets the group; default is the account's own
 render_sandbox_require: [identity, network]   # on FreeBSD: [identity]
 ```
 

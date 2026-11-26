@@ -15,12 +15,13 @@ the structure of what comes back.
 | `halite-node state apply` (and `highstate`, `sls`) | Succeeded, and something changed | A state failed, or the tree did not compile | Succeeded, and **nothing needed to change** | | Usage error |
 | `halite-node enroll` | Enrolled | Failed | **Pending**: waiting for an operator | | Usage error |
 | `halite-node call`, `pillar`, `grains`, `state show_*` | Success | Failure | | | Usage error |
-| `halite-node lint` | Renders and parses | A problem was found | | | Usage error |
+| `halite-node lint`, `halite-hub lint` | Renders and parses | A problem was found | | | Usage error |
 | `halite-node doctor`, `halite-hub doctor`, `halite-api doctor` | No failures (warnings allowed) | At least one **failure** | | | Usage error |
 | `halite-node verify-evidence` | The chain holds | A break was found | | | Usage error |
 | `halite-hub run` | Every targeted node answered and succeeded | A node answered and failed; no node matched; the request was refused; a safe limit stopped a batch | | A node was sent the job and **did not answer** | Usage error |
 | `halite-hub orch run`, `orch resume` | Every step succeeded | A step failed (the timeline is printed either way), or the run was refused before its first step | | The command **stopped waiting**: Ctrl-C, the hub stopped answering, or the hub restarted and stopped the run. `orch show <jid>` has the run | Usage error |
 | `halite-hub runner` | The runner succeeded | It ran and failed, or was refused | | An orchestration runner, waited for as `orch run` waits, that the command **stopped waiting** for | Usage error |
+| `halite-hub ssh` | Every target succeeded | A target failed | | | Usage error |
 | `halite-hub policy test` | **Allowed** | **Denied** | | | Usage error |
 | `halite-hub migrate` | No finding at or above `--fail-on` | At least one | | | Usage error |
 | `halite-hub extensions verify` | Every rule passed (skips do not fail) | A rule failed | | | Usage error |
@@ -103,8 +104,10 @@ The key format is ugly and stable; dashboards depend on it.
 ### A job record (`halite.job/1`)
 
 `jid`, `fun`, `arg`, `nonce`, `expires`, `created`, `submitter`, `target`,
-`target_kind`, `nodes`, `offline`, `state` (`dispatched`, `complete`, `aborted`),
-`batch`, `delivered`, `schema`. A hub that meets a record with a schema it does
+`target_kind`, `nodes`, `offline`, `state` (`dispatched`, `complete`, `batching`,
+`aborted`), `batch`, `delivered`, `queued`, `schema`. The schema is `halite.job/1`.
+A record that carries a job signature is `halite.job/2`. A record whose returns
+are in shards is `halite.job/3`. A hub that meets a record with a schema it does
 not know reads it and refuses to write it, instead of silently dropping fields.
 
 ### An event (`halite.event/1`)
@@ -113,9 +116,9 @@ See [chapter 18](18-events.md) and the [event reference](45-event-reference.md).
 
 ### An evidence record (`halite.evidence/1`)
 
-`seq`, `ts`, `kind` (`node.start`, a job accepted or refused, an extension
-change, an anchor receipt, …), `node_id`, `detail`, `prev` (the previous
-record's hash), `hash`. `halite-node verify-evidence` checks the chain.
+`schema`, `seq`, `ts`, `kind` (`node.start`, a job accepted or refused, an extension
+change, an anchor receipt, …), `node_id`, `lost` (the count of records that could not
+be appended before this one), `detail`, `prev` (the previous record's hash), `hash`. `halite-node verify-evidence` checks the chain.
 
 ### The output formats
 

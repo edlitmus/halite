@@ -166,6 +166,17 @@ $ echo $?
 1
 ```
 
+### Other flags
+
+| Flag | Meaning |
+|---|---|
+| `--test` | Run every state in test mode. Nothing changes. |
+| `--env <name>` | The environment that the job names. |
+| `--ttl <dur>` | The lifetime of the job. The default is 15 minutes. |
+| `--timeout <dur>` | How long the command waits for returns. The default is 5 minutes. |
+| `--parallel` | Let the job run beside other jobs on each node. A state run still runs alone ([chapter 12](12-hub-and-nodes.md)). |
+| `--sign-key <path>` | Sign the job, for nodes that set `require_job_signature` ([chapter 28](28-hardening.md)). |
+
 ## Running states from the hub
 
 `state.apply` is the function that applies the highstate, exactly as
@@ -269,7 +280,8 @@ limit, so **set `--batch-timeout` for a `state.apply` that takes more than five
 minutes**. The hub does not send a batch to a job that has expired: it stops,
 and the job is `aborted` with the rest of the nodes never reached. A run that
 has reached every node but is still waiting for an answer shows `dispatched`.
-In the hub's own tests, with stub nodes and not on a real fleet.
+The hub's own tests show this with stub nodes. Nobody has shown it on a real
+fleet.
 
 `--batch-safe-limit` is the one to always set. A change that fails on the
 first node will usually fail on the next hundred, and you want to stop at

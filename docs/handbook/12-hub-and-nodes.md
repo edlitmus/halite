@@ -249,6 +249,7 @@ halite-node doctor — web1.lab
   pass  connectivity                     127.0.0.1 answered in 2ms: halite-hub 0.1.0-7-g… ok
   pass  clock skew against the hub       within 1m of the hub (299ms ahead of)
   pass  file server reachability         the hub's file server: 1 root(s)
+  skip  state signatures                 require_state_signature is false; this node trusts the hub's digest for each file
   pass  pillar compilation               compiles, 0 top-level key(s)
   pass  quiesce                          not quiesced, by its configuration or by the last pillar the agent read
   pass  disk space                       … 135.4 GiB free
@@ -256,8 +257,9 @@ halite-node doctor — web1.lab
   pass  module verification              every module that changes this machine as root has been run against its tool; 24 unprivileged ones have not
   pass  evidence chain                   31 records in 1 segment(s) …
   pass  FIPS mode consistency            neither the kernel nor this build is in FIPS mode
+  pass  render isolation                 off: templates and YAML are rendered in the node's own process, which is the default
 
-  11 pass, 1 skip
+  12 pass, 2 skip
 ```
 
 and `halite-hub doctor` and `halite-api doctor` check theirs: configuration,

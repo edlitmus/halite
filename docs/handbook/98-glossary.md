@@ -13,6 +13,10 @@ and which holds a certificate. See [chapter 25](25-trust-and-identity.md).
 **ALPN.** The protocol identifier, `halite/1`, offered in the TLS handshake. A peer
 that does not offer it is refused. See [chapter 12](12-hub-and-nodes.md).
 
+**Anchor.** The head of a node's evidence chain, which the node reports to the hub
+after each job. The hub answers with a signed receipt, or with a conflict when the
+head contradicts its record. See [chapter 28](28-hardening.md).
+
 **API.** `halite-api`: the HTTP interface, a client of the hub with its own
 certificate. See [chapter 27](27-http-api.md).
 
@@ -85,6 +89,9 @@ configuration. See [chapter 33](33-configuration.md).
 **Extension.** A signed, separate program that adds a module, pillar source, grain
 provider, returner or signer. See [chapter 29](29-extensions.md).
 
+**Failhard.** A state option and a setting. When a state fails, the run stops, and
+later states report that they were not attempted. See [chapter 5](05-states.md).
+
 **File server.** The part of the hub that serves the tree over the node's
 authenticated connection. See [chapter 10](10-top-and-files.md).
 
@@ -143,13 +150,16 @@ what was assumed, and of what is not built.
 **Module.** A group of functions compiled into the node (`file`, `pkg`, …). See
 [chapter 11](11-modules.md).
 
-**Nodegroup.** A named target expression defined in `hub.yaml`. See
-[chapter 13](13-targeting.md).
-
 **Node.** A managed machine running `halite-node`. See
 [chapter 2](02-concepts.md).
 
 **Node ID.** The permanent name of a node. See [chapter 8](08-grains.md).
+
+**Nodegroup.** A named target expression defined in `hub.yaml`. See
+[chapter 13](13-targeting.md).
+
+**Nonce.** A random value in each job. A node refuses a job whose nonce it has
+already seen. See [chapter 51](51-life-of-a-job.md).
 
 **Offline policy.** What to do about nodes that are not connected: `skip`, `queue`,
 `require`. See [chapter 14](14-remote-execution.md).
@@ -160,11 +170,19 @@ certificate. See [chapter 26](26-authorization.md).
 **Orchestration.** A multi-step procedure that runs on the hub across nodes. See
 [chapter 21](21-orchestration.md).
 
+**Pending** (key state). A node whose enrolment request waits for an operator.
+`halite-node enroll` exits with `2` while the request is pending. See
+[chapter 25](25-trust-and-identity.md) and [chapter 46](46-returns-and-exit-codes.md).
+
 **Pillar.** Data you provide for nodes, compiled per node on the hub. See
 [chapter 9](09-pillar.md).
 
 **Policy.** The one deny-by-default authorization file. See
 [chapter 26](26-authorization.md).
+
+**Presence.** The set of nodes that are connected to the hub now. The event
+`halite/presence/change` reports each change. See
+[chapter 45](45-event-reference.md).
 
 **Principal.** A named identity that makes a request: `cert:CN=ed`,
 `node:web1`, `reactor:watch`. See [chapter 26](26-authorization.md).
@@ -172,10 +190,16 @@ certificate. See [chapter 26](26-authorization.md).
 **Provider.** The platform-specific implementation behind a virtual module
 (`aptpkg` behind `pkg`). See [chapter 11](11-modules.md).
 
+**Quiesce.** A node setting, `quiesce: true`, that makes the node refuse every
+function that is not on `quiesce_allowlist`. See [chapter 12](12-hub-and-nodes.md).
+
 **Reaction.** The SLS file a reactor runs. See [chapter 20](20-reactors.md).
 
 **Reactor.** A rule mapping an event pattern to a reaction. See
 [chapter 20](20-reactors.md).
+
+**Rejected** (key state). An enrolment request that an operator refused. See
+[chapter 25](25-trust-and-identity.md).
 
 **Relay.** A hub that serves a segment and presents itself upstream as one client.
 See [chapter 38](38-scaling.md).
@@ -191,22 +215,36 @@ See [chapter 38](38-scaling.md).
 **Returner.** A destination for results or events. See
 [chapter 23](23-scheduler-and-returners.md).
 
+**Revoked** (key state). An accepted node whose certificate the hub withdrew. The hub
+refuses its connection. See [chapter 25](25-trust-and-identity.md).
+
 **Roster.** The target list for agentless mode. See
 [chapter 17](17-agentless.md).
 
 **Runner.** A function that runs on the hub. See
 [chapter 22](22-runners-and-mine.md).
 
+**Safe limit.** A batch setting, `--batch-safe-limit`. The hub stops the run after
+this many nodes failed. See [chapter 14](14-remote-execution.md).
+
 **Scheduler.** Timed jobs on a node. See
 [chapter 23](23-scheduler-and-returners.md).
+
+**Signed job.** A job with a detached signature. A node that sets
+`require_job_signature` runs it only when a key in `job_signer_keys` verifies the
+signature. See [chapter 28](28-hardening.md).
+
+**Simfleet.** `tools/simfleet`: a harness that connects many simulated nodes to a
+real hub, to measure scale. See [chapter 38](38-scaling.md) and
+[chapter 59](59-testing-and-evidence.md).
 
 **SLS.** A file of states, pillar data or a top file. See
 [chapter 5](05-states.md).
 
+**Splay.** A random delay added to a scheduled job so a fleet does not act at once.
+
 **State.** A statement of how one thing should be. See
 [chapter 5](05-states.md).
-
-**Splay.** A random delay added to a scheduled job so a fleet does not act at once.
 
 **Target.** The set of nodes a command, state or rule applies to. See
 [chapter 13](13-targeting.md).
@@ -227,3 +265,6 @@ See [chapter 38](38-scaling.md).
 
 **Virtual module.** A module with one name and several platform providers
 (`pkg`, `service`). See [chapter 11](11-modules.md).
+
+**Webhook.** An HTTP delivery to the API under `/v1/hook/`. The API turns it into an
+event with a `halite/hook/` tag. See [chapter 27](27-http-api.md).

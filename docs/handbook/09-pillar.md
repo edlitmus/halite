@@ -126,6 +126,7 @@ and `fips_mode`. Anything else is refused by name:
 pillar top expression "G@role:database" targets on the grain(s) role,
 which a node controls and which are not in pillar_trusted_grains; add them
 deliberately, or move the attribute to a hub-authoritative node attribute
+(SPEC section 12.4)
 ```
 
 To allow a custom grain, add it to `pillar_trusted_grains` in `hub.yaml`.
@@ -151,7 +152,7 @@ change that. Target the node ID or a `node:` attribute instead:
 pillar top expression "not S@10.0.0.0/8" targets on an address (S@ or
 match: ipcidr), which is read from the ipv4 and ipv6 grains a node reports
 about itself; target the node ID, or a hub-authoritative attribute under
-node:
+node: (SPEC section 12.4)
 ```
 
 **Node ID is always safe to target.** A node's ID comes from its
@@ -256,9 +257,10 @@ say so, with a tight mode:
         password = {{ pillar['db']['password'] }}
 ```
 
-and a node holds pillar in memory only; it writes none to disk unless
-`pillar_cache_disk` is set, in which case the cache is encrypted at rest
-(see below for why you might want it).
+and a node holds pillar in memory. By default it also keeps the last known
+good copy on disk, encrypted at rest, for a hub outage. Set
+`pillar_cache_disk: false` to keep no copy on disk (see
+[Refreshing](#refreshing)).
 
 ### Encrypting values with GPG
 

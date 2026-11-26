@@ -111,6 +111,7 @@ signing key.*
 | **The API's operator certificate** | **Not** by re-issuing it: a re-issue revokes nothing, and the old certificate still authenticates as `cert:CN=api` until it expires. Issue one under a new name (`keys operator create api2`), bind `api-service` to `cert:CN=api2` and remove the `cert:CN=api` binding in `policy.yaml`, set `api_operator: api2` in the API's configuration, and restart hub **and** API | Narrow the `api-service` role; delete the old `operator-api.*` files |
 | **A webhook secret** | Change `secret_file`, restart the API | Replays are refused by nonce within the window; rotate and re-sign senders |
 | **A job-signing key** | Remove its line from `job_signer_keys` on every node (a state does this) | Make a new signer; sign with it |
+| **A tree-signing key** | Remove its line from `state_signer_keys` on every node (a state does this). A node refuses a manifest from a withdrawn key at its next run | Make a new signer and sign the tree again ([chapter 33](33-configuration.md#7-sign-the-state-tree)) |
 | **An extension signing key** | Remove it from `extension_trust_keys` on hub and nodes; re-sign extensions with a new key and update the pins | |
 | **The CA key** | See playbook G | |
 | **A bootstrap token** | `halite-hub keys token revoke <id>` (keeps the record of what it admitted) | `keys token list` shows whether it was used |
@@ -199,7 +200,7 @@ than two hundred events in seconds with no loop event
 **Investigate.**
 
 ```sh
-halite-hub event listen --from earliest --once --tag 'halite/audit/**' | head
+halite-hub event listen --from earliest --once --tag 'halite/reactor/**' | head
 halite-hub runner reactor.list
 halite-hub metrics --filter halite_reactor
 ```
@@ -274,7 +275,10 @@ What the attacker could do with **hub access**: dispatch jobs to every node (so
 check the job cache for jobs you did not send), read every node's pillar as it
 compiled, read the file server, mint operator certificates, accept enrolments.
 What they could not do if you had **signed jobs** on (`require_job_signature`
-with keys not on the hub): get a node to run an unsigned job.
+with keys not on the hub): get a node to run an unsigned job. In the same way, a
+node with `require_state_signature: true` applies only a tree that a signer off
+the hub signed ([chapter 28](28-hardening.md#signing-the-state-content)).
+Signed state does not cover pillar.
 
 What they could do with the **CA key**: issue a certificate for any node ID,
 impersonating it to the hub, and issue operator certificates.
@@ -309,7 +313,10 @@ protection.
 **Contain.** Make the hub stop serving it: revert/reset the served branch, or
 point `file_roots` at a known-good directory and restart. If gitfs signature
 verification is on, a commit that is not signed by a trusted key is not served
-at all; check the log for the refusal. Stop in-flight rollouts (playbook C).
+at all; check the log for the refusal. A node with `require_state_signature:
+true` also refuses a tree that the signer did not sign, and it refuses an
+older signed revision. Read `halite_node_tree_refusals_total` for such
+refusals. Stop in-flight rollouts (playbook C).
 
 **Investigate.** The history (`git log -p`) is the evidence of *what*; the job
 cache is the evidence of *where it ran*: `jobs list` around the commit time,

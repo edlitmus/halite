@@ -471,6 +471,11 @@ halite-hub orch plan show rolling-update.plan.json
 halite-hub orch run rolling-update --pillar '{"version":"1.2"}' --plan rolling-update.plan.json
 ```
 
+`orch plan` takes `--sign-key <path>` or `--sign-extension <path>`, not both.
+It also takes `--ttl` and `--max-ttl` (one hour each by default), `--env`,
+`--test` and `--pillar`. If `--ttl` is longer than `--max-ttl`, it refuses to
+write the plan.
+
 The hub compiles the orchestration again and compares every step with the
 plan **before it sends anything**. If a target, a function, an argument,
 the override, test mode or the steps themselves differ, it refuses the

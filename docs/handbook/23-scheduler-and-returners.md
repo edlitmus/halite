@@ -92,6 +92,12 @@ Keeping schedules in `schedule.d/` and managing the directory with a state
 means every node gets the schedule it should and the schedule is reviewed
 like everything else.
 
+A scheduled job does not run beside a job from the hub. It joins the same
+queue on the node and waits its turn. A node that runs one job at a time
+runs a scheduled highstate after a dispatched `state.apply`, not during it.
+If the queue is full, the node refuses the scheduled job as it refuses a job
+from the hub.
+
 ### Managing it at runtime
 
 ```sh
@@ -113,7 +119,7 @@ halite-hub run web2.lab schedule.run_job name=nightly_highstate
 A change made this way lives in memory until `save`. `add` and friends work
 on a node that already runs at least one scheduled job; on a node with
 none they are refused, because there is no running set to add to. And
-`schedule.run_job` and `schedule.add` can run arbitrary code, so a
+and `schedule.run_job`, `schedule.add` and `schedule.modify` can run arbitrary code, so a
 wildcard in the policy never grants them: a role has to name them.
 
 > **Not built:** schedules delivered through pillar.
@@ -147,7 +153,7 @@ returner: local
 | `local` (default) | An append-only NDJSON file, `returns.ndjson` in the node's `state_dir` | One JSON return per line. |
 | `local_cache` | The hub's job cache | |
 | `file` | An NDJSON file at `returner_file`, with rotation | |
-| `syslog` | RFC 5424 syslog: local socket or TCP, optionally over TLS | |
+| `syslog` | RFC 5424 syslog: local socket, or TCP or UDP (`returner_syslog_network`), optionally over TLS | |
 | `webhook` | An HTTPS endpoint, **signed, retried and spooled** | The one to read about below. |
 | `smtp` | One mail per return | |
 | `mysql`, `postgres`, `redis`, `elasticsearch`, `splunk`, `slack`, `kafka`, `sqs`, … | **Extensions** of kind `returner` | Each needs a driver or vendor client, which is why none are linked in. `returner: postgres` finds the extension by name. |
@@ -189,12 +195,16 @@ It does three things together, and the third is the one that matters:
 
 1. **Signs** every request: an HMAC-SHA-256 of the timestamp, a `.`, and the
    raw body, keyed with the shared secret, in `X-Halite-Signature`, with
-   `X-Halite-Timestamp` and a random `X-Halite-Nonce`. A receiver can
+   `X-Halite-Timestamp` and an `X-Halite-Nonce`. The nonce is not random. It is the first 16 bytes of the SHA-256 of the timestamp and the body, in hex. A retry in the same second repeats it. A receiver can
    therefore tell the request is genuine, unmodified and fresh. `X-Halite-Node`
    and `X-Halite-Kind` say who it concerns and what it is.
-2. **Retries with backoff**, except on a `4xx`, which means the receiver
-   understood and refused (retrying would fill a disk with a request nobody
-   will accept).
+2. **Retries with backoff** (1, 2, 4 and 8 seconds, up to
+   `returner_webhook_attempts` tries), except on a `4xx` other than `408` and
+   `429`. Such a `4xx` means the receiver understood and refused. Retrying
+   would fill a disk with a request nobody will accept. The returner does not
+   follow a redirect: it treats a `3xx` as a failure, so set the URL to the
+   real address of the receiver. The node discards a spooled return that the
+   receiver refuses with such a `4xx`, and logs it.
 3. **Spools to disk** when the receiver is down, and delivers the backlog
    *oldest first, ahead of new returns*, when it comes back. A returner
    without a spool loses exactly the returns from the incident that took
@@ -224,7 +234,7 @@ signature, and the spool ended empty. The receiver:
 #     X-Halite-Timestamp   when it was signed
 #     X-Halite-Signature   hex HMAC-SHA-256, keyed with the shared secret, of
 #                          the timestamp, a ".", and the raw body
-#     X-Halite-Nonce       random, for replay detection
+#     X-Halite-Nonce       a digest of the timestamp and body, not random
 #     X-Halite-Node, X-Halite-Kind   which node, and what kind of record
 #
 # Verify BEFORE parsing the body, with a constant-time comparison, and refuse

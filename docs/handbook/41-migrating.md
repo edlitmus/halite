@@ -73,7 +73,9 @@ is from a small deliberately-flawed tree:
 
 ```
 Migration report for /…/srv/salt
+  by halite-hub 0.2.0
   2 state files, 2 pillar files
+  pillar read from /…/srv/pillar
 
 Renderer inventory
   jinja|yaml               4 file(s)
@@ -134,6 +136,11 @@ The report also tells you what to prepare for:
   ([chapter 29](29-extensions.md)). Two are special: `_grains/metadata.py` is
   `cloud_grains: true`, and `_pillar/aws_secrets_manager.py` is the
   `aws_secrets_manager` source.
+- **Blackout.** Salt reads `minion_blackout` and `minion_blackout_whitelist` <!-- lexicon:allow -->
+  from pillar and from grains. A node reads them from its pillar, so the audit
+  lists a pillar key as a note. A node does not read grains for this. The audit
+  lists a key under the `grains:` mapping of a Salt configuration as a review
+  item. Set `quiesce: true` in the configuration of those nodes.
 - **Pillar targeting** on untrusted grains: the report names each, because
   pillar top files can only target trusted grains
   ([chapter 9](09-pillar.md)).
@@ -156,8 +163,9 @@ reasons, is in the migration guide):
    permissive`) is the transition setting: it logs every resolution.
 2. **Unquoted file modes are refused**, where Salt silently writes the wrong
    permissions.
-3. **`y`, `n`, `yes`, `no`, `on`, `off`** are booleans (YAML 1.1) with a warning
-   on each use, until you audit and set `yaml_bool_11: false`.
+3. **`yes`, `no`, `on`, `off`** are booleans (YAML 1.1) with a warning
+   on each use, until you audit and set `yaml_bool_11: false`. The single
+   letters `y` and `n` stay strings, as in PyYAML.
 4. **`user.present` `groups`** means "must be in these", not "exactly these";
    `remove_groups: true` restores pruning.
 5. **`environ.setenv` persists**, and **`cmd.run` can take an argument vector**

@@ -100,8 +100,10 @@ node_id: web1.prod.example.com
 ```
 
 Other settings (all optional) are in `examples/node-with-hub.yaml`: the
-`hub_port` if you moved it from 4510; `schedule:`; `beacons:`; `returner:`;
-`require_job_signature`; `metrics_listen`. Setting `node_id` explicitly is
+`hub_port` if you moved it from 4510, `returner`, `require_job_signature` and
+`metrics_listen`. The `schedule` and `beacons` settings are in
+[chapter 23](23-scheduler-and-returners.md) and [chapter 19](19-beacons.md).
+Setting `node_id` explicitly is
 the right habit on anything whose host name might change.
 
 **3. Ask to enrol.**
@@ -427,7 +429,7 @@ On the node:
 sudo halite-node doctor
 ```
 
-and read it top to bottom; a node's doctor runs thirteen checks including
+and read it top to bottom; a node's doctor runs fourteen checks including
 connectivity, certificate expiry, clock skew against the hub, and that its
 pillar compiles. Then **rehearse its highstate** from the hub and read the
 diff before you let anything change:
@@ -453,7 +455,7 @@ Check with `halite-node state show_top`.
 | `the hub presented 2 certificates and none matches the fingerprint this node pinned (…)` | The wrong fingerprint in `node.yaml`, or something is intercepting the connection | **Stop.** Re-obtain the fingerprint by an independent route before doing anything else |
 | Enrol stays pending forever | No operator has accepted; or in `token` mode the token was not accepted | `halite-hub keys list`; check `enrollment_mode` |
 | `--BLy… is not a flag of halite-node enroll` | The token began with `-` | `--token=SECRET` |
-| The node enrols and the agent exits at once | The enrolment was revoked (`this node's enrollment has been revoked`, or at a later start `the hub refused this node's certificate`), or `hub_tries` is reached | `journalctl -u halite-node`; the message names which. A revoked node that belongs in the fleet: `halite-node enroll --force` |
+| The node enrols and the agent exits at once | The enrolment was revoked (`this node's enrollment has been revoked`, or at a later start `the hub refused this node's certificate`), or `hub_tries` is reached | `journalctl -u halite-node`; the message names which. A revoked node that belongs in the fleet: delete its record with `halite-hub keys delete <id>`, move `node.crt` aside, then run `halite-node enroll --force` (a revoked `node.crt` in `pki_dir` makes `enroll --force` fail with `tls: bad certificate`) |
 | Connected, but `state.apply` says `no top file match` | The node ID matches no rule | `halite-node state show_top`; fix the target or the ID |
 | `clock skew` in `doctor` | The clock is off | Fix NTP |
 | Two nodes keep displacing each other | They share an identity (cloned key or ID) | Revoke both; re-enrol each from a clean state |

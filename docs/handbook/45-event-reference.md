@@ -7,8 +7,8 @@
 The event bus is described in [chapter 18](18-events.md). This is the
 reference: every tag family this build emits, what causes it, and what its
 `data` holds. Everything here was read from the event log of a running hub
-unless marked otherwise. `halite-hub event tags` prints the namespace the build
-you are running uses.
+unless marked otherwise. `halite-hub event tags` prints the main part of the namespace that the
+build you are running uses. It does not list every tag in this chapter.
 
 An event is a JSON object (`halite.event/1`) with `_tag`, `_stamp`, `_offset`,
 `_schema`, usually `_node`, sometimes `_correlation`, and `data`.
@@ -22,6 +22,8 @@ An event is a JSON object (`halite.event/1`) with `_tag`, `_stamp`, `_offset`,
 | `halite/job/<jid>/new` | A job is published | `fun`, `arg`, `tgt`, `tgt_type`, `nodes` (the resolved set), `submitter`, `test` |
 | `halite/job/<jid>/ret/<node>` | A node's return arrives | `fun`, `jid`, `success`, `retcode`, `duration_ms` |
 | `halite/job/<jid>/queued/<node>` | A job held for an offline node is delivered to it | `fun`, `jid` |
+| `halite/job/<jid>/expired` | A held job expired before its node connected | `jid`, `fun`, `expires`, `reason` |
+| `halite/job/<jid>/kill` | An operator kills the job | `jid`, `principal`, `told` (the nodes told to stop), `unqueued`, `on_behalf_of` (through the API) |
 
 ```json
 {"_tag":"halite/job/20261011T182508812680/new",
@@ -51,11 +53,11 @@ fires as well.
 
 | Tag | Emitted | `data` |
 |---|---|---|
-| `halite/run/<jid>/new` | A runner (a hub-side function) starts | `fun`, `arg`, `jid`, `principal` |
+| `halite/run/<jid>/new` | A runner (a hub-side function) starts | `fun`, `arg`, `jid`, `principal`, `on_behalf_of` (through the API) |
 | `halite/run/<jid>/ret` | It finishes | `fun`, `jid`, `success`, `error` |
-| `halite/run/<jid>/orch/new` | An orchestration starts | |
-| `halite/run/<jid>/orch/step/<step>` | A step completes | |
-| `halite/run/<jid>/orch/ret` | The orchestration finishes | |
+| `halite/run/<jid>/orch/new` | An orchestration starts | `jid`, `sls`, `principal`, `steps`, `on_behalf_of` (through the API) |
+| `halite/run/<jid>/orch/step/<step>` | A step dispatches its job | `jid`, `step`, `job_jid`, `fun`, `target`, `nodes`, `signed` |
+| `halite/run/<jid>/orch/ret` | The orchestration finishes | `jid`, `state`, `steps` |
 
 ### Nodes and presence
 
@@ -66,8 +68,8 @@ fires as well.
 | `halite/presence/change` | The connected set changes | `connected` (the count), and `joined` or `left` (the node) |
 | `halite/node/<node>/enroll/pending` | A request arrives | `fingerprint`, `from` |
 | `halite/node/<node>/enroll/accepted` | An operator accepts it, or a token admits it | `fingerprint`, `from` |
-| `halite/node/<node>/enroll/…` | Other enrolment states | |
-| `halite/node/<node>/evidence/conflict` | A reported evidence head contradicts the hub's record | |
+| `halite/node/<node>/grains` | A node sent new grains | `bytes` |
+| `halite/node/<node>/evidence/conflict` | A reported evidence head contradicts the hub's record | `seq`, `hash`, `prior_seq`, `prior_hash` |
 | `halite/node/<node>/…` | Anything the node sent with `halite-node event send` | what it sent |
 
 ```json
@@ -82,13 +84,19 @@ The finding is the conflict line in the hub's anchor file, which only the hub
 writes (`halite-hub evidence anchors <node>`).
 
 A node can only emit under its own `halite/node/<its ID>/` prefix, whatever tag
-it asks for ([chapter 18](18-events.md)).
+it asks for ([chapter 18](18-events.md)). The one exception is a tag that
+starts with `beacon/`. The hub places it under `halite/beacon/<its ID>/`. The ID
+always comes from the certificate.
+
+The hub emits only `pending` and `accepted` as enrolment states. When the hub
+refuses a request, it emits `halite/error/enrollment`. A rejection or a
+revocation is a key event.
 
 ### Keys
 
 | Tag | Emitted | `data` |
 |---|---|---|
-| `halite/key/<node>/<action>` | A key lifecycle action taken through the hub's runners | `principal`, `on_behalf_of` (through the API), `reason` (reject, revoke), `via` (terminal) |
+| `halite/key/<node>/<action>` | A key lifecycle action taken through the hub's runners | `principal`, `on_behalf_of` (through the API), `reason` (reject, revoke), `via` (terminal), `fingerprint` (renew) |
 
 (Actions taken with the `halite-hub keys` command edit the key store directly;
 the enrolment events above are the record of requests and acceptances.)
@@ -107,7 +115,16 @@ the enrolment events above are the record of requests and acceptances.)
 | `halite/reactor/error` | A reaction failed to render or dispatch | `error`, `file`, `tag`, and the position |
 | `halite/reactor/overflow` | The reactor's queue dropped events | `dropped`, `tag`, `reactor` |
 | `halite/reactor/throttled` | An entry's `rate_limit` refused an event | `tag`, `reactor`, `rate_limit` |
+| `halite/reactor/lag` | The reactor's saved position was older than the oldest retained record. The reactor resumes at that record, and the events before it are lost | `offset`, `segments_pruned`, `resuming_from` |
 | `halite/reactor/loop` | A causality chain was broken (see the known gap in [chapter 20](20-reactors.md)) | `tag`, `reactor`, `max_causality_depth` |
+
+### Mine and relays
+
+| Tag | Emitted | `data` |
+|---|---|---|
+| `halite/mine/<node>/update` | A node published mine data | `functions` (the count) |
+| `halite/relay/<relay>/connected` | A relay connects to this hub | `subordinates`, `depth` |
+| `halite/relay/<relay>/refused` | A relay named a node that it may not claim | `node_id`, `reason` |
 
 ### Webhooks and your own events
 
@@ -121,7 +138,7 @@ the enrolment events above are the record of requests and acceptances.)
 
 | Tag | Emitted | `data` |
 |---|---|---|
-| `halite/error/enrollment` | An enrolment problem the hub chose to raise | |
+| `halite/error/enrollment` | The hub refused an enrolment request | `from`, `error` |
 | `halite/error/…` | A structured error worth reacting to | |
 
 ## Rules for events you send
@@ -161,7 +178,7 @@ doubles the event volume; turn it off when the consumer is migrated.
 ## Key ideas
 
 - Tags are `halite/<family>/…`; the families are **job, state, run, node,
-  presence, key, beacon, reactor, hook, error**, plus whatever you add.
+  presence, key, beacon, reactor, mine, relay, hook, error**, plus whatever you add.
 - Read `halite-hub event tags` for the namespace of your build, and a few real
   events before writing a reaction that reads one.
 - Nodes speak only under their own prefix; the hub records who sent what it

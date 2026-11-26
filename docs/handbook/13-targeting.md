@@ -35,14 +35,16 @@ Each type has a flag on `halite-hub run`, and a `match:` name in top files.
 | **grain regex** | `-P` | `-P 'osrelease:^24\.'` | Nodes whose grain matches a regular expression. |
 | **pillar** | `-I` | `-I 'webserver:port:8080'` | Nodes whose compiled pillar value matches a glob. |
 | **pillar regex** | `-J` | `-J 'db_password:^s3'` | Pillar value matches a regular expression. |
-| **subnet** | `-S` | `-S 192.168.1.0/24` | Nodes holding an address in that network (or that exact address). |
+| **subnet** | `-S` | `-S 192.168.1.0/24` | Nodes holding an address in that network (or that exact address). The family of the expression, IPv4 or IPv6, picks the grain that the hub reads. |
 | **nodegroup** | `-N` | `-N prod_web` | A named expression from `hub.yaml`. |
 | **compound** | `-C` | `-C 'G@os:Ubuntu and web*'` | A boolean combination of any of the above. |
 
 The patterns:
 
-- **Glob** uses `*` (any characters), `?` (one) and `[abc]`. It matches the
-  whole ID: `web*` matches `web1.prod` but `web` alone does not.
+- **Glob** uses `*` (any characters), `?` (one), `[abc]` and `[!abc]`
+  (any character except these). It is the same glob as Salt's. It matches
+  the whole ID: `web*` matches `web1.prod` but `web` alone does not. The hub
+  refuses a glob of more than 1 KiB.
 - **Regular expressions** are RE2 and match anywhere unless anchored with
   `^` and `$`. RE2 has no backreferences or lookahead; it is a deliberate
   choice, because linear-time matching means a hostile expression cannot

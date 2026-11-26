@@ -23,7 +23,7 @@ A job has:
 | `created`, `expires` | When it was made and the instant after which no node will run it. |
 | `nonce` | Random, recorded by each node so a replay is refused. |
 | `offline` | The offline policy it was submitted with. |
-| `state` | `dispatched`, `complete`, `aborted`, … |
+| `state` | `dispatched`, `complete`, `partial` (the job expired while a node still owed an answer), `aborted`, … |
 | `batch` | For a batched run: its size and how far it has got. |
 | `delivered` | The nodes the hub has attempted delivery to. An attempt, not an arrival: a node that was not connected when its turn came is counted, so a batch can move on. Who received it is who has returned; `jobs missing` lists who has not. |
 
@@ -49,6 +49,17 @@ the predecessor's so that existing dashboards and returners keep working:
 `success` and `retcode` say whether it worked; `return` carries the value
 (for `state.apply`, the whole per-state structure); `node_version` makes
 "which version of the agent was this?" answerable after the fact.
+
+The hub replaces each registered secret in a return with `**********`
+before it keeps the return. This applies to `jobs show`, `jobs export`, the
+API and the job runners. A secret that never reached the hub is not masked.
+The arguments of the job are not masked.
+
+A return of more than 16 MiB is too large for the hub. The node sends a
+stand-in return instead. The stand-in has `success` set to `false` and a
+non-zero `retcode`. Its `return` gives the size, the limit, and the
+`success` and `retcode` that the job itself had. The output of the job is
+lost.
 
 ## Reading the cache
 
@@ -132,7 +143,9 @@ queues for nodes that were offline, and tells the nodes that have it. A
 node **already applying a state finishes it**. A state run interrupted
 halfway leaves a machine in neither the old condition nor the new one,
 which is worse than completing something you changed your mind about; the
-command says so, rather than implying more than it does.
+command says so, rather than implying more than it does. A job that is
+already `complete` cannot be killed: the hub refuses with `there is nothing
+to stop`.
 
 ## Retention
 
@@ -160,6 +173,8 @@ reactor listens to ([chapter 18](18-events.md)):
 halite/job/<jid>/new                  published
 halite/job/<jid>/queued/<node>        held for an offline node
 halite/job/<jid>/ret/<node>           a return arrived
+halite/job/<jid>/expired              a queued job expired before its node connected
+halite/job/<jid>/kill                 an operator killed the job
 ```
 
 and a state run adds `halite/state/<jid>/<node>/<result>` when it ends. A

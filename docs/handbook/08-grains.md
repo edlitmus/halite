@@ -93,11 +93,13 @@ A few that are worth knowing by heart:
 | `fips_mode` | true/false | The host kernel's FIPS state alone, not the binary's. `fips_build` and `fips_enabled` describe the binary. |
 
 `id` is the node ID. It is chosen once, at enrollment, in this order:
-`node_id` in the configuration file, the `HALITE_NODE_ID` environment
-variable, the contents of the node's `node_id` file, then (if configured)
-a cloud instance ID, then the fully qualified domain name, then the host
-name. After enrollment it is written down and stays fixed, so a change of
+the `--id` flag, `node_id` in the configuration file, the
+`HALITE_NODE_ID` environment variable, the contents of the node's
+`node_id` file, the fully qualified domain name, then the host name.
+After enrollment the ID is written down and stays fixed, so a change of
 DHCP lease or DNS cannot make the same machine look like a new one.
+The cloud instance ID step of SPEC 7.2 is not built. The
+`node_id_source` setting has no effect.
 
 ## Custom grains
 
@@ -137,9 +139,12 @@ the grains are still collected — one bad script never costs the node its
 identity:
 
 ```
-grains.d/30-slow.sh: timed out and was skipped
-grains.d/40-bad.sh: exited non-zero and was skipped: … exec format error
+/etc/halite/grains.d/30-slow.sh: timed out and was skipped
+/etc/halite/grains.d/40-bad.sh: exited non-zero and was skipped: … exec format error
 ```
+
+The log line names the full path of the script. A script that exits with
+a non-zero status gets a similar message.
 
 **A signed extension** of kind `grains`, for grains that need real logic
 and that you want to ship through the tree ([chapter 29](29-extensions.md)).

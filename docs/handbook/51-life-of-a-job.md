@@ -88,6 +88,11 @@ that is off.
 
 ## 4. Record first, then deliver
 
+Before it records the job, `Dispatch` measures the job as it will go on the wire.
+A job that is too long for a node to read is refused here. If this check did not
+exist, the node would drop its stream and never see the job, and the record
+would still say that the job was sent to it.
+
 ```go
 if err := s.Jobs.Put(j); err != nil { ... }
 s.emitCorrelated(tagJobNew(string(j.JID)), "", j.Correlation, map[string]any{ ... })
@@ -116,14 +121,21 @@ which builds a `job.Job` from the message and offers it to the executor:
 if err := n.executor.Offer(j); err != nil { n.refuse(j, err); return }
 ```
 
-Before anything runs, `executor` (`cmd/halite-node/execute.go`) calls
-`guard.Admit(j)` (`internal/job/guard.go`): has this JID been run here? has this
-nonce been seen? is the expiry in the past? A job that fails any is **refused with
-a structured return**, not dropped, and written to the node's evidence chain
-(`refuse` → `recordJobRefused`). If the node requires signatures
+Before anything runs, `executor.Offer` (`cmd/halite-node/execute.go`) makes the
+checks, in this order. First, `guard.Check` (`internal/job/guard.go`) asks three
+questions. Has this JID been run here? Has this nonce been seen? Is the expiry in
+the past?
+
+Then `checkJobSignature` runs. If the node requires signatures
 (`require_job_signature`), `internal/jobsign` verifies the signature against the
-node's trusted keys *and* that this node matches the signed target. A full queue
-refuses out loud rather than growing memory.
+node's trusted keys *and* that this node matches the signed target. After that,
+`guard.Admit` records the job in the replay cache. The last checks refuse a
+`test` flag, a pillar override, or a state that the node does not accept, and a
+quiesced node refuses the job.
+
+A job that fails any check is **refused with a structured return**, not dropped.
+The node writes the refusal to its evidence chain (`refuse` →
+`recordJobRefused`). A full queue refuses out loud rather than growing memory.
 
 ## 6. Execution: `executeJob`
 
@@ -139,8 +151,10 @@ under the trace context the hub sent (`traceparent`) when tracing is on.
 ## 7. Returns: `postReturns` and `Server.returned`
 
 The finished `job.Return` (`halite.ret/1`) goes back through `postReturns`,
-which retries a transient failure up to five times, because a return lost to a
-blinked connection is a job that looks unresponsive forever. It is a separate
+which posts through `nodelink.PostReturn`. It retries a transient failure, up to
+five tries (`ReturnTries`), because a return lost to a blinked connection is a job
+that looks unresponsive forever. The hub's own refusal is not retried. A return
+that is too large is cut to fit (`fitReturn`). It is a separate
 `POST /v1/return`, idempotent by `(jid, node, chunk)`.
 
 On the hub, `returned` (`internal/hub/jobs.go`) validates the node's identity from
@@ -153,7 +167,8 @@ respondent has answered.
 
 The operator's `gather` asks the hub for the job's status (`JobStatus`) until it is
 complete or the `--timeout` passes, prints each return (`printReturn`), and
-computes the exit status: `0` all succeeded, `1` one failed, `3` one never answered.
+computes the exit status: `0` all succeeded, `1` one failed or a safe limit stopped a
+batch, `3` one never answered.
 
 ## What to notice
 
