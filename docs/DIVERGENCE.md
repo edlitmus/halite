@@ -42268,9 +42268,11 @@ fake provider with Windows' three-state shape. On the old comparison
 a manual service reported no change needed to become disabled
 ```
 
-`TestServiceDisabledMovesAManualServiceToDisabled`
-(`internal/builtin/service_windows_test.go`) drives the real thing --
-`EventLog` set to `manual`, then `service.disabled`, then read back -- but
+`TestLiveServiceDisabledMovesAManualServiceToDisabled`
+(`internal/builtin/live_service_windows_test.go`; written first as an
+ordinary test in `service_windows_test.go`, renamed and moved in 5.628.1)
+drives the real thing -- at
+first `EventLog` set to `manual`, then `service.disabled`, then read back -- but
 this process is a standard account in the Administrators group with no
 elevated token, and `winsvc.SetStartType` needs `SC_MANAGER_ALL_ACCESS`, so it
 skips here with "needs administrator rights". **Not run**: the real `winsvc`
@@ -42301,6 +42303,59 @@ change on its next run and the service's start type actually move.
 
 **Not verified.** The real mutation on a Windows service, only the unit test
 against a fake provider. An elevated token. A domain-joined host.
+
+#### 5.628.1 The test for it reconfigured the real event log (2026-11-26)
+
+Issue 878. TestServiceDisabledMovesAManualServiceToDisabled drove the fix
+above against **EventLog**: it set the service to `manual`, ran
+`service.disabled`, and put the old start type back in a `t.Cleanup`. It
+was an ordinary test, not a live one. On a token that was not elevated it
+skipped, which is what this section's first run saw, so it looked harmless.
+On an elevated token it ran on every `go test ./...`, and it reconfigured the
+Windows Event Log each time. It put the start type back every time it ran
+on Ed-PC during the issue 608 L23/L24 work. But a run killed or timed out
+between the change and the cleanup leaves the event log `disabled`, and
+Windows does not start it at the next boot. That is the change that outlives
+a test, and the conformance suite already refused to make it
+(`live_conformance_platform_test.go`: "Never an existing service").
+
+The test is now `TestLiveServiceDisabledMovesAManualServiceToDisabled`
+(`internal/builtin/live_service_windows_test.go`). It is gated on
+`HALITE_SYSTEM_LIVE=1` and an elevated token, and it skips with a reason for
+each. It creates a `halitesvctest*` service of its own with `sc create`,
+`start= demand`, and a `cmd.exe` binary. The service never runs, because a
+start type is set and read without starting anything. The test asserts that
+the setup gave a manual service, runs `service.disabled`, and reads the
+result back with `sc qc` as well as `winsvc.Query`. Its cleanup deletes the
+service and fails the test if `sc query` still finds it. It runs `sc.exe` by
+its full path, because a bare name finds Git Bash's tools first (issue 877).
+
+**Shown**, on Ed-PC (Windows 11 Pro 26H2, build 26320.10022, elevated, go
+1.27.4):
+
+- It passes, and EventLog was `AUTO_START` before and after.
+- With `windowsProvider.Disabled` changed back to "not auto", which is the
+  defect 5.628 fixed, it fails three ways: no change reported, `sc qc`
+  shows `DEMAND_START`, and `winsvc.Query` shows `manual`. This is the first
+  time the real `service.disabled` path has been watched on an elevated
+  token, and the "Not run" above is now run.
+- With the cleanup's `sc delete` replaced by `sc qc`, the test fails with
+  "is still installed after sc delete". The leaked service was then deleted
+  by hand.
+
+`fleet.yml`'s `windows` leg runs it in its own step, anchored with `$`. A
+bare `TestLiveService*` filter also matches the Unix service tests, whose gate fails
+on purpose when `HALITE_SYSTEM_LIVE` is set and the process is not root, and
+on Windows it never is. The leg's "machine was put back" step counts
+`halitesvctest*` services. It ran the test on this change's PR (879,
+2026-11-26) on a GitHub-hosted Windows Server 2022 Datacenter (10.0.20348)
+runner: it passed rather than skipped, and the leg counted no
+`halitesvctest*` service left. That run was of the fixed code only; the
+failure with 5.628's check undone was watched on Ed-PC alone.
+
+**Not verified.** The skip on a token that is not elevated. That path was not
+run here, because this session had only an elevated token. `service.dead` with `enable: False`, which
+goes through the same check but is not driven.
 
 ### 5.629 A return too large for the hub was lost without trace
 
