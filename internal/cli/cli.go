@@ -46,6 +46,19 @@ func (a *Args) Flag(name, def string) string {
 func (a *Args) Has(name string) bool { _, ok := a.Flags[name]; return ok }
 
 // Bool reads a boolean flag. A bare `--name` is true.
+// Help reports whether the command line asks what the program is rather than
+// for it to run: `--help`, or `-h`. The parser reads `-h` as a flag called
+// `h`, so a program that looked only for `help` ran `enroll -h` as a real
+// enrol (issue 882). Presence is what counts: `-h` takes the next word as its
+// value, and `halite-node enroll -h now` is still a request for help.
+func (a *Args) Help() bool {
+	if a.Bool("help", false) {
+		return true
+	}
+	_, short := a.Flags["h"]
+	return short
+}
+
 func (a *Args) Bool(name string, def bool) bool {
 	v, ok := a.Flags[name]
 	if !ok {

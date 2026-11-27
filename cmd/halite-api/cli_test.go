@@ -179,3 +179,14 @@ func TestMissingOperandsAndMalformedNumbersAreUsageErrors(t *testing.T) {
 		}
 	}
 }
+
+// `-h` after a subcommand describes the program and starts nothing, as
+// `--help` does (issue 882).
+func TestAShortHelpFlagDescribesTheProgramAndStartsNothing(t *testing.T) {
+	for _, subcommand := range []string{"serve", "version"} {
+		out, errOut, code := run(t, subcommand, "-h")
+		if code != 0 || !strings.Contains(out, "Usage:") {
+			t.Errorf("%s -h: exit %d, stdout %q, stderr %q", subcommand, code, out, errOut)
+		}
+	}
+}

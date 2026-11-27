@@ -748,3 +748,15 @@ func TestLintShowsWhatTheTemplateRendered(t *testing.T) {
 		t.Errorf("--rendered should print the output of a clean file: %+v", got)
 	}
 }
+
+// `-h` after a subcommand describes the program and runs nothing, as `--help`
+// does: serve would bind a listener and keys would open key material
+// (issue 882).
+func TestAShortHelpFlagDescribesTheProgramAndRunsNothing(t *testing.T) {
+	for _, subcommand := range []string{"serve", "keys", "doctor"} {
+		got := run(t, subcommand, "-h")
+		if got.code != 0 || !strings.Contains(got.stdout, "Usage:") {
+			t.Errorf("%s -h: exit %d, stdout %q, stderr %q", subcommand, got.code, got.stdout, got.stderr)
+		}
+	}
+}
