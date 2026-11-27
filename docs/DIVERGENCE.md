@@ -52813,7 +52813,7 @@ check. `Restart` as the delegated account, and the
 block. The `win_service` module's own entry point was not called: it passes
 its arguments to `SetStartType` unchanged, which is why its evidence note
 now names this run and its level stays `captured`. The race detector: this host has
-no C compiler, so `-race` did not run.
+no C compiler, so `-race` did not run. (Wrong: it had one. See 5.757.)
 
 ### 5.747 Start believed a service that was still starting, and Stop could not stop one that was (2026-11-25)
 
@@ -52888,7 +52888,7 @@ host alone.
 were used), a dependency on a group, and a dependent that fails to start
 again after a restart. `Restart` or `Stop` as a delegated account. Windows
 Server. The race detector: this host has no C compiler, so `-race` did not
-run.
+run. (Wrong: it had one. See 5.757.)
 
 ### 5.747.1 `service.dead` does not stop the services that depend on it: decided (2026-11-26)
 
@@ -53195,7 +53195,8 @@ cannot say how many gaps happened, only that no reader saw one. Unix is
 unchanged: rename(2) is atomic for every opener, and this was not seen
 there. The hub test's own rate after the fix was not measured against its
 1-in-2,100: the file-level runs are 6,000 times larger. The race detector
-did not run, because this host has no C compiler.
+did not run, because this host has no C compiler. (Wrong: it had one, and
+`-race` has since run. See 5.757.)
 
 ### 5.752 Three texts the generated references copy described behaviour that had changed (2026-11-27)
 
@@ -53301,6 +53302,7 @@ the child between `Start` and the resume there.
 the same `OSRunner.Run`, so the fix applies, but its own rate was not
 measured. Measured on Windows 11 Pro build 26320 only, not on Windows
 Server. The race detector did not run, because this host has no C compiler.
+(Wrong: it had one, and `-race` has since run. See 5.757.)
 
 ### 5.754 A job's arguments reached every caller of the event stream, whatever nodes the job was for (2026-11-27)
 
@@ -53478,6 +53480,7 @@ client each, no retry, and every one must report its own alert.
   were not changed. No client of either reads a refusal alert to decide what
   to do.
 - The race detector did not run, because this host has no C compiler.
+  (Wrong: it had one, and `-race` has since run. See 5.757.)
 
 ### 5.756 `halite-hub run` waited for a return from a node the job was never sent to (2026-11-27)
 
@@ -53531,6 +53534,63 @@ happens to land, sent; the node's replay guard refuses the second copy. The CLI
 still prints `not connected` for a node that was connected and refused the send.
 The orchestration step's wait (`awaitReturns`) was read and does not use the
 submit response, so it was not changed.
+
+### 5.757 The Windows development host could run the race detector all along (2026-11-27)
+
+Five entries say that the race detector could not run on the Windows 11
+development host (Ed-PC) because it had no C compiler: 5.746, 5.747, 5.751,
+5.753 and 5.755. So do #799's comment of 2026-11-26, two comments on #608,
+the diagnosis on #875, and the descriptions of PRs 898, 901 and 907. It was
+not true. WinLibs GCC 16.2.0 (MinGW-w64 14.0, POSIX threads, UCRT; winget
+`BrechtSanders.WinLibs.POSIX.UCRT`) had been installed since 2026-11-25 23:01,
+in winget's per-user package directory. That directory was not on the PATH of
+the shells the work was done in. The claim came from `command -v gcc` and a
+look at a few usual directories. Nobody asked the package manager, and
+`winget list` would have answered. It is the shape this ledger keeps
+recording: a reason written down because something looked absent, and then
+repeated, because it was already written down.
+
+**The check that `-race` works.** Before any result here was trusted, a
+program with a planted data race (two goroutines incrementing one integer
+with no lock) was run under `-race`: "Found 1 data race(s)", exit 66. The
+same program with a mutex ran clean. Both were run under Go 1.27.0 and again
+under 1.27.4, the repository's toolchain, because each toolchain carries its
+own race runtime. `-race` needs `CGO_ENABLED=1` and the WinLibs `bin`
+directory ahead on PATH. Release builds stay `CGO_ENABLED=0`.
+
+**Results**, on `main` at `44fbc7d9`:
+
+| What | Under `-race` |
+|---|---|
+| #799, `TestAReplaceAndAReadDoNotBlockEachOther`, idle | 300 of 300 passed |
+| #799, `TestTheRecordNamesFinishedAndWaitingStepsWhileAStepIsOut`, idle | 100 of 100 |
+| #799, `TestASignedStepIsRecordedPendingAndSignedBeforeItsJobIsSent`, idle | 100 of 100 |
+| `internal/winsvc` (5.746, 5.747) | 7 passed, 7 skipped |
+| `internal/atomicfile` (5.751) | 26 passed |
+| `internal/exec` (5.753) | 35 passed, 3 skipped |
+| `internal/transport` (5.755) | 35 passed |
+| `internal/hub` (5.751's diagnostics; #799) | 383 passed, 3 skipped |
+| #799's atomicfile test, looping beside that sweep | 300 of 300 |
+
+The counts are top-level tests. With subtests there were 589 passes, and no
+test failed. The race detector reported nothing in any of these runs.
+
+**The skips, and what they leave out:**
+- `internal/winsvc`'s seven `TestLive*` tests need `HALITE_SYSTEM_LIVE=1`,
+  because they create, start and delete real services. They are the evidence
+  for 5.746 and 5.747, and **they did not run under `-race`**. So for those
+  two entries this adds only the unit tests.
+- The three umask tests have no meaning on Windows.
+- Two hub tests need a file this process cannot open, which Windows cannot
+  provide.
+- One needs a rename over an open file, which Windows refuses.
+
+**Not covered.** #799's two sightings were on GitHub's windows-2022 race leg.
+That runner's MinGW version is not known, so these runs are comparable to
+that leg, not the same as it. Passing 300 times, idle and beside a full
+`-race` sweep, is evidence that #799's race is gone on this host, not proof
+of it. The five entries' sentences were kept, with a pointer here, rather
+than rewritten.
 
 ## 6. Everything else not started
 
