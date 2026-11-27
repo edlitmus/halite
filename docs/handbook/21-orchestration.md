@@ -147,6 +147,7 @@ Options common to `salt.state`, `salt.sls`, `salt.highstate` and
 |---|---|
 | `tgt`, `tgt_type` | Which nodes, and the kind of target (`G`, `C`, …; default glob). |
 | `batch`, `batch_safe_limit` | Run against N nodes or N% at a time; stop after this many have failed. |
+| `batch_timeout`, `batch_wait` | How long each wave waits for its returns before the next wave starts, and how long to pause between waves. A wave waits for the step's `timeout` when that is longer than five minutes, and five minutes otherwise. |
 | `subset` | Run against a random N of the matched set. |
 | `tolerate_failures` | Node globs whose failure does not fail the step. The older spelling `fail_minions` is accepted. |
 | `test` | Run this step in test mode (state steps only). |

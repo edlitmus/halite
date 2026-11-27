@@ -32,6 +32,11 @@ func orchStates(o *orchRunner) *states.Registry {
 			{Name: "test", Type: signature.Bool, Doc: "Run the job in test mode."},
 			{Name: "batch", Type: signature.String, Doc: "Run against this many nodes at a time, as a count or a percentage."},
 			{Name: "batch_safe_limit", Type: signature.Int, Doc: "Stop the batch once this many nodes have failed."},
+			{Name: "batch_timeout", Type: signature.Duration,
+				Doc: "How long each wave of a batched step waits for its returns before the next wave starts. " +
+					"Defaults to the step's `timeout` when that is longer than five minutes, and to five minutes otherwise."},
+			{Name: "batch_wait", Type: signature.Duration,
+				Doc: "How long to pause between waves of a batched step."},
 			{Name: "subset", Type: signature.Int, Doc: "Run against a random n of the matched set."},
 			{Name: "tolerate_failures", Type: signature.List,
 				Doc: "Node globs whose failure does not fail the step. Salt calls this fail_minions."}, // lexicon:allow
@@ -310,7 +315,33 @@ func baseSubmission(args *value.Map, fun, runEnv string) (Submission, string) {
 	if sub.Target == "" {
 		return Submission{}, "A fleet step needs `tgt`, the nodes to run against."
 	}
+	var refusal string
+	if sub.Batch.Timeout, refusal = stepDuration(args, "batch_timeout"); refusal != "" {
+		return Submission{}, refusal
+	}
+	if sub.Batch.Wait, refusal = stepDuration(args, "batch_wait"); refusal != "" {
+		return Submission{}, refusal
+	}
 	return sub, ""
+}
+
+// stepDuration reads an optional duration argument of a fleet step. An
+// unset one is zero, which is how a Batch says "use the default"; one that
+// is set and cannot be read is a refusal, because a rolling step that asked
+// for a pause and got none has been told the opposite of what it will do.
+func stepDuration(args *value.Map, name string) (time.Duration, string) {
+	raw, ok := args.Get(name)
+	if !ok || raw == nil {
+		return 0, ""
+	}
+	d, err := value.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Sprintf("`%s`: %v.", name, err)
+	}
+	if d < 0 {
+		return 0, fmt.Sprintf("`%s` cannot be negative.", name)
+	}
+	return d, ""
 }
 
 // dispatchAndWait sends the job, waits for it, and turns the returns
@@ -361,6 +392,19 @@ func (o *orchRunner) dispatchAndWait(c *exec.Context, args *value.Map, sub Submi
 	timeout := stepTimeout(c)
 	if !signed && timeout > job.DefaultTTL {
 		sub.TTL = timeout
+	}
+	// A batched step's waves wait as long as the step does, when that is
+	// longer than the default wave wait, and the step's own `batch_timeout`
+	// wins over it (issue 872). Each wave waited DefaultBatchTimeout whatever
+	// the step's `timeout`, so a `batch: 1` step whose function ran longer
+	// than five minutes handed on to the next node while the first was still
+	// working: a rolling deploy written to take one node out at a time took
+	// out two. Set here and not in baseSubmission, as TTL is, because it
+	// reads the step's deadline; a signed step's wave wait is not part of
+	// its signature, which fixes the job and its expiry, and sliceWait still
+	// stops a wave at that expiry.
+	if sub.Batch.Timeout == 0 && timeout > DefaultBatchTimeout {
+		sub.Batch.Timeout = timeout
 	}
 	o.dispatching(c.StateID)
 	j, err := o.server.dispatchFor(o.principal, o.onBehalfOf, sub)

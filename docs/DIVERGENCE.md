@@ -53621,6 +53621,54 @@ account, and one grant, on a test service. Afterwards:
 **Not covered.** One run of each, not a stress run, and on Windows 11 only,
 not Windows Server.
 
+### 5.758 A batched orchestration step could not set how long its waves wait (2026-11-27)
+
+Issue 872. A step that runs in batches (`batch: 1`) had no way to say how long
+each wave waits for its returns, and did not read its own `timeout`, so every wave
+waited `DefaultBatchTimeout`, five minutes (5.496, "Decided and changed (issue
+540)"). The issue's own run, two nodes and a function that slept 960 s on the
+first, logged the second wave delivered at minute five while the first node was
+still running, and the first node's return at minute sixteen. A rolling deploy
+written to take one node out at a time could take out two. 5.496 already said
+"a run longer than five minutes needs `--batch-timeout`", and an orchestration
+had no way to follow that advice.
+
+The same shape as 5.735, which gave an unsigned step's job a lifetime that follows
+the step's `timeout`: the step knew how long it would wait, and the job it sent
+used a different number.
+
+**Fixed.** Three things. Ed chose the first two on 2026-11-27 from the issue's list; the third was proposed with them.
+
+- `batch_timeout` on a `salt.state`, `salt.sls`, `salt.highstate` or `salt.function`
+  step sets the wave wait, and wins over everything else.
+- Without it, a wave waits for the step's `timeout` when that is longer than five
+  minutes. It is not shortened to a `timeout` under five minutes: such a step
+  has already given up waiting, and a shorter wave would send the next node
+  to a step that has failed.
+- `batch_wait` sets the pause between waves, as `run --batch-wait` does.
+
+A step that sets none of these, with a `timeout` of five minutes or less or none,
+behaves as it did. A value that cannot be read as a duration, or is negative, is
+refused with the key's name before anything is sent. A signed step's wave wait
+is not part of its signature, which fixes the job and its expiry; `sliceWait`
+still stops a wave at that expiry.
+
+**Shown.** `TestABatchedStepsWaveWaitsAsLongAsItsBatchTimeout` runs two silent
+nodes with `batch_timeout: 1s` and sees the second wave at about a second, not
+before 0.4 s. `TestABatchedStepsWaveWaitFollowsTheStep` reads the wave wait the
+job carries for each case. Run with the step's-timeout default disabled, its
+`timeout: 3600` case fails; with the two keys ignored, the one-second run and
+the three cases that set them fail.
+
+**Not covered.** Nothing ran against real `halite-hub` and `halite-node`
+binaries: the tests drive the hub's own dispatch with silent test nodes, so the
+sixteen-minute run in the issue was not repeated. The issue's third question
+stands: a node that is still running when its wave's wait ends counts against
+`batch_safe_limit`, as a silent node always has (5.496), and a step that sets
+`batch_timeout` shorter than its function takes will count a slow node as a
+failed one. Salt's own batch asks each node whether it is still running the
+job; halite does not.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

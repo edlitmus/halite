@@ -1363,6 +1363,7 @@ node and has no pillar of its own.
 | `salt.wait_for_event` | same | works |
 | `fail_minions` | `tolerate_failures`, old name accepted | works |
 | `batch`, `subset`, `batch_safe_limit` per step | same | works |
+| `batch_timeout`, `batch_wait` per step | halite's own: `run --batch-timeout` and `--batch-wait` for a step; Salt has no such key | works |
 | `timeout` per step | same, the per-state option of SPEC 11.7 | works |
 | `require`, `onfail`, `onchanges`, `prereq` between steps | same | works |
 | no equivalent | `halite-hub orch show <jid>` | works |
