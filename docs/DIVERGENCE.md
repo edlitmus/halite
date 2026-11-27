@@ -53195,6 +53195,71 @@ whether their texts say they are refused at startup. The "default localhost"
 test reads the hub's usage text; it does not read the handbook chapters, which
 were searched for the phrase and held none.
 
+### 5.753 A command whose timeout ran out before it was resumed was reported as never resumed, not as timed out (2026-11-27)
+
+Issue 876. On Windows a command is created suspended, put in a job object,
+and then resumed (5.620). `TestTimeoutStopsALongCommand` (`internal/exec`)
+and `TestASlowProviderTimesOutAndTheRestStillLand` (`internal/grains`)
+sometimes failed with "the command was started suspended and could not be
+resumed: resuming process N: it has no threads to resume (1 listed, none
+still there)". In the grains case the provider was then reported as one that
+"exited non-zero and was skipped", not as one that timed out.
+
+**The cause.** `os/exec` starts watching the context inside `Start`, before
+`afterStart` has resumed the child. A deadline that runs out in that gap
+makes `Cancel` terminate the job and kill the child while it is still
+suspended. Its only thread goes with it, and `winjob.Resume` then lists the
+thread but cannot open it (`ERROR_INVALID_PARAMETER`, which `resumeThreads`
+reads as "gone", 5.620.2), or does not list it at all. `OSRunner.Run` took
+the resume error as the command's error and did not look at the context.
+On an idle machine the gap is much shorter than any timeout. On a loaded
+one, the job assignment and a snapshot of every thread on the machine can
+take longer than a 200 ms timeout.
+
+Measured on the development Windows host, with a full `go test ./...` and a
+second run of `internal/hub`, `internal/job` running beside it. The unfixed
+and fixed test binaries took turns, 25 runs of `TestTimeoutStopsALongCommand`
+each, for 52 rounds:
+
+| Binary | Runs | "could not be resumed" |
+|---|---|---|
+| unfixed | 1300 | 40 (36 "1 listed", 4 "0 listed") |
+| fixed | 1300 | 0 |
+
+Every unfixed failure took at least the 200 ms timeout. This is what the
+issue's sightings show, and it is the first time the cause was shown rather
+than inferred. The issue suggested putting `OpenThread`'s Win32 error in the
+message; in this case that error is `ERROR_INVALID_PARAMETER`, which the code
+already treats as a thread that has gone, so it would have said nothing new.
+
+**The fix.** When the resume fails, `Run` still kills and reaps the child.
+It now reports the context's error first, if there is one ("timed out after
+200ms and was killed", or "was cancelled"), and the resume error only when
+the context is still live. The timeout is what ended the command in either
+order, so it is the true account. The cost is that a resume that failed for
+some other reason, in the same moment that a timeout ran out, is reported as
+the timeout; the command did not run in either case.
+
+`winjob.Resume` was not changed: told to resume a process that has been
+killed, failing is correct. The extension sandbox (`internal/bridge`) resumes
+in the same way but starts its child with no context, so nothing can kill
+the child between `Start` and the resume there.
+
+**Tests.** `internal/exec/resume_race_windows_test.go`:
+
+- `TestATimeoutThatFiresBeforeTheResumeIsReportedAsTheTimeout` holds the
+  resume until the timeout's kill has ended the child, then calls the real
+  `winjob.Resume`. With the fix taken out it fails with the issue's message
+  ("0 listed" here, because the hook waits for the child to be fully gone).
+- `TestAResumeThatFailsWithoutATimeoutIsStillReported` plants a resume
+  failure with a 30 s timeout. With the fix changed to report a timeout
+  whatever the context says, it fails.
+
+**Not covered.** The grains test was not rerun under load; it goes through
+the same `OSRunner.Run`, so the fix applies, but its own rate was not
+measured. Measured on Windows 11 Pro build 26320 only, not on Windows
+Server. The race detector did not run, because this host has no C compiler.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
