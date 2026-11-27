@@ -53002,6 +53002,125 @@ live hub. The reproduction on this host ran a real `enroll` twice against the
 configured hub, and on both runs it stopped at the `chmod` before any
 request was posted. The hub's key list was not read afterwards.
 
+### 5.751 A file being replaced could read as missing on a loaded Windows machine, and a job then said "no such job" (2026-11-27)
+
+Issue 890. `TestABatchStoppedAtItsSafeLimitLeavesNothingOwed` failed once,
+from Git Bash, while a second full suite ran on the same machine: a status
+read of a job the hub had just dispatched answered `no such job`. The record
+existed and the hub was rewriting it. Re-run alone, the test passed 30 of 30.
+
+**Reproducing it.** `waitForState` reported only the error, so the first
+step was to make it say how many polls had succeeded, what states they saw,
+and the HTTP status. A 404 means the handler's own `Get` failed; a 500 with
+the same text would have meant the second read of the record inside
+`Missing`. Then the test ran three copies at a time, ten rounds each, beside
+a full `go test ./...`: one failure in 2,100 runs, reading
+
+```
+poll 2 of 20261127T034419393498 failed after 1 succeeded (26ms in; states seen [batching]): HTTP 404: ... no such job
+```
+
+So poll 1 had read the record, and poll 2 was told there was none, 26 ms
+in, just after the first batch was delivered. Delivering a batch rewrites
+the record through `job.Cache.Update`, `Put` and `atomicfile.Write`, and
+`Get` reads it through `atomicfile.Read` without the job's lock, by design.
+Every write after dispatch goes through `Update`, which serializes the
+writers, and `fileperm.MkdirAll` changes nothing on an existing job
+directory: `Others` found no other account on any of the three directories
+when this was checked. The pair left was one write and one read.
+
+**The file level, without the hub.** A scratch test had one goroutine
+replace a file with `atomicfile.Write` while eight others read it with
+`atomicfile.Read`, counting not-found:
+
+| Conditions | Replaces | Reads | Not-found |
+|---|---|---|---|
+| idle machine, one copy, 20 s | 3,436 | 60,544 | 0 |
+| six copies at once, 40 s | 15,824 | 1,404,199 | 0 |
+| beside a full `go test ./...`, POSIX renames | 122,352 | 13,586,825 | 875, in 6 of 110 runs |
+| the same, `MoveFileEx` fallback forced | 20,038 | 6,293,914 | 586, in 2 of 44 runs |
+| the same, with this fix | 119,980 | 13,217,729 | 0, in 0 of 110 runs |
+
+Two other loaded runs of the unmodified code gave 3,612 (in 12,263,177 reads) and 51 (in 13,682,290). The error
+was `ERROR_FILE_NOT_FOUND`, "The system cannot find the file specified", not
+`ERROR_PATH_NOT_FOUND`: the directory was always there. In the POSIX rows,
+a wrapper around `setRenameInfo` counted every rename it saw. All of them
+took the POSIX path, and none fell back or failed, so the gap is not the
+fallback.
+
+Retrying every reader once it met a not-found, until the file came back,
+measured the gap: one event per run, seen by all eight readers at once, and
+lasting between 3 and 50 ms. That is about one rename in every 17,000 to
+20,000 (6 in 122,352, and 7 in 120,238) holding
+the name away from other openers for tens of milliseconds. Nothing in the
+API says so; the open simply finds nothing.
+
+**Which layer hides the name was not found.** The machine runs Defender
+with real-time protection on and the temporary directory not excluded, and
+`fltmc` lists `WdFilter` and four other filters (`ngscan`,
+`file_protector`, `gameflt`, `dbx`) above NTFS, whose makers were not
+looked up. Any of them could be
+responsible. None was disabled to find out, and a production Windows host
+has filters of its own, so the fix does not depend on the answer.
+
+**The fix** is in `internal/atomicfile`, on Windows only. Every replace,
+through `Rename` and through `renameIn` (which `WriteIn` uses), records its
+destination in a per-process table while it runs, and the order in which it
+finished. `Read` and `Open` retry a not-found only when one of this
+process's replaces of that exact path was in flight at some moment during
+the read, for up to `retryWindow`. Any other not-found -- an unknown jid, a
+key not yet issued -- is reported at once, at the cost of one map lookup.
+A blanket retry was rejected, because it would have to wait out the longest
+gap anybody has seen, which this code cannot know, and charge that to every
+genuinely absent file.
+
+Two mistakes were caught by the new tests on their first run:
+
+- **Forgetting a path's entry when its replace ends.** The first version
+  did that, which tells exactly the reader that most needs the record --
+  the one whose open fell in the gap of a replace that finished before it
+  asked -- that there had been no replace. Entries now outlive their replace
+  by a second, and are pruned at most once a second.
+- **Ordering with the clock.** Go's clock on Windows moves in ticks, and a
+  read that began in the tick a replace ended in did not compare as before
+  it. A read and a replace's end are now ordered by a counter, and the clock
+  is used only for pruning.
+
+**Tests**, in `internal/atomicfile/gap_windows_test.go`. They make the gap
+through the `setRenameInfo` seam: the destination is removed, the test is
+told, and only 300 ms later does the real rename run.
+`TestAReadInTheGapOfThisProcesssReplaceGetsTheNewFile` and
+`TestAnOpenInTheGapOfThisProcesssReplaceGetsTheNewFile` hold the fix.
+`TestAFileThatIsNotThereIsReportedAtOnceDuringAnotherFilesReplace` holds its
+cost. `TestAReplaceThatFinishedDuringTheReadStillExplainsItsNotFound` and
+`TestTwoSpellingsOfOnePathAreOneReplace` hold the bookkeeping. The code was
+broken four ways, one at a time, and each break failed the test meant for it:
+
+| Break | Failed |
+|---|---|
+| a not-found is never retried | both gap tests: "The system cannot find the file specified" |
+| any path's replace explains a not-found | the absent-file test: "took 303.4509ms to report" |
+| the entry is forgotten when the replace ends | "a replace that began and ended during the read was not counted" |
+| the key is case-sensitive | "a relative, differently cased spelling did not match the replace in flight" |
+
+**Not covered: a reader in another process.** It cannot see this process's
+replaces, and still meets the gap. `halite-hub jobs show`, `jobs list` and
+`jobs export` are such readers. They read the job cache directly (`openJobs`
+in `cmd/halite-hub/jobs.go`), so that they work when the hub is stopped, and
+on Windows, while the hub is rewriting a record, one of them can still
+answer that the job does not exist. Running it again answers correctly. The
+API (`/v1/jobs/<jid>`), which the operator client and `halite-api` use, is
+the hub's own process, and is covered. Sharing the record across processes
+would need the lock on the file that `Cache.Update`'s comment says SPEC
+does not ask for, and was not attempted here. The rename that hides
+the name was not identified, so whether a host without these filters sees
+the gap at all is not known. The fixed run hides a gap by retrying it, so it
+cannot say how many gaps happened, only that no reader saw one. Unix is
+unchanged: rename(2) is atomic for every opener, and this was not seen
+there. The hub test's own rate after the fix was not measured against its
+1-in-2,100: the file-level runs are 6,000 times larger. The race detector
+did not run, because this host has no C compiler.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
