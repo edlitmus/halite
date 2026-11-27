@@ -53367,6 +53367,118 @@ caller is entitled to. A caller whose target is `*` still sees every job's
 arguments. Nothing was run
 against a live hub or fleet.
 
+### 5.755 A node whose certificate the hub refused could hear a reset, or nothing, instead of the alert (2026-11-27)
+
+Issue 875. `TestOnlyARevokedOrUnacceptableCertificateIsRefusedForGood`
+(`internal/transport`) failed some of the time on Windows. The case expected
+the hub's TLS alert and got "An existing connection was forcibly closed by the
+remote host". The same test had failed on the FreeBSD and Ubuntu CI legs with
+`write: broken pipe` (runs 45663606679 and 45473300328), so it was not
+Windows' alone.
+
+**What a lost alert cost.** It reaches the node as a `*net.OpError` whose Op
+is `read` or `write`, not `remote error`. `CertificateRefused` and `Rejected`
+both read only the alert, so a revoked node neither exited nor dropped its
+cached pillar, and `Unreachable` called it an outage: the node retried and ran
+from its cache meanwhile. A later attempt read the alert, so this was a delay,
+not a permanent misreading. It is the delay the refusal code exists to
+prevent.
+
+**How often.** On the development Windows host, one refused handshake at a time
+through the test's hub fixture, 1,500 per case:
+
+| Case | Lost, before | Lost, hub drained only | Lost, both fixes |
+|---|---|---|---|
+| revoked | 15 | 5 | 0 |
+| unknown CA | 13 | 8 | 0 |
+| expired | 329 | 39 | 0 |
+
+The "both fixes" column is `TestEveryRefusedHandshakeReportsItsAlertTheFirstTime`
+(below), run 8 times in one process (7,200 refused handshakes). Earlier longer
+runs, of 18,000, 10,800 and 12,600, each had one failure, and it was neither
+cause: WSAENOBUFS, Windows out of local ports. Draining ends each connection
+with a FIN, so it leaves the socket in TIME_WAIT, which a reset did not.
+Windows keeps a TIME_WAIT socket for 120 s and has 16,384 ports, and `netstat`
+counted about seven TIME_WAIT sockets for every five refused handshakes on
+loopback. So
+about 11,000 handshakes within two minutes is this host's ceiling. One test run
+is 900. Beside a full `go test ./...`, the test ran 33 times, 15 s apart
+(29,700 refused handshakes). Two attempts failed, both with WSAENOBUFS and
+neither with a lost alert. The test now makes an attempt again only when
+its dial failed, because such an attempt never reached the hub. It was not
+shown that these two failed at the dial: the test's summary had dropped the
+operation. Anything that fails after the dial still fails the test.
+
+**Cause 1: a reset.** TLS 1.3 lets the client finish its half of the
+handshake before the server has checked the client's certificate. With
+`GODEBUG=http2debug=2`, the client logs its HTTP/2 SETTINGS and WINDOW_UPDATE
+as written before the hub logs its verification failure. The hub then sent the
+alert and closed with those bytes unread. A socket closed with unread data
+ends with an RST, not a FIN. On Windows the RST discards the alert the client
+has not yet read; on unix the client's next write fails with EPIPE. The node
+already ends its own connections with a FIN and a drain (`drainingConn`,
+issue 757, 5.681). The hub did not.
+
+The fix is `transport.DrainingListener`, which hands back the hub's accepted
+connections as `drainingConn`s, and `hub.Listen` uses it under TLS. Below TLS
+is the layer that matters, because net/http closes a failed handshake itself,
+through `tls.Conn.Close`. The cost is a goroutine and a descriptor for up to
+`HandshakeTimeout` after each close, until the peer's FIN. A peer that never
+finishes its handshake can already hold a descriptor that long, and the
+connection cap counts subscribe streams, not sockets (`connlimit.go`). The RST
+itself was not captured on the wire. The evidence is the log order and the
+drain removing every reset.
+
+**Cause 2: net/http threw the alert away.** `http2: client conn could not be
+established` (`http2errClientConnNotEstablished`, `net/http/h2_bundle.go`) is
+what Go's HTTP/2 client returns when the connection closed before its first
+request went out. The cause is dropped. With the debug log on, 15 such errors
+in 1,500 expired-certificate attempts had, behind 8 of them, the read loop
+receiving `remote error: tls: expired certificate`; the other 7 were cause-1
+resets. So the alert had arrived and net/http discarded it.
+
+The fix is `alertRecovering`, a round tripper on the node's transport. A
+`tls.Conn` keeps the first error a read met and returns it from every later
+`Read` without touching the socket (`halfConn.setErrorLocked` in
+`crypto/tls/conn.go`), and `httptrace`'s `GotConn` names the connection before
+the request is tried. So on that one error, the round tripper reads the
+connection once, with a deadline of now. If the kept error is a remote alert,
+it returns the alert with net/http's text beside it. Anything else stays as
+net/http said it. The match is on net/http's text, because the error value is
+unexported. If Go rewords it, the recovery stops, and the test below fails.
+Wrapping the `tls.Conn` was not an option, because net/http asserts the
+concrete type before it will speak HTTP/2.
+
+`newHubTransport` is the one constructor of the node's transport. The refusal
+tests use it, and the test fixture uses `DrainingListener` as `hub.Listen`
+does. Before, both tests built their own `http.Transport` and `tls.Listen`, so
+neither fix would have shown in them.
+
+**The test.** The existing test retries a lost alert up to 20 times, as a
+node would, so it passed over the loss rather than showing it. Its
+`lostTheAlert` also did not know Windows' two errors, WSAECONNRESET and
+WSAECONNABORTED, and so on Windows it failed on the first loss instead of
+retrying. It now matches them by number, since Windows words them in the
+machine's language. `TestEveryRefusedHandshakeReportsItsAlertTheFirstTime`
+takes each attempt as a node's first: 300 refused handshakes per case, a fresh
+client each, no retry, and every one must report its own alert.
+- With `DrainingListener` made to return its listener unchanged, it failed
+  with 6, 2 and 88 losses, all resets.
+- With `alertRecovering` given no connection to read, it failed with 1, 1 and
+  11, all net/http's text.
+
+**Not covered.**
+- The broken-pipe form on Linux and FreeBSD was not reproduced here. CI's
+  legs run the new test.
+- Why the expired case loses about 20 times as often as the others was not
+  found.
+- The real `halite-node` against a real `halite-hub` was not run, so how many
+  retries a revoked node needed before, and needs now, was not measured.
+- `internal/api` and the node's metrics endpoint listen with `tls.Listen` and
+  were not changed. No client of either reads a refusal alert to decide what
+  to do.
+- The race detector did not run, because this host has no C compiler.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

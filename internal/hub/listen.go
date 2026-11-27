@@ -28,11 +28,13 @@ func Listen(addr string, cert *ServingCert, ca *x509.Certificate, denied *transp
 	cfg := transport.ServerConfig(*cert.Load(), ca, denied)
 	cfg.Certificates = nil
 	cfg.GetCertificate = cert.GetCertificate
-	ln, err := tls.Listen("tcp", addr, cfg)
+	tcp, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listening on %s: %w", addr, err)
 	}
-	return ln, nil
+	// Drained on close, so that a node whose certificate is refused reads
+	// the alert rather than a reset (issue 875, transport.DrainingListener).
+	return tls.NewListener(transport.DrainingListener(tcp), cfg), nil
 }
 
 // Serve runs the control plane until the context ends.

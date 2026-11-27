@@ -25,7 +25,7 @@ Everything here is crypto/tls and net/http. Section 6.1 records why at length, a
 
 There is no plaintext mode. Not for loopback, not for a test, not behind a flag — section 6.1 is explicit that such a setting is invariably found in production, and the way to be sure of that is for it not to exist.
 
-**Files:** `bootstrap.go`, `client.go`, `closedrain.go`, `runnerwait.go`, `streams.go`, `tls.go`, `unreachable.go`, `wire.go`; with tests.
+**Files:** `alertrecover.go`, `bootstrap.go`, `client.go`, `closedrain.go`, `runnerwait.go`, `streams.go`, `tls.go`, `unreachable.go`, `wire.go`; with tests.
 
 **Exports.**
 
@@ -37,6 +37,7 @@ There is no plaintext mode. Not for loopback, not for a test, not behind a flag 
 - `CodeOf` (func): CodeOf answers with the stable code the hub attached to a failure, or an empty string when it attached none.
 - `Delegation` (type): Delegation is who a caller says it is acting for: the operator it authenticated, and the roles that operator's token was issued with.
 - `Denylist` (type): Denylist holds revoked certificate serials.
+- `DrainingListener` (func): DrainingListener hands back the connections ln accepts as drainingConns, so that the hub ends them the way dialDraining makes a node end its own.
 - `EncodeBody` (func): EncodeBody is the request body post sends for v, byte for byte, because it is marshal's own output.
 - `EnrollConfig` (func): EnrollConfig is the configuration a node uses before it has a certificate: it verifies the hub and presents nothing.
 - `EnrollRequest` (type): EnrollRequest is the body of a POST to /v1/enroll.
