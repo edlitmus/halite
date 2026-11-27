@@ -376,7 +376,7 @@ halite-hub keys signer create ops --out ~/.halite/signer-ops
 # on each node, in node.yaml
 require_job_signature: [arbitrary_code, state]
 job_signer_keys:
-  - 'ops MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...'
+  - 'ops MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE...'
 
 # from then on
 halite-hub run '*' state.apply --sign-key ~/.halite/signer-ops.key
@@ -433,7 +433,7 @@ halite-hub tree verify "$TREE" --env base --keys trusted-tree-keys --config hub.
 # on each node, in node.yaml
 require_state_signature: warn        # then true
 state_signer_keys:
-  - 'tree-ci MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...'
+  - 'tree-ci MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE...'
 ```
 
 | Salt | halite | Status |

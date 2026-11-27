@@ -308,7 +308,7 @@ On each node, in `node.yaml`, start with `warn`:
 ```yaml
 require_state_signature: warn        # then true
 state_signer_keys:
-  - 'tree-ci MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE…'
+  - 'tree-ci MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE…'
 ```
 
 `warn` checks everything and refuses nothing. It logs each refusal that

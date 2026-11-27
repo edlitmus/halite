@@ -208,3 +208,45 @@ func TestExamplesNameNoPlatformSpecificPath(t *testing.T) {
 		t.Error("there are no examples; this check has stopped checking anything")
 	}
 }
+
+// An example that says "X by default" is making a claim about the key table,
+// and the example's own line is the one an operator copies. examples/hub.yaml
+// said "ecdsa-p256 by default" and set `key_algorithm: ecdsa-p256` for a
+// year after the default became P-384 (DIVERGENCE 5.724), which kept every
+// new hub on P-256 and told its operator that was the default (issue 883).
+// Nothing compared the example with the table, because the example loaded
+// cleanly either way.
+func TestTheHubExampleNamesTheKeyAlgorithmDefault(t *testing.T) {
+	var want string
+	for _, k := range KeysFor(Hub) {
+		if k.Name == "key_algorithm" {
+			want = k.Default
+		}
+	}
+	if want == "" {
+		t.Fatal("the key table has no default for key_algorithm; this check has stopped checking anything")
+	}
+
+	src, err := os.ReadFile(filepath.Join("..", "..", "contrib", "examples", "hub.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+
+	claimed := regexp.MustCompile(`(?m)^#\s*(ecdsa-p\d+) by default`).FindStringSubmatch(text)
+	if claimed == nil {
+		t.Fatal(`hub.yaml no longer says "<algorithm> by default" above key_algorithm; ` +
+			"update this check with the new wording")
+	}
+	if claimed[1] != want {
+		t.Errorf("hub.yaml says %s is the default for key_algorithm; the key table says %s", claimed[1], want)
+	}
+
+	set := regexp.MustCompile(`(?m)^key_algorithm:\s*(\S+)`).FindStringSubmatch(text)
+	if set == nil {
+		t.Fatal("hub.yaml sets no key_algorithm; the example no longer shows the default")
+	}
+	if set[1] != want {
+		t.Errorf("hub.yaml sets key_algorithm: %s, which keeps a new hub off the default, %s", set[1], want)
+	}
+}
