@@ -21,7 +21,12 @@ import (
 // disaster -- the node's replay guard refuses the second -- but it
 // wastes a batch slot and makes the run look like it did more than it
 // did.
-func (s *Server) deliver(j *job.Job, msg transport.Message, nodes []string) int {
+//
+// It returns how many sends were taken and which nodes refused, because the
+// send is the only thing that knows: a node in the connected set may still
+// refuse (its queue is full), and one that connects a moment later was not
+// sent this.
+func (s *Server) deliver(j *job.Job, msg transport.Message, nodes []string) (int, []string) {
 	if s.Jobs != nil {
 		// The caller's copy tracks the batch's progress; the record on
 		// disk is changed through Update, because a return from one of
@@ -37,12 +42,15 @@ func (s *Server) deliver(j *job.Job, msg transport.Message, nodes []string) int 
 		}
 	}
 	sent := 0
+	var refused []string
 	for _, id := range nodes {
 		if s.fleet().Send(id, msg) {
 			sent++
+		} else {
+			refused = append(refused, id)
 		}
 	}
-	return sent
+	return sent, refused
 }
 
 // runBatches delivers a batched job a slice at a time, waiting for each
@@ -92,7 +100,7 @@ func (s *Server) runBatches(ctx context.Context, j *job.Job, msg transport.Messa
 			slice = slice[:size]
 		}
 
-		sent := s.deliver(j, msg, slice)
+		sent, _ := s.deliver(j, msg, slice)
 		s.info("batch delivered",
 			"jid", string(j.JID), "nodes", slice, "sent", sent,
 			"done", len(j.Delivered), "of", len(j.Nodes))

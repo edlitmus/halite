@@ -270,6 +270,9 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 			}
 		}
 		s.countDispatch(j, matched)
+		// Delivery happens a slice at a time after this returns, so who is
+		// out of reach now is the dispatch's own look at the connected set.
+		j.Unreached = append([]string(nil), absent...)
 		s.info("job dispatched in batches",
 			"jid", string(j.JID), "fun", j.Fun, "target", j.Target,
 			"matched", len(matched), "batch", j.Batch.Size, "submitter", j.Submitter)
@@ -294,7 +297,12 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 
 	// Counted before the sends, not after: see countDispatch.
 	s.countDispatch(j, matched)
-	delivered := s.deliver(j, msg, matched)
+	delivered, refused := s.deliver(j, msg, matched)
+	// Who was not sent the job is who refused it, not who the connected set
+	// lacked a moment earlier: a node that connected after the check but
+	// before the send was sent it, and one that connected after the send was
+	// not, and neither is what `absent` says.
+	j.Unreached = refused
 	s.info("job dispatched",
 		"jid", string(j.JID), "fun", j.Fun, "target", j.Target,
 		"matched", len(matched), "delivered", delivered, "submitter", j.Submitter)

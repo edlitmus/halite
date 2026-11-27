@@ -343,17 +343,14 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
-	connected := s.fleet().Connected()
-	var absent []string
-	for _, id := range j.Nodes {
-		if _, up := connected[id]; !up {
-			absent = append(absent, id)
-		}
-	}
+	// Dispatch's answer, and not a second look at the connected set: that
+	// look came after the sends, so a node that connected in between was
+	// reported present for a job it was never sent, and `run` waited for its
+	// return to the end of the gather window (issue 904).
 	transport.WriteJSON(w, http.StatusAccepted, transport.SubmitResponse{
 		JID:    string(j.JID),
 		Nodes:  j.Nodes,
-		Absent: absent,
+		Absent: j.Unreached,
 		Batch:  j.Batch.Size,
 	})
 }

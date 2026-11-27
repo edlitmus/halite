@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -118,6 +119,7 @@ func TestAResumeAfterAHubCrashDoesNotRepeatFinishedSteps(t *testing.T) {
 		t.Fatalf("the hub never listened on %s\n%s", addr, hubLog.String())
 		return nil
 	}
+	var lastOperator string
 	waitFor := func(what string, cond func() bool) {
 		t.Helper()
 		deadline := time.Now().Add(60 * time.Second)
@@ -127,7 +129,8 @@ func TestAResumeAfterAHubCrashDoesNotRepeatFinishedSteps(t *testing.T) {
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-		t.Fatalf("timed out waiting for %s\nhub:\n%s\nnode:\n%s", what, hubLog.String(), nodeLog.String())
+		t.Fatalf("timed out waiting for %s\nthe last operator command:\n%s\nhub:\n%s\nnode:\n%s",
+			what, lastOperator, hubLog.String(), nodeLog.String())
 	}
 	counts := func() map[string]int {
 		raw, _ := os.ReadFile(marks)
@@ -137,8 +140,19 @@ func TestAResumeAfterAHubCrashDoesNotRepeatFinishedSteps(t *testing.T) {
 		}
 		return out
 	}
+	// Every operator command is bounded, and the last one's words are kept
+	// for a wait that times out. A `halite-hub run` that never returned held
+	// this test for its whole deadline with nothing to say which call it was
+	// or what it had printed (issue 904): waitFor only looks at its condition
+	// between calls, so one call that does not return outlasts it.
 	operator := func(args ...string) (string, error) {
-		out, err := exec.Command(hubBin, append(args, hubArgs...)...).CombinedOutput()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, hubBin, append(args, hubArgs...)...).CombinedOutput()
+		if ctx.Err() != nil {
+			err = fmt.Errorf("halite-hub %s did not return in 30s: %w", strings.Join(args, " "), err)
+		}
+		lastOperator = fmt.Sprintf("halite-hub %s\n%s(error: %v)", strings.Join(args, " "), out, err)
 		return string(out), err
 	}
 
