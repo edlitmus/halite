@@ -3,8 +3,11 @@ package atomicfile
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -163,7 +166,149 @@ func retry(op func() error, paths ...string) error {
 // Rename replaces newpath with oldpath, waiting out a reader that has
 // newpath open.
 func Rename(oldpath, newpath string) error {
+	end := beginReplace(newpath)
+	defer end()
 	return retry(func() error { return replace(oldpath, newpath) }, oldpath, newpath)
+}
+
+// # A replace can hide the file from a reader for tens of milliseconds
+//
+// Neither rename here takes the destination's name away -- POSIX semantics
+// swap it, and MoveFileEx supersedes it -- and an idle machine agrees:
+// 1,404,199 reads racing 15,824 replaces, and none found nothing. A
+// loaded one does not. With a full `go test ./...` running beside it, on
+// Windows 11 26H2 with Defender's filesystem filter and four others
+// loaded, a reader's open answered ERROR_FILE_NOT_FOUND about once in every
+// 17,000 to 20,000 replaces, for between 3 and 50 milliseconds, and every
+// reader open at that moment saw it. POSIX renames did it with no fallback taken
+// (875 in 13,586,825 reads), and MoveFileEx did it too (586 in 6,293,914).
+// Which layer hides the name was not isolated: the filters were
+// not disabled to find out, and a production host has filters of its own.
+//
+// The hub met it as a job that answered "no such job" while its record was
+// being rewritten (issue 890, DIVERGENCE 5.751). Retrying every not-found
+// would have cured that and charged every genuinely absent file -- an
+// unknown jid, a key not yet issued -- the longest gap anybody has seen,
+// which is not a number this code can know. So a not-found is retried only
+// when it can have been a replace: one of this process's own, of this path,
+// that was in flight or finished while the read was trying. That is exact,
+// and costs an absent file one map lookup.
+//
+// What it does not cover is a reader in another process: it cannot see this
+// process's replaces, and still sees the gap.
+
+// replaces is this process's record of the paths it is replacing, and of
+// when it last finished replacing each.
+//
+// An entry outlives its replace by replaceMemory, because the reader that
+// needs it most is the one whose open fell in the gap and whose replace had
+// finished by the time it asked. Deleting the entry at the end, which the
+// first version did, told exactly that reader there had been no replace.
+//
+// The order of a read's start and a replace's end is a counter, not the
+// clock. Go's clock on Windows moves in ticks, and a read that began in the
+// tick a replace ended in compared as not after it: the test for exactly
+// that case failed on the first run. The clock is used only to forget.
+var replaces = struct {
+	sync.Mutex
+	paths     map[string]*replaceState
+	ends      uint64 // replaces finished so far, by anybody
+	lastPrune time.Time
+}{paths: map[string]*replaceState{}}
+
+// replaceMemory is how long a finished replace is remembered: far longer
+// than any read takes, and short enough that the record of a hub writing
+// thousands of returns stays the size of the last second's work.
+const replaceMemory = time.Second
+
+type replaceState struct {
+	active  int
+	endSeq  uint64    // replaces.ends when this path's last replace finished
+	endedAt time.Time // for pruning only
+}
+
+// replaceKey is the form two spellings of one path agree on. NTFS names are
+// case-insensitive, and a relative path is the same file as its absolute
+// one.
+func replaceKey(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	return strings.ToLower(filepath.Clean(path))
+}
+
+// beginReplace records a replace of path and returns its end.
+func beginReplace(path string) func() {
+	key := replaceKey(path)
+	replaces.Lock()
+	pruneReplaces(time.Now())
+	st := replaces.paths[key]
+	if st == nil {
+		st = &replaceState{}
+		replaces.paths[key] = st
+	}
+	st.active++
+	replaces.Unlock()
+	return func() {
+		replaces.Lock()
+		st.active--
+		replaces.ends++
+		st.endSeq = replaces.ends
+		st.endedAt = time.Now()
+		replaces.Unlock()
+	}
+}
+
+// pruneReplaces forgets replaces that finished more than replaceMemory ago,
+// at most once per replaceMemory, so a write pays for a sweep rarely. The
+// caller holds the lock.
+func pruneReplaces(now time.Time) {
+	if now.Sub(replaces.lastPrune) < replaceMemory {
+		return
+	}
+	replaces.lastPrune = now
+	for key, st := range replaces.paths {
+		if st.active == 0 && now.Sub(st.endedAt) > replaceMemory {
+			delete(replaces.paths, key)
+		}
+	}
+}
+
+// readMark is where the replaces stood when a read began.
+type readMark uint64
+
+func markRead() readMark {
+	replaces.Lock()
+	defer replaces.Unlock()
+	return readMark(replaces.ends)
+}
+
+// replaceCanExplain reports whether a replace of path was active at any
+// moment since began: active now, or finished after it.
+func replaceCanExplain(path string, began readMark) bool {
+	key := replaceKey(path)
+	replaces.Lock()
+	defer replaces.Unlock()
+	st := replaces.paths[key]
+	return st != nil && (st.active > 0 || st.endSeq > uint64(began))
+}
+
+// readUntilSettled runs one read and, while it fails with not-found and a
+// replace of path can explain that, runs it again, for as long as
+// retryWindow. A not-found that no replace can explain is returned at once.
+func readUntilSettled(path string, read func() error) error {
+	deadline := time.Now().Add(retryWindow)
+	for {
+		began := markRead()
+		err := read()
+		if err == nil || !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if !replaceCanExplain(path, began) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // replace is one attempt at the rename: with POSIX semantics where the
@@ -321,21 +466,26 @@ func posixRenameRefused(err error) bool {
 // cannot be renamed over: reading a job's returns would make recording
 // the next one fail. This opens with all three sharing flags, which
 // costs nothing and takes this process out of the way of every writer.
+//
+// A not-found that one of this process's own replaces of path can explain
+// is read again; see replaces.
 func Read(path string) ([]byte, error) {
 	var out []byte
-	err := retry(func() error {
-		f, err := openShared(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		b, err := io.ReadAll(f)
-		if err != nil {
-			return err
-		}
-		out = b
-		return nil
-	}, path)
+	err := readUntilSettled(path, func() error {
+		return retry(func() error {
+			f, err := openShared(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			b, err := io.ReadAll(f)
+			if err != nil {
+				return err
+			}
+			out = b
+			return nil
+		}, path)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -350,14 +500,16 @@ func Read(path string) ([]byte, error) {
 // caller's to report.
 func Open(path string) (*os.File, error) {
 	var out *os.File
-	err := retry(func() error {
-		f, err := openShared(path)
-		if err != nil {
-			return err
-		}
-		out = f
-		return nil
-	}, path)
+	err := readUntilSettled(path, func() error {
+		return retry(func() error {
+			f, err := openShared(path)
+			if err != nil {
+				return err
+			}
+			out = f
+			return nil
+		}, path)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -390,6 +542,8 @@ func openShared(path string) (*os.File, error) {
 // renameIn is Rename inside a root, with the same wait for a reader that
 // has newname open. See WriteIn.
 func renameIn(root *os.Root, oldname, newname string) error {
+	end := beginReplace(filepath.Join(root.Name(), newname))
+	defer end()
 	return retry(func() error { return root.Rename(oldname, newname) },
 		filepath.Join(root.Name(), oldname), filepath.Join(root.Name(), newname))
 }
