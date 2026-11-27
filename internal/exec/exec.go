@@ -937,6 +937,19 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 				// was not going to do anything.
 				_ = c.Process.Kill()
 				_ = c.Wait()
+				// A timeout or cancel that came first explains the failure.
+				// os/exec starts watching the context inside Start, before
+				// the child is resumed, so a deadline that runs out in that
+				// gap kills the still-suspended child, and the resume then
+				// finds its only thread gone. That was reported as a resume
+				// failure, and a grain provider that timed out on a loaded
+				// machine was logged as one that exited non-zero (issue 876,
+				// DIVERGENCE 5.753). The command was ended by the deadline
+				// either way, so the deadline is what to report. A resume that
+				// fails with the context still live is still this error.
+				if cerr := ctx.Err(); cerr != nil {
+					return Result{Duration: time.Since(start)}, ctxRunError(cmd, cerr)
+				}
 				return Result{Duration: time.Since(start)}, fmt.Errorf("%s: %w", cmd.String(), aerr)
 			}
 			r.confinementOff(cmd, aerr)
