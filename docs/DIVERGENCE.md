@@ -52200,6 +52200,54 @@ orchestration steps today and is not changed. Whether a step's job should
 outlive the step by a margin, for a node that answers at the very end, is
 not decided: it expires when the step stops waiting.
 
+#### 5.735.1 Issue 810's real-binary runs: the step's job, the counter and what the orchestration saw (2026-11-27)
+
+Issue 810 stayed open after 5.735 for the one thing 5.735 did not do: run a job
+past its expiry with real `halite-hub` and `halite-node` binaries and read its
+state and `halite_jobs_expired_total` before and after the late return. Both
+runs were made on beastie (FreeBSD 15.1), each in its own directories on its
+own loopback port, with the job's function sleeping longer than the default
+fifteen-minute lifetime.
+
+**A step of 960 s with `timeout: 3600`**, one node, `halite-hub orch run`, in two
+labs started together. One was built from the commit before PR 861 (`10cde67d^`),
+which is the code 5.735 changed, and one from `main` after it.
+
+| | Before 5.735 | After |
+|---|---|---|
+| Orchestration | ended after 16m1s, no error | ended after 16m0s, no error |
+| Step's job | `partial`, one return filed | `complete`, one return filed |
+| `halite_jobs_expired_total` | 2 | 1 |
+| Hub log | `job settled ... partial` at fifteen minutes, then `a return arrived after its job was settled; the job stays partial` | no settlement of the step's job |
+
+So the orchestration carried on and succeeded in both, because the step waits
+for the node's return and not for the job's state. What 5.735 changed is that
+the job's record and the counter now agree with the step. Before it, the record
+read `partial` and the counter counted an expiry for a job whose function ran to
+the end and whose return was filed.
+
+The counter's other count, in both runs, is the lab's own: its readiness poll
+sent a `test.ping` before the node had connected, and that job keeps one return
+outstanding and is settled partial at fifteen minutes. A freshly started lab
+holds one such job; it was listed in a lab that did nothing else.
+
+**The flip the issue suspected does not happen, and that is 5.715's.** With a job
+lifetime of five seconds (`halite-hub run --ttl 5s`) and a function that sleeps
+75 s, the hub's settle loop, which ticks once a minute, settles the job partial
+and counts it. The node's return then arrives and is filed, and the job stays
+`partial` with the counter at 1.
+`TestAJobThatOutlivesItsExpiryStaysPartialWhenItsReturnArrives` holds this, in
+about 86 s. With the guard in `completeIfDone` removed, it fails at "the job is
+"complete" after its late return", so it tests that guard and does not pass
+regardless.
+
+**Not covered.** One node, one platform. The two orchestration runs are not a
+test: at sixteen minutes they would add that to every CI leg, so they are
+recorded here and not repeated, and the faster test covers the guard. A step
+longer than its `timeout`, and a signed step, were not run. The test's margin
+between the settle tick and the late return is about ten seconds, on a machine
+this host's size; a much slower one could narrow it.
+
 ### 5.736 SigV4's canonical query was sorted before encoding, and AWS refused it (2026-11-24)
 
 Issue 613, item 3, from the issue 321 audit, where it was run only against a
