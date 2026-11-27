@@ -42,7 +42,7 @@ var (
 var Keys = []Key{
 	// Identity and transport.
 	{"node_id", nodeOnly, "", "This node's identity. Resolution order is in SPEC section 7.2.", "7.2"},
-	{"node_id_source", nodeOnly, "auto", "Where the node ID comes from: auto, config, env, file, cloud, fqdn, hostname.", "7.2"},
+	{"node_id_source", nodeOnly, "auto", "Has no effect: the node ID always follows the fixed order of SPEC 7.2. Meant to choose where it comes from: auto, config, env, file, cloud, fqdn, hostname.", "7.2"},
 	{"node_id_caching", nodeOnly, "true", "Pin the resolved node ID at first enrollment.", "7.2"},
 	{"node_id_lowercase", nodeOnly, "false", "Lowercase the resolved node ID.", "7.2"},
 	{"node_id_remove_domain", nodeOnly, "false", "Strip the domain from a resolved FQDN.", "7.2"},

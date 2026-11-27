@@ -208,3 +208,21 @@ func allWaivers() map[string]string {
 	}
 	return out
 }
+
+// A setting this build reads nothing from must say so where an operator
+// looks it up. node_id_source's text described a choice of source the node
+// does not offer, in the generated configuration reference, while the code
+// and the handbook said the key does nothing (issue 884).
+func TestNodeIDSourceIsDocumentedAsHavingNoEffect(t *testing.T) {
+	if _, unread := UnreadKeys["node_id_source"]; !unread {
+		t.Fatal("node_id_source is no longer an unread key; this test describes a state the code left")
+	}
+	for _, k := range Keys {
+		if k.Name == "node_id_source" && !strings.Contains(k.Doc, "no effect") {
+			t.Errorf("the key table's text does not say it has no effect: %q", k.Doc)
+		}
+	}
+	if detail := KeyDocs["node_id_source"].Detail; !strings.Contains(detail, "no effect") {
+		t.Errorf("the key's detail does not say it has no effect: %q", detail)
+	}
+}

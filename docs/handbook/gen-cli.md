@@ -26,8 +26,8 @@ Usage:
   halite-node renew                              replace this node's certificate
   halite-node connect                            hold the stream open to the hub
   halite-node event send <tag> [json]            put an event on the hub's bus
-  halite-node doctor                            check this node and say what to fix
-  halite-node verify-evidence                   check this node's local job record
+  halite-node doctor                             check this node and say what to fix
+  halite-node verify-evidence                    check this node's local job record
 
 enroll and connect flags:
   --hub <address>      the hub to dial, default from the hub setting
@@ -158,13 +158,15 @@ run flags:
   --as <name>          which operator certificate to present
   --cert <path>        an operator certificate, instead of --as
   --key <path>         its key
-  --hub <address>      the hub to reach, default localhost
+  --hub <address>      the hub to reach, default the host of listen, or localhost
+                       when listen is a wildcard
   --server-name <name> the name to verify in the hub's certificate
   -L -E -G -P -I -J -S -N -C   the target kinds of SPEC section 8
 
 runner flags:
   --as <name>          which operator certificate to present
-  --hub <address>      the hub to reach, default localhost
+  --hub <address>      the hub to reach, default the host of listen, or localhost
+                       when listen is a wildcard
 
 orch flags:
   --env <name>         the environment to compile the orchestration from
@@ -193,7 +195,8 @@ ssh flags:
 metrics flags:
   --filter <substring> only families whose name contains this
   --as <name>          which operator certificate to present
-  --hub <address>      the hub to reach, default localhost
+  --hub <address>      the hub to reach, default the host of listen, or localhost
+                       when listen is a wildcard
 
 event flags:
   --tag <glob>         a tag to follow, repeatable as a comma list
