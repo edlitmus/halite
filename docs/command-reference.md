@@ -1660,8 +1660,8 @@ hooks:
 
 The signature is HMAC-SHA-256 over the timestamp and the raw bytes
 together, sent as `X-Halite-Signature` with `X-Halite-Timestamp`. A
-delivery outside the replay window is refused, and one whose nonce has
-already been accepted is refused, as is a second copy while the first is
+delivery outside the replay window is refused, and one whose signature
+has already been accepted is refused, as is a second copy while the first is
 still being delivered. `auth: token` is another mode, and `auth: mtls` the
 third: the sender's certificate must chain to `hook_client_ca` and name the
 hook's `client`.
@@ -1678,7 +1678,7 @@ it wrote it. The `principal` a hook names is an ordinary RBAC
 identity: it gets a binding in the policy file like any other, and a
 hook that may cause a deployment says so there.
 
-The nonce is recorded once the delivery has landed on the bus, not when
+The signature is recorded once the delivery has landed on the bus, not when
 the signature verifies. A delivery that fails downstream is one the
 sender will retry with the same signature, and refusing that as a replay
 would turn a transient fault into the lost event a webhook exists to
