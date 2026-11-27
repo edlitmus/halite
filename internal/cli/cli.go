@@ -122,7 +122,7 @@ func Parse(argv []string) (*Args, error) {
 
 		case looksLikeKwarg(arg):
 			key, val, _ := strings.Cut(arg, "=")
-			parsed, err := parseKwargValue(val)
+			parsed, err := ParseKwargValue(val)
 			if err != nil {
 				return nil, fmt.Errorf("argument %s: %w", key, err)
 			}
@@ -153,13 +153,19 @@ func looksLikeKwarg(arg string) bool {
 	return true
 }
 
-// parseKwargValue reads a command line value.
+// ParseKwargValue reads a command line value.
 //
 // A bare value is a string. JSON is recognised only when it is written as
 // JSON, which is how a structured argument is passed unambiguously:
 // `pkgs='["a","b"]'`. That is the whole departure from Salt here, and it
 // is what stops a version 1.0 from becoming a float.
-func parseKwargValue(s string) (any, error) {
+//
+// Exported so that `halite-hub policy test --kwarg` reads a value as `run`
+// does. It kept every value a string, so a rule requiring `test: true`
+// (compared by type) allowed the call `run` sent and denied the one it was
+// asked about (issue 881). One parser with two callers cannot drift; two
+// copies of its rules could, and did.
+func ParseKwargValue(s string) (any, error) {
 	trimmed := strings.TrimSpace(s)
 	if len(trimmed) >= 2 {
 		switch trimmed[0] {

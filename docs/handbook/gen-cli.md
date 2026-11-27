@@ -179,7 +179,9 @@ jobs flags:
 
 policy flags:
   --runner             evaluate the function as a runner rather than a job
-  --kwarg <k=v>        an argument to include, repeatable as a comma list
+  --kwarg <k=v>        a keyword argument to include, repeatable as a comma
+                       list; the value is read as run reads one, so true
+                       and false are booleans and anything else a string
 
 ssh flags:
   --roster <backend>   flat (default), sshconfig, cache, or ansible
