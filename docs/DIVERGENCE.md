@@ -52971,6 +52971,37 @@ SPEC's table; read that rather than this entry for the tally.
 from those entries. None was re-run for this entry, and `make perf` repeats
 only the two benchmarks.
 
+### 5.750 `halite-node enroll -h` enrolled instead of printing help (2026-11-27)
+
+`halite-node`, `halite-hub` and `halite-api` each stop at `--help` after a
+subcommand and print the usage text, so that a command which starts a
+listener or reaches for key material can be asked what it is. The
+parser reads `-h` as a flag called `h`, and the three programs looked only
+for `help`. So `halite-node enroll -h` was an ordinary `enroll`. On the
+FreeBSD development host it fetched the hub CA, matched the pinned
+fingerprint, and stopped only because `chmod` of the pki directory was
+refused. On a host with a writable pki directory it could have posted an
+enrolment request. `renew -h`, `connect -h` and `halite-hub serve -h` were
+the same case.
+
+The fix is one method, `cli.Args.Help`, true for `--help` or for the
+presence of `-h`, and the three programs call it. Presence is what counts,
+because `-h` takes the next word as its value.
+
+Two paths had to agree here: the flag the parser stores and the flag the
+program asks about. Each test starts the command with the flag, and for
+`halite-node` it counts the connections that reach a TLS server standing in
+for the hub and the files written under the pki directory. With the call
+sites put back as they were, the three `-h` cases for `enroll`, `renew` and
+`connect` fail, and so do the `halite-hub` and `halite-api` cases.
+
+**Not covered.** The three `halite-ext-*` programs read no arguments and were
+not changed. Subcommands that handle a word such as `help` themselves (for
+example `halite-hub keys help`) were not changed. Nothing was run against a
+live hub. The reproduction on this host ran a real `enroll` twice against the
+configured hub, and on both runs it stopped at the `chmod` before any
+request was posted. The hub's key list was not read afterwards.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

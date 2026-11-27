@@ -58,6 +58,11 @@ func TestEveryFlagIsDocumentedAndParsed(t *testing.T) {
 		FindAllStringSubmatch(source.String(), -1) {
 		parsed["--"+f[1]] = true
 	}
+	// `--help` is read through cli.Args.Help, which also answers to `-h`
+	// (issue 882), so no accessor names it beside the flag.
+	if strings.Contains(source.String(), "args.Help()") {
+		parsed["--help"] = true
+	}
 	if len(documented) == 0 || len(parsed) == 0 {
 		t.Fatal("no flags were found; this test has stopped checking anything")
 	}

@@ -185,7 +185,7 @@ func main() {
 	// `--help` after any subcommand describes the program rather than
 	// running it. A command that starts a listener or reaches for key
 	// material needs a way to be asked what it is without doing it.
-	if args.Bool("help", false) {
+	if args.Help() {
 		fmt.Print(usage)
 		os.Exit(0)
 	}

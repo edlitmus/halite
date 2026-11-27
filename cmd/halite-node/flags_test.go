@@ -16,6 +16,7 @@ import (
 // exception with a reason beats a looser rule that lets a real one
 // through.
 var flagExceptions = map[string]string{
+	"--help":        "read through cli.Args.Help, which also answers to -h (issue 882)",
 	"--file-root":   "read through repeatedFlag, which takes the name as an argument",
 	"--pillar-root": "read through repeatedFlag, which takes the name as an argument",
 }

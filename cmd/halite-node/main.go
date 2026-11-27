@@ -131,7 +131,7 @@ func main() {
 
 	// `--help` after any subcommand describes the program rather than
 	// running it: `enroll --help` must not enrol.
-	if args.Bool("help", false) {
+	if args.Help() {
 		fmt.Print(usage)
 		os.Exit(0)
 	}
