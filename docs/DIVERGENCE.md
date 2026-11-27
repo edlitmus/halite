@@ -52977,6 +52977,48 @@ not held to the code by any audit, so they can drift again in the same
 way. A test that compared each chapter's stated defaults with
 `docs/configuration.md` would have caught the `mine_interval` unit.
 
+### 5.748.1 The search outside the handbook found the nonce wording in two more places (2026-11-27)
+
+5.748 corrected the handbook and said it had not searched `SPEC.md` or
+`docs/` outside the handbook for the same claims (issue 885). They were
+searched on `main` at `c2a29794`, for `nonce` and for `mine_interval` with
+"second", "interval" and "every N" beside it, in every tracked file except
+the ledger and the vendored tree.
+
+- **`mine_interval`.** No file outside the handbook gives it in seconds.
+  SPEC section 19.5 names the key without a unit, and the key table, the
+  generated reference and `docs/command-reference.md` already say minutes or
+  show `60`. Nothing was changed.
+- **The webhook returner's nonce.** No file outside the handbook calls it
+  random, but two said something close to it was checked or recorded as a
+  nonce when the thing kept is the signature. `docs/command-reference.md`
+  said the API refuses a delivery "whose nonce has already been accepted"
+  and that "the nonce is recorded once the delivery has landed". The
+  hook's replay record is keyed on the hook path and the signature
+  (`verifySignature`, `internal/api/hook.go`), and 5.684 records that
+  `X-Halite-Nonce` is neither signed nor checked. An operator reading the
+  old text could think a fresh nonce header makes a replay acceptable, or
+  that the header is what the API records. Both now say signature.
+- **`returner_webhook_attempts`.** Its key text, also copied into the
+  generated configuration reference, said "the nonce is recorded after the
+  delivery lands". That is the receiver's behaviour, put in the sender's
+  key. It now says what the returner does: each attempt is stamped when it
+  is sent, so a retry in the same second repeats the signature and the
+  nonce header, which is a digest and not random, and the hook ingress
+  records a signature only after the delivery lands.
+
+SPEC section 22.2 still lists "a nonce cache" among the hook protections. The
+cache holds signatures, which does the job a nonce cache does, so SPEC was
+not edited. SPEC section 6.3's nonce, 128 bits of randomness, is the job
+envelope's and is random (`job.Nonce`); the handbook's two uses of "random
+nonce" for jobs, in chapters 12 and 15, are right.
+
+**Not covered.** No test holds this prose to the code. A test that read the
+prose would have to know which "nonce" a sentence means, and the three
+places that were wrong used the word loosely and not falsely. The search was
+by word: a passage that makes the claim in other words was not found.
+Chapters 12 and 15's job nonce was read against `job.Nonce` and not run.
+
 ### 5.749 The test-layer and scale rows of 5.2 and 5.57 named versions and gaps that had moved (2026-11-26)
 
 5.2 and 5.57 are tables that were true when written and have been read

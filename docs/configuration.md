@@ -1445,7 +1445,7 @@ Bounds one delivery.
 
 Delivery attempts before a return is spooled.
 
-Delivery attempts before the return is spooled instead. The nonce is recorded after the delivery lands, not when the signature verifies, so a retry after a transient failure is not refused as a replay.
+Delivery attempts before the return is spooled instead. Each attempt is stamped when it is sent, so a retry in the same second repeats the signature and `X-Halite-Nonce`, which is a digest of the stamp and the body and not random. The API's hook ingress records a signature only after the delivery lands, so it does not refuse that retry as a replay.
 
 ### `returner_webhook_ca_file`
 
