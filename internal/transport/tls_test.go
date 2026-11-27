@@ -60,7 +60,9 @@ func newFixtureOn(t *testing.T, handler http.Handler, wrap func(net.Listener) ne
 	if wrap != nil {
 		tcp = wrap(tcp)
 	}
-	ln := tls.NewListener(tcp, ServerConfig(cert, ca.Cert, denied))
+	// As hub.Listen does. A wrap that hands back its own connection type
+	// is left as it is: DrainingListener wraps only a *net.TCPConn.
+	ln := tls.NewListener(DrainingListener(tcp), ServerConfig(cert, ca.Cert, denied))
 	closed := make(chan struct{}, 64)
 	srv := &http.Server{Handler: handler, ConnState: func(_ net.Conn, state http.ConnState) {
 		if state == http.StateClosed {
