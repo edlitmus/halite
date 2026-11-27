@@ -54,8 +54,8 @@ Usage:
   halite-node renew                              replace this node's certificate
   halite-node connect                            hold the stream open to the hub
   halite-node event send <tag> [json]            put an event on the hub's bus
-  halite-node doctor                            check this node and say what to fix
-  halite-node verify-evidence                   check this node's local job record
+  halite-node doctor                             check this node and say what to fix
+  halite-node verify-evidence                    check this node's local job record
 
 enroll and connect flags:
   --hub <address>      the hub to dial, default from the hub setting

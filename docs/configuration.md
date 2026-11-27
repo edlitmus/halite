@@ -239,9 +239,9 @@ Turns `web1.prod.example.com` into `web1`. Convenient and lossy: two machines in
 
 *`halite-node` · `auto` · SPEC section 7.2*
 
-Where the node ID comes from: auto, config, env, file, cloud, fqdn, hostname.
+Has no effect: the node ID always follows the fixed order of SPEC 7.2. Meant to choose where it comes from: auto, config, env, file, cloud, fqdn, hostname.
 
-`auto` tries each source in the order SPEC 7.2 gives and takes the first that answers. Pin it to one — `config`, `fqdn`, `cloud` — when a machine has several plausible names and you want to know which one it will pick before it picks.
+Has no effect. The node always resolves its name in one fixed order: `--id`, `node_id`, `HALITE_NODE_ID`, the `node_id` file under the root, the fully qualified domain name, then the host name. Pinning one source is not built, and neither is the cloud instance ID step of SPEC 7.2, so a value here is read and ignored. To fix the name of a machine that has several plausible ones, set `node_id` (DIVERGENCE 5.94).
 
 ## Filesystem layout
 

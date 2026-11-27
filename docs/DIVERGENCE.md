@@ -53155,6 +53155,46 @@ there. The hub test's own rate after the fix was not measured against its
 1-in-2,100: the file-level runs are 6,000 times larger. The race detector
 did not run, because this host has no C compiler.
 
+### 5.752 Three texts the generated references copy described behaviour that had changed (2026-11-27)
+
+`docs/handbook/gen-cli.md` and `docs/configuration.md` are generated from the
+usage text and the key tables, so a wrong sentence in the source is a wrong
+sentence in the handbook, and the audits that hold the generated pages to the
+code compare the copy with the source and not the source with the program.
+The handbook review of 2026-11-26 (5.748) found these three while it corrected
+the prose, and they were filed rather than fixed there:
+
+- **`halite-hub --help` said `--hub` defaults to `localhost`.** It has been
+  the host of `listen` since 5.725, and `localhost` only for a wildcard. Three
+  command groups carried the line: `run`, `runner` and `metrics`. An operator
+  with `listen: 10.0.0.5:4510` read that a bare `halite-hub run` would dial
+  loopback, which was the old bug and is not the behaviour.
+- **`node_id_source` was documented as a working choice.** Its key text said
+  `auto` tries each source and the detail text said to pin one, `cloud`
+  among them. `resolveNodeID` has no such setting: it tries `--id`,
+  `node_id`, `HALITE_NODE_ID`, the pinned file, the fully qualified domain
+  name and then the host name, whatever the key says, and `UnreadKeys` says
+  naming one source is not built. 5.94 records the key as declared inert, and
+  that the ground given at the time, that the order was implemented, was
+  untrue until the fully qualified domain name step was built. Both texts now
+  say the key has no effect and give the real order. Chapter 8 already did.
+- **Two lines of `halite-node`'s usage were one column out**: `doctor` and
+  `verify-evidence`.
+
+Nothing in the code changed except the three texts. Each has a test, and
+each was put back to the old text to watch it fail:
+`TestUsageSaysWhereAnOperatorCommandReachesTheHubByDefault` reads the hub's
+usage and refuses `default localhost`; `TestNodeIDSourceIsDocumentedAsHavingNoEffect`
+holds the key texts to `UnreadKeys`; `TestUsageCommandDescriptionsShareAColumn`
+finds the second column of the node's command list in one place.
+
+**Not covered.** The key-text test names `node_id_source` only. The other
+unread keys (`log_level_file`, `regex_engine`) have different reasons and
+were not looked at, and the settings in `InertKeys` were not read for
+whether their texts say they are refused at startup. The "default localhost"
+test reads the hub's usage text; it does not read the handbook chapters, which
+were searched for the phrase and held none.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

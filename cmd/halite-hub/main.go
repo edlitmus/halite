@@ -94,13 +94,15 @@ run flags:
   --as <name>          which operator certificate to present
   --cert <path>        an operator certificate, instead of --as
   --key <path>         its key
-  --hub <address>      the hub to reach, default localhost
+  --hub <address>      the hub to reach, default the host of listen, or localhost
+                       when listen is a wildcard
   --server-name <name> the name to verify in the hub's certificate
   -L -E -G -P -I -J -S -N -C   the target kinds of SPEC section 8
 
 runner flags:
   --as <name>          which operator certificate to present
-  --hub <address>      the hub to reach, default localhost
+  --hub <address>      the hub to reach, default the host of listen, or localhost
+                       when listen is a wildcard
 
 orch flags:
   --env <name>         the environment to compile the orchestration from
@@ -129,7 +131,8 @@ ssh flags:
 metrics flags:
   --filter <substring> only families whose name contains this
   --as <name>          which operator certificate to present
-  --hub <address>      the hub to reach, default localhost
+  --hub <address>      the hub to reach, default the host of listen, or localhost
+                       when listen is a wildcard
 
 event flags:
   --tag <glob>         a tag to follow, repeatable as a comma list
