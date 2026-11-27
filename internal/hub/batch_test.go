@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -96,25 +97,52 @@ func (l *lab) connectTracking(t *testing.T, client *transport.Client, nodeID str
 }
 
 // waitForState polls until the hub reports the state asked for.
+//
+// A failed poll says how far the wait had got and which of the handler's
+// reads failed. Issue 890 is a single "no such job" on Windows under load
+// that has not come back since, and its report could say neither: whether
+// any poll had succeeded before it, and whether it was the handler's own
+// Get (404) or the second read of the record inside Missing (500, with
+// the same text).
 func waitForState(t *testing.T, op *transport.Client, jid, want string) *transport.JobStatus {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	const limit = 30 * time.Second
+	started := time.Now()
 	var last *transport.JobStatus
-	for {
+	var seen []string
+	for polls := 0; ; polls++ {
 		status, err := op.JobStatus(context.Background(), jid)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("poll %d of %s failed after %d succeeded (%v in; states seen %v): HTTP %s: %v",
+				polls+1, jid, polls, time.Since(started).Round(time.Millisecond), seen,
+				httpStatusOf(err), err)
 		}
 		last = status
+		if len(seen) == 0 || seen[len(seen)-1] != status.State {
+			seen = append(seen, status.State)
+		}
 		if status.State == want {
 			return status
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s is %q after five seconds, not %q (%d returns)",
-				jid, last.State, want, len(last.Returns))
+		if time.Since(started) > limit {
+			t.Fatalf("%s is %q after %v, not %q (%d returns; states seen %v)",
+				jid, last.State, limit, want, len(last.Returns), seen)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// httpStatusOf is the status the hub answered with, when err carries one.
+func httpStatusOf(err error) string {
+	var refused *transport.RefusedError
+	if errors.As(err, &refused) {
+		return fmt.Sprint(refused.Status)
+	}
+	var status *transport.StatusError
+	if errors.As(err, &status) {
+		return fmt.Sprint(status.Status)
+	}
+	return "none (no answer)"
 }
 
 // SPEC 9.3: at most N at a time, waiting for returns before advancing.
