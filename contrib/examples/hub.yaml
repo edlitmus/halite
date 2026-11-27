@@ -31,8 +31,9 @@ enrollment_mode: manual
 # Issued certificates last this long. A node renews at half of it, and so
 # does the hub's own serving certificate, without a restart.
 certificate_lifetime: 2160h
-# ecdsa-p256 by default. ecdsa-p384 for a longer key.
-key_algorithm: ecdsa-p256
+# ecdsa-p384 by default. ecdsa-p256 for a shorter key, which a node already
+# enrolled on P-256 keeps at renewal either way.
+key_algorithm: ecdsa-p384
 
 # The tree this hub serves. It must not hold state_dir, cache_dir, or
 # pki_dir: `serve` refuses to start on an overlap, because serving the

@@ -51312,6 +51312,40 @@ verifier's acceptance of P-384 is the unchanged code at `jobsign.go`. A FIPS
 build making the P-384 CA; `make fips-test` runs the unit tests above as a
 FIPS build.
 
+### 5.724.1 The example hub.yaml still pinned P-256 and called it the default (2026-11-27)
+
+5.724 changed the default to P-384 and updated the key table, the usage
+text, SPEC 7.1 and the handbook. It did not reach three files that carry
+the old value as a sample:
+
+- `contrib/examples/hub.yaml` set `key_algorithm: ecdsa-p256` under the
+  comment "ecdsa-p256 by default". Copied as chapter 30 says, a new hub
+  made a P-256 CA, a P-256 serving certificate and P-256 operator
+  certificates, and the comment told its operator that was the default.
+- `docs/handbook/28-hardening.md` and `docs/command-reference.md` showed a
+  P-256 public key (`MFkw…`) in `job_signer_keys` and `state_signer_keys`
+  samples. `halite-hub keys signer create` now makes a P-384 key, whose
+  public key starts `MHYw…`. The prefix was taken from a key made by the
+  built binary.
+
+The example now sets `ecdsa-p384` and says P-256 is the shorter choice.
+Chapter 28 and the command reference show the P-384 prefix. P-256 stays
+accepted everywhere (5.724), so no example was removed.
+
+Two paths had to agree: the example and the key table. The example loaded
+cleanly with either value, so the existing example tests could not see the
+difference. `TestTheHubExampleNamesTheKeyAlgorithmDefault` reads the
+"<algorithm> by default" comment and the `key_algorithm` line from the file
+and compares both with the table's default. With the old file put back, it
+fails on both.
+
+**Not changed.** `docs/proposals/764-signed-state-content.md` and
+`contrib/keys/halite-release.pub` still show `MFkw…`. The proposal is a
+record of what was proposed, and the other is the release signing key,
+which really is P-256. **Not covered.** Only the "by default" claim in
+`hub.yaml` is held to the table. A sample in another example or chapter that
+states a default in other words is not.
+
 ### 5.725 The operator command line dialled localhost when the hub listened on one address
 
 `operatorClient` (`cmd/halite-hub/run.go`) chose the hub's address in this
