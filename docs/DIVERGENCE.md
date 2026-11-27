@@ -53592,6 +53592,35 @@ that leg, not the same as it. Passing 300 times, idle and beside a full
 of it. The five entries' sentences were kept, with a pointer here, rather
 than rewritten.
 
+
+#### 5.757.1 `internal/winsvc`'s live tests under `-race` (2026-11-27)
+
+The live tests that 5.757 left out have now run under `-race`, on the same
+host (Ed-PC, Windows 11 Pro 26H2, build 26320.10022, go 1.27.4, GCC 16.2.0),
+with `main` at `a0006a75`. The shell was elevated and `HALITE_SYSTEM_LIVE=1`
+was set. All seven passed, and none skipped:
+
+- `TestLiveADelegatedAccountCanUseItsRightsOnOneService` (5.746)
+- `TestLiveStartWaitsForAServiceThatIsAlreadyStarting` (5.747)
+- `TestLiveStartWaitsOutAStopInProgress` (5.747)
+- `TestLiveStopWaitsOutAStartInProgress` (5.747)
+- `TestLiveStopWaitsForAStopInProgress` (5.747)
+- `TestLiveRestartRestartsRunningDependentsToo` (5.747)
+- `TestLiveStopNamesTheDependentsInTheWay` (5.747; the decision it holds to is 5.747.1)
+
+The race detector reported nothing. The tests created 12 services, one local
+account, and one grant, on a test service. Afterwards:
+- `sc.exe query` answered 1060 ("does not exist") for each of the 12
+  services;
+- `Get-LocalUser` found no `halitesvc*` account;
+- the lists of services and local users matched snapshots taken before the
+  run;
+- no user profile was left for the account, either as a directory or as a
+  `Win32_UserProfile` entry.
+
+**Not covered.** One run of each, not a stress run, and on Windows 11 only,
+not Windows Server.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
