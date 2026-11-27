@@ -348,7 +348,7 @@ Package eventbus is the hub's event bus: SPEC section 17's durable append-only l
 
 Salt's bus is in-memory ZeroMQ IPC and is lossy by construction — every mature Salt estate has learned this during an incident, when the events that would have explained what happened were the ones that were dropped. This one is a file. A reactor that restarts loses nothing, and an incident can be reconstructed afterwards.
 
-**Files:** `bus.go`, `event.go`, `nodeof.go`; with tests.
+**Files:** `bus.go`, `event.go`, `nodeof.go`, `subject.go`; with tests.
 
 **Exports.**
 
@@ -359,7 +359,10 @@ Salt's bus is in-memory ZeroMQ IPC and is lossy by construction — every mature
 - `MatchTag` (func): MatchTag reports whether a tag matches a glob.
 - `NodeOf` (func): NodeOf is the node an event is about, or "" for one about no node: the envelope's, or failing that the one its tag names.
 - `Open` (func): Open prepares a bus.
+- `Reader` (type): Reader is what a reader knows about the caller who would be shown an event.
 - `SaltTag` (func): SaltTag is the `salt/...` spelling of a halite tag, for `event_tag_compat` — a transition period where an existing consumer cannot be changed at the same time as the estate.
+- `Subject` (type): Subject is what an event with no node is about, for the events whose payload would otherwise go to anyone the policy grants anything: a job's arguments and the nodes it reached, or a runner call's arguments and who made it (issue 886).
+- `SubjectOf` (func): SubjectOf reports what a node-less event is about, and false when the event is not one of those the hub emits about a job or a run, so that the reader falls back to its own rule for the rest.
 - `ValidTag` (func): ValidTag reports whether a tag is one the bus will accept.
 
 ## `internal/returner`

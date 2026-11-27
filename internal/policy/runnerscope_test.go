@@ -70,3 +70,46 @@ func TestAScopeWithinAnotherIsTheirIntersection(t *testing.T) {
 		t.Error("'*' within '*' is not everything")
 	}
 }
+
+// The event stream shows a job or a run whatever nodes it reached only to a
+// caller whose target is the whole estate, written as `*` (issue 886). A
+// union of narrower targets is not that, and neither is a role that grants
+// only act_for.
+func TestSeesEveryNodeNeedsAGrantWithATargetOfStar(t *testing.T) {
+	p, _, err := Load([]byte(`
+roles:
+  everything:
+    - target: '*'
+      functions: ['test.ping']
+  runner-star:
+    - target: '*'
+      runners: ['event.listen']
+  web-and-db:
+    - target: 'web*'
+      functions: ['*']
+    - target: 'db*'
+      functions: ['*']
+  delegate:
+    - act_for: ['local:*']
+  untargeted:
+    - runners: ['event.listen']
+`), "policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for roles, want := range map[string]bool{
+		"everything":  true,
+		"runner-star": true,
+		"web-and-db":  false,
+		"delegate":    false,
+		"untargeted":  false,
+		"nobody":      false,
+	} {
+		if got := p.SeesEveryNode([]string{roles}); got != want {
+			t.Errorf("SeesEveryNode(%s) = %v, want %v", roles, got, want)
+		}
+	}
+	if (*Policy)(nil).SeesEveryNode([]string{"everything"}) {
+		t.Error("a nil policy shows everything")
+	}
+}

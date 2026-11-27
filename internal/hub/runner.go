@@ -393,12 +393,12 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 		// whoever reads the job reads the outcome rather than "started".
 		s.goBackground(func() {
 			final, err := later.wait()
-			s.finishRunner(jid, call.Fun, started, final, err)
+			s.finishRunner(jid, call, started, final, err)
 		})
 		return &RunnerOutcome{JID: jid, Fun: call.Fun, Success: true, Return: later.now,
 			Duration: s.now().Sub(started)}, nil
 	}
-	return s.finishRunner(jid, call.Fun, started, ret, err), nil
+	return s.finishRunner(jid, call, started, ret, err), nil
 }
 
 // laterReturn is a runner's answer that is not its outcome: now is what
@@ -412,7 +412,8 @@ type laterReturn struct {
 
 // finishRunner closes a runner call: its `ret` event and its return in
 // the job cache, written from what the runner returned.
-func (s *Server) finishRunner(jid job.ID, fun string, started time.Time, ret any, err error) *RunnerOutcome {
+func (s *Server) finishRunner(jid job.ID, call RunnerCall, started time.Time, ret any, err error) *RunnerOutcome {
+	fun := call.Fun
 	out := &RunnerOutcome{JID: jid, Fun: fun, Success: true}
 	out.Duration = s.now().Sub(started)
 	// The value and the error both, when a runner produced both. An
@@ -426,12 +427,20 @@ func (s *Server) finishRunner(jid job.ID, fun string, started time.Time, ret any
 		out.Err = err.Error()
 	}
 
-	s.emit(tagRunRet(string(jid)), "", map[string]any{
-		"jid":     string(jid),
-		"fun":     fun,
-		"success": out.Success,
-		"error":   out.Err,
-	})
+	// Who made the call travels with it, as it does on the `new` event, so
+	// that a reader can show a run's end to the one whose run it was and to
+	// nobody else (issue 886): the event carries no node to judge it by.
+	ended := map[string]any{
+		"jid":       string(jid),
+		"fun":       fun,
+		"success":   out.Success,
+		"error":     out.Err,
+		"principal": call.Principal,
+	}
+	if call.OnBehalfOf != nil {
+		ended["on_behalf_of"] = call.OnBehalfOf.Principal
+	}
+	s.emit(tagRunRet(string(jid)), "", ended)
 	s.recordRunnerReturn(out, started)
 	return out
 }

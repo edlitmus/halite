@@ -228,8 +228,9 @@ Look for a reaction whose output tag matches a reactor pattern, a missing
    knew were secret, which means a secret that arrived any other way (a plain
    pillar value, a `cmd.run` argument, a template) is *not* redacted. Check the
    job cache (`jobs lookup`) and the event stream for the string, and
-   `halite/job/<jid>/new` events, which carry arguments
-   ([chapter 27](27-http-api.md) records that gap).
+   `halite/job/<jid>/new` events, which carry arguments. A caller whose target
+   is `*` could read them from the stream
+   ([chapter 27](27-http-api.md) says who else could).
 5. Afterwards: move the value to encrypted pillar or a secrets manager, and
    stop passing secrets as arguments.
 

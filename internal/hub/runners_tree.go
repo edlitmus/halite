@@ -636,14 +636,30 @@ func (c *RunnerContext) readVisible(bus *eventbus.Bus, from string, globs []stri
 
 // visibleEvents keeps the events the caller may see: one about a node
 // outside its scope is dropped, as the API's event stream drops it, by
-// the same eventbus.NodeOf. One about no node -- a job's creation, the
-// reactor's own -- is kept.
+// the same eventbus.NodeOf. One about no node is kept, except a job's and a
+// run's, which carry arguments and are judged by what they are about, by the
+// same eventbus.SubjectOf and the same verdict as the API's stream (issue
+// 886). This used to keep a job's creation for every caller.
 func (c *RunnerContext) visibleEvents(events []eventbus.Event) []eventbus.Event {
+	reader := eventbus.Reader{
+		Everything: c.Scope.Everything(),
+		Node:       c.Visible,
+		Made: func(principal, onBehalfOf string) bool {
+			return principal == c.Principal && onBehalfOf == actingFor(c.OnBehalfOf)
+		},
+	}
 	out := events[:0:0]
 	for i := range events {
-		if node := eventbus.NodeOf(&events[i]); node == "" || c.Visible(node) {
-			out = append(out, events[i])
+		if node := eventbus.NodeOf(&events[i]); node != "" {
+			if c.Visible(node) {
+				out = append(out, events[i])
+			}
+			continue
 		}
+		if subject, judged := eventbus.SubjectOf(&events[i]); judged && !subject.VisibleTo(reader) {
+			continue
+		}
+		out = append(out, events[i])
 	}
 	return out
 }

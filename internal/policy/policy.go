@@ -742,9 +742,31 @@ func (p *Policy) VisibleNode(roles []string, node string) bool {
 	return false
 }
 
+// SeesEveryNode reports whether a role set has a rule whose target is the
+// whole estate, written as `*`: the caller of an event stream who may be
+// shown a job or a run whatever nodes it reached. It is the event stream's
+// form of Scope.Everything, and is as strict: a union of narrower targets
+// that happens to cover today's fleet is not the estate.
+func (p *Policy) SeesEveryNode(roles []string) bool {
+	if p == nil {
+		return false
+	}
+	for _, role := range roles {
+		for _, rule := range p.Roles[role] {
+			// A rule that grants nothing but `act_for` is not a grant
+			// (HasAnyRule), whatever target it carries.
+			if rule.Target == "*" && (len(rule.Functions) > 0 || len(rule.Runners) > 0) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // HasAnyRule reports whether a role set grants anything at all.
 //
-// It is what an event with no node is filtered by: a job's, a key's, or
+// It is what an event with no node is filtered by, except for a job's and a
+// run's (eventbus.SubjectOf), which are filtered by what they are about: a job's, a key's, or
 // the reactor's own events are not about a node, so target coverage has
 // nothing to compare. Someone bound to no rule sees none of them.
 //
