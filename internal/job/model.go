@@ -148,6 +148,17 @@ type Job struct {
 	// is in the collector, and the identifier is on the job's log lines,
 	// which is where an operator looks for it afterwards.
 	TraceParent string `json:"-"`
+	// Unreached is the nodes the hub did not send this job to when it
+	// dispatched it: not connected, or connected and too far behind to take
+	// it. A caller that waits for returns waits for Nodes less these.
+	//
+	// Not serialised, for the reason TraceParent is not: it is the answer to
+	// one dispatch, read by the handler that made it, and not a record. It
+	// had been worked out a second time by that handler, from a second look at
+	// the connected set after the dispatch was over, and a node that
+	// connected between the two looks was reported present for a job it was
+	// never sent (issue 904).
+	Unreached []string `json:"-"`
 	// Target and TargetKind are what the operator typed, kept so that
 	// `jobs show` can say what was asked for and not only who answered.
 	Target     string `json:"target,omitempty"`

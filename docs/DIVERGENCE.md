@@ -53479,6 +53479,59 @@ client each, no retry, and every one must report its own alert.
   to do.
 - The race detector did not run, because this host has no C compiler.
 
+### 5.756 `halite-hub run` waited for a return from a node the job was never sent to (2026-11-27)
+
+Issue 904, from one failure on the `test (freebsd)` leg of PR 901 (run
+46052976670): `TestAResumeAfterAHubCrashDoesNotRepeatFinishedSteps` timed out
+after 308 s, and the hub log showed the test's `halite-hub run orch1
+test.ping` loop stop reaching the hub for the rest of the deadline. The last
+dispatch had logged `delivered 0` at 18:57:45.308417, and the node connected at
+18:57:45.308548, 131 microseconds later.
+
+`halite-hub run` waits for one return from each node the submit response
+reports as reached: `len(nodes) - len(absent)`. `Dispatch` decided who was
+reached from one look at the connected set (`absent`) and the sends it made.
+The submit handler (`internal/hub/jobs.go`) then worked out `absent` again, from
+a second look at `Connected()` taken after `Dispatch` returned. A node that
+connected between the sends and that look was reported present for a job it was
+never sent, so `run` waited for its return to the end of the gather window, five
+minutes. The API's `/v1/run` waits on the same figure and had the same fault.
+That is the two-paths shape: two looks at one fact, taken at two moments.
+
+A node in the connected set can also refuse the send, when its queue is full
+(`Fleet.Send` reports false for "too far behind to take it"), and was reported
+present too. That needs no race, and is what the test uses.
+
+**Fixed.** `deliver` now returns the nodes that refused the send, and `Dispatch`
+puts them on the job as `Unreached`, a field that is not serialised, as
+`TraceParent` is not, because it is the answer to one dispatch and not a record.
+The handler reports it as `absent`. A batched job has not been sent to anyone when
+`Dispatch` returns, so its `Unreached` is the dispatch's own look at the connected
+set, which is what the handler's second look approximated.
+
+**Shown.** `TestTheSubmitResponseNamesTheNodesTheJobWasNotSentTo` attaches a
+stream whose queue is full beside a node that answers, and submits to both. On the
+old code the response says nothing was unreached; it fails. Taking `Unreached` from
+the dispatch's earlier look at the connected set, and not from the sends, fails it
+too, which is what says the sends are the thing that must be read.
+
+**The test.** The orchestration test's operator calls are bounded at 30 s and
+the last one's output is printed when a wait times out. `waitFor` checks its
+condition only between calls, so one call that never returned outlasted the
+60 s it was given, and the failure text said neither which call nor what it had
+printed.
+
+**Not covered.** The CI failure was not reproduced: the race is 131 microseconds
+wide and the test above produces the same disagreement without it. That the
+fix removes the CI failure is inferred from the log and the code, and not
+shown by a run on a FreeBSD runner. `Dispatch`'s own `absent` is still the look at
+the connected set that decides `--offline require` and `--offline queue`, and a
+node that connects after that look under `queue` is both queued and, if its send
+happens to land, sent; the node's replay guard refuses the second copy. The CLI
+still prints `not connected` for a node that was connected and refused the send.
+The orchestration step's wait (`awaitReturns`) was read and does not use the
+submit response, so it was not changed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

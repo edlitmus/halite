@@ -276,7 +276,7 @@ func TestChaosDiskFull(t *testing.T) {
 	}
 	// Nothing is connected, so nothing is sent; what is being checked is
 	// that a failed record does not become a failed call.
-	sent := l.server.deliver(j, messageFor(j), []string{"web1.example"})
+	sent, _ := l.server.deliver(j, messageFor(j), []string{"web1.example"})
 	if sent != 0 {
 		t.Errorf("deliver reported %d sent to a node that is not connected", sent)
 	}
