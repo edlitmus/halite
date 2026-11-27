@@ -1806,7 +1806,9 @@ privilege escalation path and it is closed here by default.
 `halite-hub event listen --tag 'halite/job/*/ret/*'` streams to a terminal or to a pipe as NDJSON.
 `halite-api` exposes the same as Server-Sent Events at `/v1/events` and as a WebSocket at
 `/v1/ws/events`, both filtered by the caller's RBAC policy so that a caller cannot subscribe to
-events about nodes it may not see.
+events about nodes it may not see. A job's creation and a runner call's, which carry
+arguments and name no node, are filtered by what they are about: a job reaches a caller only when every
+node it reached is in the caller's scope, and a runner call reaches only its caller (DIVERGENCE 5.754).
 
 ## 18. Reactors
 

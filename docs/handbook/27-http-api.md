@@ -276,17 +276,30 @@ and a WebSocket with close code 1008 and the same reason. A client that
 reconnects gets the `401`. The token's idle limit does not end an open stream,
 which is the token in use.
 
-Events are filtered by policy: **a tag that names a node reaches only a caller
-whose policy targets that node**, an event about no node in particular reaches
-any caller granted something, and a principal bound to nothing sees nothing.
+Events are filtered by policy. There are three classes.
 
-> **Known gap:** `halite/job/<jid>/new` has no node in its tag, so it is in
-> the second class, and it carries the job's target, function and
-> **arguments**. In the lab, `alice` (permitted only `web*`) received the
-> `cmd.run` that the self-healing reactor sent to `db1.lab`, argument and all.
-> Until this is closed (the ledger records it), do not put secrets in job
-> arguments, and grant `event.listen` only to roles that are meant to see
-> the whole fleet's activity.
+- **A tag that names a node** reaches only a caller whose policy targets that
+  node.
+- **A job's creation, a job's kill, and a runner call or an orchestration run**
+  carry arguments and name no node in the tag, so they are filtered by what
+  they are about. A job (`halite/job/<jid>/new`, and its `salt/...` copy when
+  `event_tag_compat` is on) reaches a caller only when **every** node it
+  reached is in the caller's scope. One node outside the scope hides the whole
+  event, because the event carries the job's target and arguments. A job that
+  reached no node reaches only a caller whose target is `*`. A runner call or
+  an orchestration run (`halite/run/<jid>/...`) reaches only the operator who
+  made it, and a caller whose target is `*`.
+- **Any other event about no node in particular** reaches any caller granted
+  something. A principal bound to nothing sees nothing.
+
+Before 2026-11-27 the second class was in the third. In the lab, `alice`
+(permitted only `web*`) received the `cmd.run` that the self-healing reactor
+sent to `db1.lab`, argument and all (issue 886, DIVERGENCE 5.754).
+
+A caller with a target of `*` still sees the arguments of every job, so keep
+secrets out of job arguments. Events that a user or a hook sends, and the
+reactor's own events, are still in the third class: their data is whatever the
+sender wrote, and every caller granted something sees it.
 
 ## Webhooks: events from outside
 

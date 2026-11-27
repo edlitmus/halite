@@ -230,9 +230,16 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 	}
 	s.recordOrch(run)
 	s.countOrchestration(string(run.State), compileTook)
-	s.emit(tagOrchRet(string(jid)), "", map[string]any{
+	// Who ran it travels with the event, as on `new`, so that a reader can
+	// show its end to the one whose run it was and to nobody else (issue 886).
+	orchEnded := map[string]any{
 		"jid": string(jid), "state": run.State, "steps": len(run.Steps),
-	})
+		"principal": req.Principal,
+	}
+	if req.OnBehalfOf != nil {
+		orchEnded["on_behalf_of"] = req.OnBehalfOf.Principal
+	}
+	s.emit(tagOrchRet(string(jid)), "", orchEnded)
 	return run, nil
 }
 

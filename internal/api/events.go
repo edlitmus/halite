@@ -18,15 +18,46 @@ import (
 //
 // SPEC 17.4 filters the stream by the caller's policy so that a caller
 // cannot subscribe to events about nodes it may not see. An event that
-// names a node is filtered by target coverage; one that does not — a
-// job's, a key's, the reactor's own — is not about a node, so it goes
-// to anyone the policy grants anything.
+// names a node is filtered by target coverage.
+//
+// One that does not is not about a node, and used to go to anyone the
+// policy grants anything. That was right for a key's or the reactor's own
+// and wrong for a job's creation, which carries the function, its
+// arguments and the nodes it reached, and for a runner call's, which
+// carries its arguments: a caller scoped to web* read what was run on
+// db1 (issue 886). Those are filtered by what they are about, by the rule
+// the hub's event runners share (eventbus.Subject).
 func (s *Server) visible(token *apitoken.Token, e *eventbus.Event) bool {
 	node := eventbus.NodeOf(e)
-	if node == "" {
-		return s.Policy.HasAnyRule(token.Roles)
+	if node != "" {
+		return s.Policy.VisibleNode(token.Roles, node)
 	}
-	return s.Policy.VisibleNode(token.Roles, node)
+	if subject, judged := eventbus.SubjectOf(e); judged {
+		return subject.VisibleTo(s.readerFor(token))
+	}
+	return s.Policy.HasAnyRule(token.Roles)
+}
+
+// readerFor is what the event stream knows about a token's holder, for
+// judging a job or a run.
+//
+// A runner call made through the API is recorded with the API as its
+// principal and the operator as the one it is for, so the operator is
+// the caller of a run when it is named as either. A run the operator made
+// directly names it as the principal and no one it is for.
+func (s *Server) readerFor(token *apitoken.Token) eventbus.Reader {
+	return eventbus.Reader{
+		Everything: s.Policy.SeesEveryNode(token.Roles),
+		Node: func(node string) bool {
+			return s.Policy.VisibleNode(token.Roles, node)
+		},
+		Made: func(principal, onBehalfOf string) bool {
+			if onBehalfOf != "" {
+				return onBehalfOf == token.Principal
+			}
+			return principal == token.Principal
+		},
+	}
 }
 
 // eventStream is `GET /v1/events`: Server-Sent Events.

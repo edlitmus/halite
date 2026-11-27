@@ -53302,6 +53302,71 @@ the same `OSRunner.Run`, so the fix applies, but its own rate was not
 measured. Measured on Windows 11 Pro build 26320 only, not on Windows
 Server. The race detector did not run, because this host has no C compiler.
 
+### 5.754 A job's arguments reached every caller of the event stream, whatever nodes the job was for (2026-11-27)
+
+Issue 886, found by the handbook review (5.748) and recorded in chapter 27
+as a known gap. `halite/job/<jid>/new` carries the function, its arguments,
+the target and the nodes it reached, and names no node in its tag. The
+stream's node filter (`visible`, `internal/api/events.go`) passed any event
+with no node to a caller granted anything (`HasAnyRule`), so a caller scoped
+to `web*` that held `event.listen` was shown `cmd.run` and its arguments for
+a job sent to `db1`. In the lab, `alice` received what the self-healing
+reactor sent to `db1.lab`.
+
+It was wider than the one tag. Every event the hub emits with no node was
+in that class, and five more carry a caller's arguments or name nodes:
+`halite/run/<jid>/new` (a runner call's name and arguments, such as
+`pillar.show_pillar db1`), `halite/run/<jid>/ret`, the two orchestration
+events under `halite/run/<jid>/orch/`, and `halite/job/<jid>/kill`, which
+names the nodes it told. With `event_tag_compat` each is written again under
+`salt/...`, which the node filter does not read either. The hub's own
+`event.replay` and `event.listen` runners kept every node-less event for every
+caller, a second reader of the same events and the looser of the two.
+
+**Fixed.** `eventbus.SubjectOf` says what such an event is about, and
+`Subject.VisibleTo` gives the verdict, taking what the reader knows about the
+caller as a `Reader`. The API's stream and the hub's event runners both call
+it, so the two cannot differ:
+
+- A job is shown when **every** node it reached is in the caller's scope. One
+  is not enough, because the event carries the whole target and the
+  arguments. A job that reached no node is shown only to a caller whose
+  target is `*`, as `jobs.list_jobs` treats one (`jobVisible`).
+- A runner call or an orchestration run is shown to the operator who made
+  it, and to a target of `*`, as `runVisible` and `jobVisible` treat one. Through the API the
+  principal is the API and the operator is `on_behalf_of`, so either names the
+  caller.
+- An event of these tags whose payload cannot be read is shown to nobody short
+  of `*`.
+
+`run/ret` and `orch/ret` carried no owner, so that a reader had nothing to
+judge them by; they now carry `principal` and `on_behalf_of`, as `new` does.
+Events written before this change have no owner and are shown only to `*`.
+
+**Chosen, and what else was possible.** The issue suggested filtering by the
+caller's rights to the function. This filters by scope, as the rest of the
+estate does for jobs: `VisibleNode` says in its own comment that making
+visibility depend on the function would let an operator act on a node and not
+see the result, and `jobs.list_jobs` already shows a job to a scope that
+covers its nodes. The cost is that two roles on the same nodes with different
+functions see each other's jobs there.
+
+**Shown.** `TestAJobOrARunIsShownOnlyToACallerWhoseScopeItFitsInside` reads the
+real stream of a lab server for three accounts: with the old filter, the
+`web` account is shown all nine events, `mysql -psecret` among them.
+`TestAReplayShowsAJobOrARunOnlyToACallerItFitsInside` does the same through
+the hub's runner path with real certificates, and fails with the old filter in
+the runner and with the owner removed from `run/ret`. Unit tests cover the
+rule, both list types and the `salt/...` root.
+
+**Not covered.** An event about no node that is not a job or a run is still
+shown to any caller granted something: a hook's payload, a user's `event.send`
+data, the reactor's own events and `halite/error/enrollment`. Their data is
+whatever the sender wrote, and filtering them needs a decision about what a
+caller is entitled to. A caller whose target is `*` still sees every job's
+arguments. Nothing was run
+against a live hub or fleet.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

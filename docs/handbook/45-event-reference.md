@@ -35,9 +35,10 @@ An event is a JSON object (`halite.event/1`) with `_tag`, `_stamp`, `_offset`,
 ```
 
 > `halite/job/<jid>/new` names no node in its tag, and its data carries the job's
-> target and **arguments**. See the known gap in
-> [chapter 27](27-http-api.md): a caller with any event grant sees these for
-> every job, so do not pass secrets as job arguments.
+> target and **arguments**. The event stream shows it only to a caller whose
+> scope contains every node the job reached, and to a caller whose target is
+> `*` (see [chapter 27](27-http-api.md)). Do not pass secrets as job
+> arguments: a caller with a target of `*` sees them.
 
 ### State runs
 

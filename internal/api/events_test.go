@@ -78,8 +78,12 @@ bindings:
 		{"halite/node/db1.example/start", "", false, false},
 		{"halite/state/20260824T1/db1.example/ok", "", false, false},
 		// Not about a node: anyone the policy grants anything sees it.
-		{"halite/job/20260824T1/new", "", true, true},
 		{"halite/reactor/error", "", true, true},
+		// A job's creation is about the nodes it reached, and this one
+		// carries none this reader can place, so it is shown to nobody
+		// short of a target of `*` (issue 886; the stream test next door
+		// reads real payloads).
+		{"halite/job/20260824T1/new", "", false, false},
 	}
 	for _, c := range cases {
 		e := &eventbus.Event{Tag: c.tag, Node: c.node}
