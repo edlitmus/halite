@@ -24172,6 +24172,83 @@ and 5.660; the ten-ping return-volume series, the 10% batch, the
 30-minute hold and the enrolment storm on FreeBSD; a FreeBSD hub raised
 by the lab module; and Linux re-measured with 5.660.
 
+#### The first job to 20,000 nodes, on a development host (2026-11-27): the cost is TLS handshakes
+
+Issue 718 items 0 and 4 ask where the hub's time and memory go at
+20,000 nodes. This is a profile on the FreeBSD 15.1 development host
+(amd64, 12 CPUs, 128 GiB), with the hub and one driver of 20,000
+simulated nodes on loopback sharing those CPUs. The hub was `main` at
+`3344c8c0` plus an experiment-only build: a pprof listener, and switches
+in the transport package for the three changes below. Neither was
+committed. `kern.maxfiles` was raised to 200,000 for the runs and put
+back to 25,000. The hub's root was on tmpfs unless a row says `zroot`.
+
+**The first job after the nodes connect is slow, and the second is not.**
+Each node's first return opens its own connection to the hub, which is a
+full TLS handshake: 20,000 of them at once. p95 of `test.ping` returns,
+SPEC 30's row (10 s):
+
+| Run | First job | Second job | Hub CPU, 45 s around the first |
+|---|---|---|---|
+| Baseline, twice more later | 25.4 s, 22.9 s, 23.5 s | 4.5-5.0 s | 102 s, 104 s |
+| Hub root on `zroot` (SSD mirror) | 27.9 s | 4.6 s | not captured |
+| `-reuse-client`, returns on the stream | **5.5 s** | 4.4 s | not captured |
+| Sessions resumed (see below) | **9.5 s** | 4.4 s | 57 s |
+| P-256 hub certificate | 12.9 s | 4.5 s | 71 s |
+| No hybrid key exchange | 19.6 s | 4.4 s | 87 s |
+| All three | **7.4 s** | 4.7 s | 45 s |
+
+In the baseline's first job, 65-66% of the hub's CPU was in
+`serverHandshake`: ECDSA signing on the hub's P-384 key 24%, the hybrid
+key exchange (X25519MLKEM768) 18%, verifying the node's certificate 11%.
+In the second job there is no handshake, because the connection is kept.
+The disk is not the difference: the same job with the hub on the SSD
+mirror was 10% slower on the first and 4% on the second, and `zpool
+iostat` peaked at 1,022 writes a second.
+
+**The three changes, as measured.**
+
+- *Sessions resumed.* Each simulated node kept one session cache for all
+  of its clients, and the driver counted 20,000 resumed and 20,000 full
+  handshakes. A resumed handshake still does the key exchange and no
+  longer signs or verifies a certificate. Not done by a node today: no
+  `ClientSessionCache` is set anywhere.
+- *P-256.* `key_algorithm: ecdsa-p256` in `hub.yaml` already selects it,
+  and applies to keys made after it is set. Signing fell from 24% of the
+  hub's CPU to 4.7%. This is a configuration choice and stays one.
+- *No hybrid key exchange.* The client offered X25519 and P-256 only.
+  A FIPS-restricted hub already offers P-256 and P-384 only
+  (`approvedCurves`), so this applies to a hub that is not.
+
+**Resumption and the denylist: not tested, and it needs a test before
+anything turns resumption on.** The hub checks its revoked-certificate
+list in `VerifyPeerCertificate`, and Go's documentation says that
+callback "is not invoked on resumed connections". `VerifyConnection` is.
+The hub already issues session tickets (nothing disables them) and a
+client built to keep one would resume. Whether a revoked node can then
+get in has not been run.
+
+**Memory.** At 20,000 connections the hub is 2.0 GiB resident before any
+job. Its goroutine stacks are 985 MB of the 2.1 GiB the Go runtime holds
+(60,035 goroutines, three a node). After the first job, with each node's
+return connection kept (5.641), 3.0-3.4 GiB. With `-reuse-client` the hub
+stayed at 2.0 GiB. The heap profile before and after the first job shows
+no extra gigabyte, so where it sits is not known. A node keeps a second
+connection on purpose: a stream that has stopped answering without
+closing would otherwise take the returns with it (`returnClient`).
+
+**What this does not show.** The absolute times are one host. The hub
+averaged 2.3 of the 12 CPUs in the profile window, and the driver does
+the clients' handshakes on the same CPUs and was not profiled, so the
+driver may be part of the first job's time. 5.660's AWS result, p95 2.34 s
+with the drivers on other hosts, stands. Each row is one run, except the
+baseline. No hub ran in FIPS mode. A reconnect storm after a hub restart
+was not run, and tickets do not survive a restart. Offloading the TLS
+to a network card was not tried.
+
+**Teardown:** the tmpfs unmounted, the `zroot` dataset destroyed, the
+worktree removed, `kern.maxfiles` back to 25,000.
+
 ### 5.280 The Handbook, built from the code and shipped in every release
 
 Until now the documentation was a dozen hand-written guides and four
