@@ -24249,6 +24249,74 @@ to a network card was not tried.
 **Teardown:** the tmpfs unmounted, the `zroot` dataset destroyed, the
 worktree removed, `kern.maxfiles` back to 25,000.
 
+#### The same runs with the driver on another host, and the 25,000 cap (2026-11-27)
+
+The subsection above could not say whether its first-job miss was the
+hub's or the driver's, because both shared 12 CPUs. This answers it, and
+**most of that miss was the driver's.** The driver and `simfleet submit`
+ran on a second FreeBSD 15.1 amd64 host with 20 CPUs, joined to the
+hub's host by 10 Gbit (`iperf3`: 9.9 Gbit/s, no retransmits, 0.15 ms).
+`submit` ran there too, so that the job's times and the nodes' share one
+clock. The hub, its commit (`3344c8c0`), its experiment-only build and
+its tmpfs root are the same as above. p95 of `test.ping` returns at
+20,000 nodes (row: 10 s):
+
+| Run | First job | Second job | Hub CPU, first job | Driver CPU | Hub peak RSS |
+|---|---|---|---|---|---|
+| Baseline, twice | 8.77 s, 8.53 s | 1.62 s, 1.20 s | 87 s, 91 s | 58 s, 61 s | 3.03 GiB |
+| Sessions resumed | 6.12 s | 1.19 s | 61 s | 30 s | 3.25 GiB |
+| P-256 hub certificate | 7.04 s | 1.60 s | 71 s | 41 s | 3.17 GiB |
+| No hybrid key exchange | 7.83 s | 1.18 s | 85 s | 53 s | 3.00 GiB |
+| All three | 5.09 s | 1.31 s | 53 s | 24 s | 2.98 GiB |
+
+The CPU columns are the difference between two readings of `ps` time
+around the first job, so they include whatever else the process did in
+that window.
+
+- **Unchanged, the hub meets the row at 20,000 nodes**, with the first
+  job at 8.5-8.8 s. The margin is thin: the last return was 9.2-9.5 s.
+  The same hub with the driver beside it measured 22.9-25.4 s.
+- The three changes keep the order they had on one host, resumption
+  first, then P-256, then dropping the hybrid exchange, and together they
+  take the first job to 5.1 s. They are headroom here and not what makes
+  the row.
+- Hub memory peaked at 3.0-3.3 GiB in every run, under the 4 GiB row.
+  AWS recorded 4.26-4.51 GiB (above). The two are not reconciled: this is
+  amd64 against arm64 and one host against two.
+
+**The 25,000 cap holds, and the hub is slower at it.** With 26,000
+identities and the default `max_node_connections` (25,000), 25,000 nodes
+connected in 5 min 34 s (the driver waits five minutes for the rest), the
+hub logged "refused a node connection: the hub holds max_node_connections
+streams" seven times, and the 1,000 refused nodes stayed refused. Both
+jobs were answered by all 25,000 connected nodes with no return error:
+first job p95 **11.3 s** (last 11.5 s), second 1.47 s. The first job is
+over the row at the cap. Hub RSS peaked at 3,993 MiB, 3.90 GiB, under
+4 GiB with 0.1 GiB to spare. `simfleet merge` prints NOT MET for both
+jobs, because the 1,000 refused nodes are in the 26,000 it divides by;
+that verdict is not meaningful here and the figures above are the
+measurement.
+
+**A trial failed first, and it was the driver's host.** With r720's
+ephemeral port range at its default (32,768 ports), 20,000 nodes, which
+need about 40,000 connections from one address, ran out: 7,238 of 20,000
+returns arrived and the hub logged 13,930 TLS handshake timeouts. Nothing
+in the hub was at fault. The range was widened to 2,048-65,535 for the
+runs, and a driver host needs that for any fleet over about 16,000 nodes.
+
+**Not covered.** One run each, except the 20,000-node baseline. The
+descriptor count with the cap reached was 26,016, 1,016 over the streams
+the cap allows, and I did not look at what holds them (the refused nodes'
+connections are the likely, unchecked, answer). The counter
+`halite_hub_node_connect_refused_total` was not read. The still-open
+questions above (a revoked node resuming a session, a reconnect storm, a
+FIPS-mode hub) are unchanged, and the AWS runs were not repeated. The
+10 Gbit link's own load was not read, so it is not shown not to be a limit.
+
+**Teardown:** both hosts' scratch directories removed, the tmpfs
+unmounted, `kern.maxfiles` back to 25,000 here and the port range back
+to 32,768 on r720.
+
 ### 5.280 The Handbook, built from the code and shipped in every release
 
 Until now the documentation was a dozen hand-written guides and four
